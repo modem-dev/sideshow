@@ -11,17 +11,19 @@ snippets over CLI/MCP/HTTP; the user watches them render in a browser and
 comments back. The two-way loop — publish → live render → comment →
 revise/reply — is the product. When in doubt, optimize for the loop.
 
-Product principles:
+Current product stances (deliberate choices, not accidents — revisit
+consciously, not as a side effect):
 
-- One board per person; one session per agent conversation. No multi-user,
-  no accounts — auth is a single deploy token. Don't add either.
+- One board per person; one session per agent conversation. Accounts and
+  multi-user are out of scope; auth is a single deploy token.
 - Three integration tiers, most universal first: zero-dependency CLI, MCP
-  (stdio and streamable HTTP at `/mcp`), raw HTTP. Features must work on all
-  three; the CLI and curl tiers are why agents with only a shell can use this.
-- Feedback is never silently lost. Every user comment must (a) render
-  somewhere in the viewer (card thread or session thread) and (b) reach the
-  agent — via `userFeedback` piggybacked on writes, a blocking wait, or a
-  background watch. Breaking either side is the worst bug this product can have.
+  (stdio and streamable HTTP at `/mcp`), raw HTTP. Features should work on
+  all three — the CLI and curl tiers are why agents with only a shell can
+  use this.
+- Feedback is never silently lost: a user comment renders somewhere in the
+  viewer (card thread or session thread) and reaches the agent (`userFeedback`
+  piggybacked on writes, a blocking wait, or a background watch). Guard this
+  hardest — both halves have regressed before.
 
 ## Map
 
@@ -97,4 +99,4 @@ Testing notes:
 - Release: move unreleased entries into a new version section, bump
   `package.json`, commit `chore(release): X.Y.Z`, tag `vX.Y.Z`, create the
   GitHub release with that section as notes, then `npm publish` (manual —
-  Ben runs it; 2FA).
+  the maintainer runs it; requires 2FA).
