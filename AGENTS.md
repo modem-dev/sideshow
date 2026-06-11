@@ -1,65 +1,100 @@
-# sideshow — agent guidance
+# sideshow — agent guide
 
-## What this is
+Guidance for agents developing this repo. (The block that teaches agents to
+_use_ a running sideshow lives in `guide/AGENT_SETUP.md`, served at `/setup`.)
+`CLAUDE.md` symlinks here.
 
-A live visual surface for terminal coding agents. Agents publish HTML
-snippets over CLI/MCP/HTTP; the user watches them render in a browser
-(sessions → snippets → comment threads) and comments back; agents receive
-feedback via long-poll.
+## What this is and why
 
-Note: this file is guidance for agents _developing this repo_. The block that
-teaches agents to _use_ a running sideshow lives in `guide/AGENT_SETUP.md`
-(served at `/setup`).
+A live visual surface for terminal coding agents: agents publish HTML
+snippets over CLI/MCP/HTTP; the user watches them render in a browser and
+comments back. The two-way loop — publish → live render → comment →
+revise/reply — is the product. When in doubt, optimize for the loop.
 
-## Entry points
+Product principles:
 
-- `server/index.ts` — Node entry; wires `JsonFileStore` + static files into the app.
-- `server/app.ts` — runtime-agnostic Hono app: all routes (REST, SSE `/api/events`, long-poll `/api/comments`, snippet renderer `/s/:id`).
-- `server/storage.ts` — `Store` interface + JSON-file implementation. Cloud ports implement `Store` (D1/KV) and reuse `createApp()`.
-- `server/snippetPage.ts` — wraps agent HTML in a themed sandboxed document; contains the CSP allowlist and the postMessage bridge.
-- `server/mcpHttp.ts` — stateless MCP over streamable HTTP, mounted at `/mcp`
-  on every server (local and cloud). Shares flow functions with the REST API.
-- `server/types.ts` — shared data model, no runtime imports (platform-safe).
-- `viewer/index.html` — the whole viewer UI, single file, vanilla JS, no build.
-- `bin/sideshow.js` — zero-dependency CLI. Must stay dependency-free.
-- `mcp/server.ts` — stdio MCP server; a thin client over the HTTP API.
-- `workers/index.ts` — Cloudflare entry: one Durable Object (`SideshowBoard`)
-  runs the whole app; `workers/sqlStore.ts` implements `Store` on DO SQLite.
-- `skills/sideshow/SKILL.md` — installable Claude Code skill for agents
-  _using_ sideshow.
+- One board per person; one session per agent conversation. No multi-user,
+  no accounts — auth is a single deploy token. Don't add either.
+- Three integration tiers, most universal first: zero-dependency CLI, MCP
+  (stdio and streamable HTTP at `/mcp`), raw HTTP. Features must work on all
+  three; the CLI and curl tiers are why agents with only a shell can use this.
+- Feedback is never silently lost. Every user comment must (a) render
+  somewhere in the viewer (card thread or session thread) and (b) reach the
+  agent — via `userFeedback` piggybacked on writes, a blocking wait, or a
+  background watch. Breaking either side is the worst bug this product can have.
 
-## Architecture rules
+## Map
 
-- `server/app.ts`, `server/mcpHttp.ts`, `server/events.ts`, `server/snippetPage.ts`, and `server/types.ts` must stay runtime-agnostic (no `node:` imports) — they run on Cloudflare Workers via `tsconfig.workers.json`, which typechecks them against workers types. Node-specific wiring belongs in `server/index.ts` / `server/storage.ts`.
-- TypeScript runs directly on Node ≥22.18 via native type-stripping: erasable syntax only (no enums, no parameter properties), `.ts` extensions in relative imports, no build step. `erasableSyntaxOnly` in tsconfig enforces this.
-- `bin/sideshow.js` uses only Node built-ins — keep it that way; it is the universal integration tier.
-- Snippet iframes are sandboxed without `allow-same-origin`. Never weaken this. WebKit quirk: inside sandboxed iframes, ResizeObserver's initial callback may not fire and `documentElement.scrollHeight` ratchets to viewport height — the bridge reports `body.scrollHeight` on `load` + staggered timers. Don't "simplify" it back.
-- The viewer stays a single static HTML file with no framework and no build step.
+- `server/app.ts` — runtime-agnostic Hono app: all routes, SSE `/api/events`,
+  long-poll `/api/comments`, renderer `/s/:id`, and the shared flow functions
+  both REST and MCP call.
+- `server/types.ts` — data model + `Store` interface; no runtime imports.
+- `server/storage.ts` — `JsonFileStore` (local Node). `workers/sqlStore.ts` —
+  `SqlStore` (Durable Object SQLite). Both must pass `test/storeContract.ts`.
+- `server/snippetPage.ts` — sandboxed snippet document: CSP allowlist and the
+  postMessage bridge (resize, sendPrompt, openLink).
+- `server/mcpHttp.ts` — stateless MCP at `/mcp`. `mcp/server.ts` — stdio MCP,
+  a thin client over the HTTP API (passes response fields through untouched).
+- `viewer/index.html` — the entire viewer: one file, vanilla JS, no build.
+- `bin/sideshow.js` — CLI, Node built-ins only; `bin/demoData.js` — seed
+  content for `sideshow demo`.
+- `workers/index.ts` — Cloudflare entry; one Durable Object runs the whole app.
+- `skills/sideshow/` + `guide/` — teach agents to use a running sideshow.
+- `scripts/record-demo.mjs` — regenerates the README gif.
+
+## Architecture invariants
+
+- `server/{app,events,mcpHttp,snippetPage,types}.ts` stay runtime-agnostic
+  (no `node:` imports); `tsconfig.workers.json` typechecks them against
+  workers types. Node wiring belongs in `server/index.ts` / `server/storage.ts`.
+- TypeScript runs directly on Node ≥22.18 via type stripping: erasable syntax
+  only (no enums, no parameter properties), `.ts` extensions in relative
+  imports, no build step (`npm pack` compiles `dist/` for the published CLI).
+- Snippet iframes are sandboxed without `allow-same-origin`. Never weaken
+  this. WebKit quirk: in sandboxed iframes ResizeObserver's initial callback
+  may not fire and `documentElement.scrollHeight` ratchets to viewport height
+  — the bridge reports `body.scrollHeight` on `load` plus staggered timers.
+  Don't "simplify" it back; e2e covers it on real WebKit.
+- Feedback cursor: each session carries `agentSeq`, the highest comment seq
+  already delivered to the agent. Piggyback collection and `author=user`
+  waits advance it; the viewer's unfiltered reads never touch it. Delivery is
+  exactly-once by design.
+- `SqlStore` schema changes need in-place migration — deployed Durable
+  Objects can't be reset. Follow the `pragma_table_info` probe pattern in its
+  constructor.
+- The server reads `viewer/` and `guide/` files at boot — restart it to see
+  viewer changes.
 
 ## Validation
 
 ```sh
-npm test             # node --test, API + storage coverage
-npm run typecheck    # tsc --noEmit
+npm test             # unit/API + store contract (node --test)
+npm run typecheck    # two tsc programs: node + workers
 npm run lint         # oxlint, warnings are errors
 npm run format:check # oxfmt
+npm run test:e2e     # Playwright, chromium + webkit (separate CI job)
 ```
 
-All four must pass before committing. Pre-commit runs oxfmt + oxlint on staged
-files via simple-git-hooks + lint-staged (`npm run prepare` after fresh clone).
+The first four must pass before committing; pre-commit formats staged files
+(`npm run prepare` after a fresh clone).
 
-## Commits
+Testing notes:
 
-Commit titles follow Conventional Commits: `<type>[scope]: <description>`
-(e.g. `feat(cli): add --json flag to list`, `fix(viewer): unread dot race`).
+- `runStoreContract()` runs the same suite against both stores. SqlStore runs
+  on a `node:sqlite` shim (`test/sqlStorageShim.ts`); the ambient `SqlStorage`
+  types live in `test/workersSqlTypes.d.ts` because the real workers types
+  conflict with `@types/node`.
+- `JsonFileStore` returns live objects that later mutate — capture fields
+  before update calls when asserting against them.
+- The session thread is also a `.card`: scope snippet-card e2e selectors with
+  `.card:not(#sessionThread)`.
 
-## Changelog and releases
+## Conventions
 
-- `CHANGELOG.md` is the source of truth for user-visible changes.
-- Add entries under `## [Unreleased]` in `### Added` / `### Changed` /
-  `### Fixed` — append to existing subsections, don't duplicate them.
-- Prefer user-visible phrasing; skip internal refactors unless behavior changed.
-- Cutting a release: move unreleased entries into a new immutable version
-  section, start a fresh `[Unreleased]`, and use the version section as the
-  GitHub release body (`gh release create --notes-file`). Verify autogenerated
-  notes instead of trusting them.
+- Conventional Commits: `type(scope): description`.
+- `CHANGELOG.md` under `[Unreleased]` (`Added`/`Changed`/`Fixed`), user-visible
+  changes only; append to existing subsections, don't duplicate them.
+- Release: move unreleased entries into a new version section, bump
+  `package.json`, commit `chore(release): X.Y.Z`, tag `vX.Y.Z`, create the
+  GitHub release with that section as notes, then `npm publish` (manual —
+  Ben runs it; 2FA).
