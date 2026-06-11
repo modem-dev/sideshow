@@ -21,6 +21,10 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Changed
 
+- The Claude Code skill now documents the repo-local CLI fallback and a
+  checkpoint-drain feedback pattern for harnesses that cannot surface
+  background watcher output.
+
 ### Fixed
 
 - Comments not attached to a snippet (e.g. `sideshow comment` without
