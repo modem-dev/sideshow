@@ -596,8 +596,46 @@
           stream.appendChild(e);
         }
         for (const meta of snippets) await upsertCard(meta.id, { scroll: false });
+        ensureSessionThread();
         const { comments } = await api(`/api/comments?session=${id}`);
-        for (const c of comments) if (c.snippetId) renderComment(c);
+        for (const c of comments) renderComment(c);
+      }
+
+      // Comments without a snippet (e.g. `sideshow comment` with no --snippet)
+      // live in a session-level thread at the bottom of the stream, which also
+      // lets the user message the agent without picking a snippet.
+      function ensureSessionThread() {
+        if ($("sessionThread")) return;
+        const card = document.createElement("div");
+        card.className = "card";
+        card.id = "sessionThread";
+        card.innerHTML = `
+        <div class="card-head">
+          <span class="card-title">Session thread</span>
+          <span class="card-meta">not tied to a snippet</span>
+        </div>
+        <div class="thread">
+          <div class="cmts"></div>
+          <div class="composer">
+            <input placeholder="Message the agent…">
+            <button>Send</button>
+          </div>
+        </div>`;
+        const input = card.querySelector(".composer input");
+        const send = async () => {
+          const text = input.value.trim();
+          if (!text) return;
+          input.value = "";
+          await api("/api/comments", {
+            method: "POST",
+            body: JSON.stringify({ session: state.selected, text, author: "user" }),
+          });
+        };
+        input.onkeydown = (e) => {
+          if (e.key === "Enter") send();
+        };
+        card.querySelector(".composer button").onclick = send;
+        $("stream").appendChild(card);
       }
 
       // --- snippet cards ---
@@ -651,7 +689,9 @@
             }
           };
           state.cards.set(s.id, card);
-          $("stream").appendChild(card);
+          const thread = $("sessionThread");
+          if (thread) $("stream").insertBefore(card, thread);
+          else $("stream").appendChild(card);
         }
 
         card.querySelector(".card-title").textContent = s.title;
@@ -688,7 +728,7 @@
       }
 
       function renderComment(c) {
-        const card = state.cards.get(c.snippetId);
+        const card = c.snippetId ? state.cards.get(c.snippetId) : $("sessionThread");
         if (!card) return;
         const cmts = card.querySelector(".cmts");
         if (cmts.querySelector(`[data-cid="${c.id}"]`)) return;
@@ -753,10 +793,11 @@
             state.cards.delete(e.id);
             await refreshSessionsQuiet();
           } else if (e.type === "comment-created") {
-            if (e.sessionId === state.selected && e.snippetId) {
-              const { comments } = await api(`/api/comments?snippet=${e.snippetId}`);
+            if (e.sessionId === state.selected) {
+              const query = e.snippetId ? `snippet=${e.snippetId}` : `session=${e.sessionId}`;
+              const { comments } = await api(`/api/comments?${query}`);
               for (const c of comments) renderComment(c);
-            } else if (e.sessionId !== state.selected) {
+            } else {
               state.unread.add(e.sessionId);
               renderSidebar();
             }

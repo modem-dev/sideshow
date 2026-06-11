@@ -6,9 +6,16 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Added
 
+- A session thread at the bottom of each session in the viewer: a composer
+  for messaging the agent without picking a snippet.
+
 ### Changed
 
 ### Fixed
+
+- Comments not attached to a snippet (e.g. `sideshow comment` without
+  `--snippet`) were stored and delivered to agents but never shown in the
+  viewer; they now render in the session thread.
 
 ## [0.2.0] - 2026-06-11
 
