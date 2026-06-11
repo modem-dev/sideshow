@@ -73,14 +73,14 @@
         font-weight: 500;
         letter-spacing: 0.01em;
       }
-      #live {
+      .livedot {
         width: 7px;
         height: 7px;
         border-radius: 50%;
         background: var(--faint);
         transition: background 0.3s;
       }
-      #live.on {
+      .livedot.on {
         background: #4caf78;
       }
       #sessionList {
@@ -426,6 +426,123 @@
         color: var(--text);
       }
 
+      /* phone widths: the sidebar becomes an off-canvas drawer behind a slim
+         top bar; the stream keeps the full width */
+      .topbar {
+        display: none;
+      }
+      #scrim {
+        display: none;
+      }
+      @media (max-width: 700px) {
+        #app {
+          flex-direction: column;
+        }
+        .topbar {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          flex: none;
+          padding: 8px 10px;
+          background: var(--panel);
+          border-bottom: 0.5px solid var(--border);
+        }
+        .topbar .brand {
+          padding: 0;
+        }
+        .topbar .menu {
+          position: relative;
+          font-size: 17px;
+          line-height: 1;
+          color: var(--muted);
+          background: none;
+          border: none;
+          border-radius: 8px;
+          padding: 6px 9px;
+          cursor: pointer;
+          font-family: inherit;
+        }
+        .topbar .menu:hover {
+          color: var(--text);
+          background: var(--hover);
+        }
+        .topbar .menu .dot {
+          position: absolute;
+          top: 3px;
+          right: 4px;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--accent);
+          display: none;
+        }
+        .topbar .menu .dot.show {
+          display: block;
+        }
+        aside {
+          position: fixed;
+          top: 0;
+          bottom: 0;
+          left: 0;
+          z-index: 30;
+          width: min(280px, 84vw);
+          transform: translateX(-105%);
+          transition: transform 0.2s ease;
+        }
+        body.nav-open aside {
+          transform: none;
+          box-shadow: 0 0 32px rgba(0, 0, 0, 0.25);
+        }
+        #scrim {
+          display: block;
+          position: fixed;
+          inset: 0;
+          z-index: 25;
+          background: rgba(0, 0, 0, 0.35);
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.2s;
+        }
+        body.nav-open #scrim {
+          opacity: 1;
+          pointer-events: auto;
+        }
+        main {
+          min-height: 0;
+        }
+        .session-head {
+          padding: 12px 16px 10px;
+        }
+        #stream {
+          padding: 16px 14px 120px;
+        }
+        #onboard {
+          padding: 40px 18px;
+        }
+        .card-title {
+          min-width: 0;
+          flex: 0 1 auto;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      }
+      /* narrow or touch: hover-revealed actions must stay reachable */
+      @media (max-width: 700px), (hover: none) {
+        .card-head .act {
+          opacity: 1;
+        }
+        .sess .x {
+          opacity: 1;
+        }
+        .sess-title {
+          padding-right: 44px;
+        }
+        .sess .dot {
+          right: 32px;
+        }
+      }
+
       #toast {
         position: fixed;
         left: 50%;
@@ -454,8 +571,14 @@
   </head>
   <body>
     <div id="app">
+      <header class="topbar">
+        <button class="menu" id="menuBtn" aria-label="Show sessions">
+          ☰<span class="dot" id="menuDot"></span>
+        </button>
+        <div class="brand"><span class="livedot"></span>sideshow</div>
+      </header>
       <aside>
-        <div class="brand"><span id="live"></span>sideshow</div>
+        <div class="brand"><span class="livedot"></span>sideshow</div>
         <div id="sessionList"></div>
         <div class="aside-foot">
           <a href="/guide" target="_blank">design guide</a> &nbsp;·&nbsp;
@@ -498,6 +621,7 @@
         </div>
       </main>
     </div>
+    <div id="scrim"></div>
     <div id="toast" role="status" aria-live="polite"></div>
     <button id="newPill" hidden>new snippet ↓</button>
     <script>
@@ -539,6 +663,15 @@
       function sessionLabel(s) {
         return s.title || s.agent + " session";
       }
+
+      function setLive(on) {
+        for (const el of document.querySelectorAll(".livedot")) el.classList.toggle("on", on);
+      }
+
+      // --- mobile drawer ---
+
+      $("menuBtn").onclick = () => document.body.classList.toggle("nav-open");
+      $("scrim").onclick = () => document.body.classList.remove("nav-open");
 
       // --- sidebar ---
 
@@ -598,6 +731,7 @@
         $("onboard").hidden = state.sessions.length > 0;
         $("sessionView").hidden = state.sessions.length === 0;
         document.title = state.unread.size ? `(${state.unread.size}) sideshow` : "sideshow";
+        $("menuDot").classList.toggle("show", state.unread.size > 0);
       }
 
       async function refreshSessions() {
@@ -643,6 +777,7 @@
         state.selected = id;
         state.unread.delete(id);
         $("newPill").hidden = true;
+        document.body.classList.remove("nav-open");
         renderSidebar();
         renderSessionHead();
         const stream = $("stream");
@@ -874,13 +1009,13 @@
         const es = new EventSource("/api/events");
         let everConnected = false;
         es.onopen = async () => {
-          $("live").classList.add("on");
+          setLive(true);
           // events that fired during a gap are gone for good — refetch so the
           // board can't silently go stale while still looking live
           if (everConnected) await resyncSelected();
           everConnected = true;
         };
-        es.onerror = () => $("live").classList.remove("on");
+        es.onerror = () => setLive(false);
         es.onmessage = async (ev) => {
           const e = JSON.parse(ev.data);
           // activity the user isn't looking at — other session or hidden tab —

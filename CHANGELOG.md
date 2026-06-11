@@ -44,7 +44,11 @@ All notable user-visible changes to this project are documented in this file.
 - After an SSE reconnect the viewer refetches the selected session, so
   snippets and comments that arrived during the gap can no longer be
   silently missing from a live-looking board.
-
+- The viewer layout no longer breaks at phone widths: below 700px the
+  sidebar collapses into a drawer behind a slim top bar (hamburger toggle,
+  unread dot), the stream takes the full width, and hover-only actions
+  (card open/delete, session delete) stay visible on narrow or touch
+  screens.
 - Comments not attached to a snippet (e.g. `sideshow comment` without
   `--snippet`) were stored and delivered to agents but never shown in the
   viewer; they now render in the session thread.

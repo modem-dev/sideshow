@@ -183,6 +183,31 @@ test("activity in an unselected session badges the tab title until viewed", asyn
   await expect(page).toHaveTitle("sideshow");
 });
 
+test("at phone width the sidebar collapses into a drawer and actions stay visible", async ({
+  page,
+  server,
+}) => {
+  await publish(server.url, { html: "<p>m</p>", title: "Mobile", agent: "e2e" });
+
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.goto(server.url);
+
+  // the sidebar is off-canvas and the stream gets the full width
+  const card = page.locator(".card:not(#sessionThread)");
+  await expect(card).toBeVisible();
+  await expect(page.locator("aside")).not.toBeInViewport();
+  expect((await card.boundingBox())!.width).toBeGreaterThan(300);
+
+  // hover-only card actions are always visible at narrow widths
+  await expect(card.locator(".act.open")).toHaveCSS("opacity", "1");
+
+  // the menu button opens the drawer; picking a session closes it again
+  await page.locator("#menuBtn").click();
+  await expect(page.locator("aside")).toBeInViewport();
+  await page.locator(".sess").click();
+  await expect(page.locator("aside")).not.toBeInViewport();
+});
+
 test("version select appears live after an update", async ({ page, server }) => {
   const snippet = await publish(server.url, { html: "<p>v1</p>", title: "Doc", agent: "e2e" });
 
