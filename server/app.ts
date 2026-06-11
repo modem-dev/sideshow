@@ -72,6 +72,7 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
     html: string;
     title?: string;
     session?: string;
+    sessionTitle?: string;
     agent?: string;
     cwd?: string;
   }): Promise<
@@ -85,7 +86,13 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
       return { error: `session "${sessionId}" not found`, status: 404 };
     }
     if (!sessionId) {
-      const session = await store.createSession({ agent: input.agent ?? "agent", cwd: input.cwd });
+      // sessionTitle applies only here — an existing session keeps its title,
+      // which the user may have set by renaming it in the viewer.
+      const session = await store.createSession({
+        agent: input.agent ?? "agent",
+        title: input.sessionTitle,
+        cwd: input.cwd,
+      });
       bus.broadcast({ type: "session-created", id: session.id });
       sessionId = session.id;
     }
@@ -291,6 +298,7 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
       html: body.html,
       title: typeof body.title === "string" ? body.title : undefined,
       session: typeof body.session === "string" ? body.session : undefined,
+      sessionTitle: typeof body.sessionTitle === "string" ? body.sessionTitle : undefined,
       agent: typeof body.agent === "string" ? body.agent : undefined,
       cwd: typeof body.cwd === "string" ? body.cwd : undefined,
     });

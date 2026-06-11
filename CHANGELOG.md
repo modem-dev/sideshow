@@ -14,6 +14,10 @@ All notable user-visible changes to this project are documented in this file.
 - The design guide, setup block, and Claude Code skill teach the background
   watch pattern: arm `sideshow wait` as a background process after publishing
   and react when it exits, instead of blocking or polling.
+- Agents can name their session at creation: `sessionTitle` on the publish
+  body and both MCP `publish_snippet` tools, `--session-title` on
+  `sideshow publish`. Applied only when the publish creates the session —
+  it never overwrites a title, including renames made in the viewer.
 
 ### Changed
 

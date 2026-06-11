@@ -12,11 +12,13 @@ Publish a snippet (HTML body fragment only — no doctype/html/head/body):
 
     curl -s -X POST http://localhost:4242/api/snippets \
       -H 'content-type: application/json' \
-      -d '{"agent": "YOUR_NAME", "title": "Short title", "html": "<p>...</p>"}'
+      -d '{"agent": "YOUR_NAME", "sessionTitle": "Task name", "title": "Short title", "html": "<p>...</p>"}'
 
 The response includes `id` and `sessionId`. Pass `"session": "<sessionId>"`
-on later publishes so your snippets group into one session. To revise a
-snippet instead of posting a new one:
+on later publishes so your snippets group into one session. `sessionTitle`
+labels that session in the sidebar — name the task at hand ("Auth refactor"),
+not your tool; it is honored only on the publish that creates the session.
+To revise a snippet instead of posting a new one:
 
     curl -s -X PUT http://localhost:4242/api/snippets/<id> \
       -H 'content-type: application/json' -d '{"html": "..."}'

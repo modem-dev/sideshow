@@ -29,12 +29,16 @@ Prefer MCP tools if the sideshow MCP server is connected
 Otherwise use the CLI — session grouping is automatic:
 
 ```sh
-sideshow publish sketch.html --title "Cache layout" --agent your-name
+sideshow publish sketch.html --title "Cache layout" --agent your-name --session-title "Cache redesign"
 echo '<p>...</p>' | sideshow publish - --title "Quick note"
 ```
 
 Rules of thumb:
 
+- On your first publish, set a session title that names the task ("Auth
+  refactor"), not the tool — `--session-title` on the CLI, `sessionTitle` on
+  the MCP tool. It applies only when the session is created; never try to
+  retitle later (the user may have renamed it in the viewer).
 - One concept per snippet, with a clear title. A series of small snippets
   beats one giant page.
 - **Iterate with `sideshow update <id>`** (same card, new version) instead of

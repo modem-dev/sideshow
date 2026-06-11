@@ -38,12 +38,14 @@ const text = (value: unknown) => ({
 let sessionId: string | null = process.env.SIDESHOW_SESSION ?? null;
 let lastSeq = 0;
 
-async function ensureSession(): Promise<string> {
+// `title` is used only when this call creates the session — once one exists
+// (here or in the viewer, where the user can rename it) it is never retitled.
+async function ensureSession(title?: string): Promise<string> {
   if (sessionId) return sessionId;
   const session = JSON.parse(
     await api("/api/sessions", {
       method: "POST",
-      body: JSON.stringify({ agent: AGENT, cwd: process.cwd() }),
+      body: JSON.stringify({ agent: AGENT, cwd: process.cwd(), title }),
     }),
   );
   sessionId = session.id as string;
@@ -57,6 +59,8 @@ const server = new McpServer(
       "sideshow is a live visual surface the user watches in a browser. Publish HTML snippets to illustrate " +
       "concepts, sketch UI ideas, or visualize data while you work. Call get_design_guide once before your first " +
       "publish — it defines the HTML contract. Your snippets are grouped into one session for this conversation. " +
+      'On your first publish, pass sessionTitle to name the session after the task at hand (e.g. "Auth refactor") ' +
+      "so the user can tell sessions apart in the sidebar. " +
       "The user can comment on snippets in their browser; check with wait_for_feedback after publishing something " +
       "you want a reaction to. Any publish/update/reply result may also carry a userFeedback array — comments " +
       "the user left since your last call. Treat them as messages from the user; they are delivered once.",
@@ -68,16 +72,25 @@ server.registerTool(
   {
     description:
       "Publish an HTML snippet to the user's sideshow surface. Send a body fragment only (no " +
-      "doctype/html/head/body). Returns the snippet id and view URL. If the result includes userFeedback, " +
-      "those are new comments from the user — read them. Call get_design_guide first if you have not this " +
-      "session.",
+      "doctype/html/head/body). Returns the snippet id and view URL. On your first publish, pass " +
+      "sessionTitle naming the task to label this conversation's session in the viewer sidebar (honored " +
+      "only when the session is created). If the result includes userFeedback, those are new comments " +
+      "from the user — read them. Call get_design_guide first if you have not this session.",
     inputSchema: {
       title: z.string().describe("Short human-readable title shown above the snippet"),
       html: z.string().describe("HTML body fragment to render"),
+      sessionTitle: z
+        .string()
+        .optional()
+        .describe(
+          'Session name shown in the viewer sidebar — name the task, e.g. "Auth refactor", not your ' +
+            "tool. Used only on the first publish, when the session is created; it never retitles an " +
+            "existing session.",
+        ),
     },
   },
-  async ({ title, html }) => {
-    const session = await ensureSession();
+  async ({ title, html, sessionTitle }) => {
+    const session = await ensureSession(sessionTitle);
     const created = JSON.parse(
       await api("/api/snippets", {
         method: "POST",

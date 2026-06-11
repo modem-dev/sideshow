@@ -18,6 +18,8 @@ usage:
   sideshow publish <file|-> [options]     publish an HTML fragment as a snippet
       --title <t>       snippet title
       --session <id>    target session (default: auto per agent session)
+      --session-title <t>  name for a newly created session — name the task,
+                        e.g. "Auth refactor" (ignored if the session exists)
       --agent <name>    agent name for new sessions (default: $SIDESHOW_AGENT or "agent")
       --new-session     force a fresh session
   sideshow update <id> <file|->           revise a snippet (new version, same card)
@@ -140,7 +142,11 @@ async function resolveSession(flags, { create = false } = {}) {
   if (!create) return null;
   const session = await api("/api/sessions", {
     method: "POST",
-    body: JSON.stringify({ agent: agentName(flags), cwd: process.cwd() }),
+    body: JSON.stringify({
+      agent: agentName(flags),
+      title: flags["session-title"],
+      cwd: process.cwd(),
+    }),
   });
   writeState({ session: session.id, agent: agentName(flags), lastSeq: 0 });
   return session.id;
@@ -208,6 +214,7 @@ const commands = {
       options: {
         title: { type: "string" },
         session: { type: "string" },
+        "session-title": { type: "string" },
         agent: { type: "string" },
         "new-session": { type: "boolean" },
       },
@@ -216,7 +223,12 @@ const commands = {
     const session = await resolveSession(flags, { create: true });
     const snippet = await api("/api/snippets", {
       method: "POST",
-      body: JSON.stringify({ html, title: flags.title, session }),
+      body: JSON.stringify({
+        html,
+        title: flags.title,
+        session,
+        sessionTitle: flags["session-title"],
+      }),
     });
     out({ ...snippet, url: `${BASE}/s/${snippet.id}` });
   },

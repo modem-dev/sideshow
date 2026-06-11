@@ -17,7 +17,10 @@ GET  /api/comments?session=<id>&author=user&after=<lastSeq>&wait=60   # user fee
 ```
 
 Omit `session` on your first publish and the response's `sessionId` is yours —
-reuse it so your snippets stay grouped. When refining an illustration you
+reuse it so your snippets stay grouped. On that first publish, also set a
+session title naming the task ("Auth refactor"), not your tool — `sessionTitle`
+(MCP and HTTP) or `--session-title` (CLI). It applies only when the session is
+created; never retitle it later. When refining an illustration you
 already published, UPDATE it rather than publishing a near-duplicate; versions
 are kept and the user can flip between them.
 

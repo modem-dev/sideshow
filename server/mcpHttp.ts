@@ -12,6 +12,7 @@ export interface McpDeps {
     html: string;
     title?: string;
     session?: string;
+    sessionTitle?: string;
     agent?: string;
   }): Promise<{ snippet: Snippet; userFeedback?: Feedback[] } | { error: string; status: number }>;
   reviseSnippet(
@@ -31,7 +32,9 @@ const INSTRUCTIONS =
   "sideshow is a live visual surface the user watches in a browser. Publish HTML snippets to illustrate " +
   "concepts, sketch UI ideas, or visualize data while you work. Call get_design_guide once before your first " +
   "publish — it defines the HTML contract. Your first publish_snippet creates a session and returns its " +
-  "sessionId: pass it as `session` on every later call so your snippets stay grouped. The user can comment on " +
+  "sessionId: pass it as `session` on every later call so your snippets stay grouped. On that first publish, " +
+  'also pass sessionTitle to name the session after the task at hand (e.g. "Auth refactor") so the user can ' +
+  "tell sessions apart in the sidebar. The user can comment on " +
   "snippets in their browser; call wait_for_feedback (passing the lastSeq cursor from the previous result) " +
   "after publishing something you want a reaction to. Any publish/update/reply result may also carry a " +
   "userFeedback array — comments the user left since your last call. Treat them as messages from the user; " +
@@ -43,8 +46,10 @@ const TOOLS = [
     description:
       "Publish an HTML snippet to the user's sideshow surface. Send a body fragment only (no " +
       "doctype/html/head/body). Returns the snippet id, view URL, and sessionId — pass sessionId as `session` " +
-      "on later calls. If the result includes userFeedback, those are new comments from the user — read them. " +
-      "Call get_design_guide first if you have not this session.",
+      "on later calls. On your first publish, pass sessionTitle naming the task to label the session in the " +
+      "viewer sidebar (honored only when the publish creates the session). If the result includes " +
+      "userFeedback, those are new comments from the user — read them. Call get_design_guide first if you " +
+      "have not this session.",
     inputSchema: {
       type: "object",
       properties: {
@@ -56,6 +61,13 @@ const TOOLS = [
         session: {
           type: "string",
           description: "Session id from a previous publish (omit on first publish)",
+        },
+        sessionTitle: {
+          type: "string",
+          description:
+            'Session name shown in the viewer sidebar — name the task, e.g. "Auth refactor", not your ' +
+            "tool. Honored only when this publish creates the session (first publish, no `session`); it " +
+            "never retitles an existing session.",
         },
         agent: {
           type: "string",
@@ -145,6 +157,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           html: String(args.html ?? ""),
           title: typeof args.title === "string" ? args.title : undefined,
           session: typeof args.session === "string" ? args.session : undefined,
+          sessionTitle: typeof args.sessionTitle === "string" ? args.sessionTitle : undefined,
           agent: typeof args.agent === "string" ? args.agent : undefined,
         });
         if ("error" in result) throw new Error(result.error);

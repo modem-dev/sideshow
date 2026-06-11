@@ -55,6 +55,41 @@ test("publish into an existing session groups snippets", async () => {
   assert.equal(list.length, 2);
 });
 
+test("publish with sessionTitle names the auto-created session", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/snippets",
+    json({ html: "<p>x</p>", agent: "pi", sessionTitle: "Auth refactor" }),
+  );
+  assert.equal(res.status, 201);
+  const snippet = (await res.json()) as any;
+  const sessions = (await (await app.request("/api/sessions")).json()) as any;
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].id, snippet.sessionId);
+  assert.equal(sessions[0].title, "Auth refactor");
+});
+
+test("sessionTitle never retitles an existing session", async () => {
+  const app = makeApp();
+  const first = (await (
+    await app.request("/api/snippets", json({ html: "<p>1</p>", sessionTitle: "Original" }))
+  ).json()) as any;
+  // the user renames the session in the viewer...
+  await app.request(`/api/sessions/${first.sessionId}`, {
+    ...json({ title: "User's pick" }),
+    method: "PATCH",
+  });
+  // ...and a later publish carrying a sessionTitle must not clobber it
+  const res = await app.request(
+    "/api/snippets",
+    json({ html: "<p>2</p>", session: first.sessionId, sessionTitle: "Clobber attempt" }),
+  );
+  assert.equal(res.status, 201);
+  const sessions = (await (await app.request("/api/sessions")).json()) as any;
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].title, "User's pick");
+});
+
 test("publish into unknown session 404s instead of silently creating", async () => {
   const app = makeApp();
   const res = await app.request("/api/snippets", json({ html: "<p>x</p>", session: "nope" }));
@@ -235,6 +270,39 @@ test("mcp endpoint: initialize, tools/list, publish round trip", async () => {
   assert.equal(fb.comments.length, 1);
   assert.equal(fb.comments[0].text, "nice");
   assert.ok(fb.lastSeq > 0);
+});
+
+test("mcp publish_snippet honors sessionTitle on first publish only", async () => {
+  const app = makeApp();
+  const published = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "publish_snippet",
+        arguments: { title: "One", html: "<p>1</p>", sessionTitle: "Cache design" },
+      }),
+    )
+  ).json()) as any;
+  const payload = JSON.parse(published.result.content[0].text);
+  const sessions = (await (await app.request("/api/sessions")).json()) as any;
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].title, "Cache design");
+
+  // publishing into the existing session with another sessionTitle is a no-op
+  await app.request(
+    "/mcp",
+    mcpCall(2, "tools/call", {
+      name: "publish_snippet",
+      arguments: {
+        title: "Two",
+        html: "<p>2</p>",
+        session: payload.sessionId,
+        sessionTitle: "Other",
+      },
+    }),
+  );
+  const after = (await (await app.request("/api/sessions")).json()) as any;
+  assert.equal(after[0].title, "Cache design");
 });
 
 test("mcp endpoint: unknown method and unknown tool", async () => {
