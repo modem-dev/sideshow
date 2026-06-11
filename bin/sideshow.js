@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
-import { dirname, join } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir, userInfo } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -34,6 +34,10 @@ usage:
   sideshow demo                           seed two example sessions to explore the viewer
   sideshow guide                          print the design contract for snippets
   sideshow setup                          print the AGENTS.md integration block
+  sideshow skill path                     print the packaged skill directory
+  sideshow skill install [options]        install the skill for an agent
+      --target <dir>    skills root (default ~/.claude/skills)
+      --force           overwrite an existing sideshow skill
   sideshow mcp                            run the stdio MCP server (for agent configs)
 
 environment:
@@ -165,6 +169,16 @@ function out(value) {
   console.log(JSON.stringify(value, null, 2));
 }
 
+function expandHome(path) {
+  if (path === "~") return homedir();
+  if (path.startsWith("~/")) return join(homedir(), path.slice(2));
+  return path;
+}
+
+function skillPath() {
+  return join(ROOT, "skills", "sideshow");
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 
 // Development checkouts run TypeScript directly (Node strips types), but Node
@@ -177,10 +191,14 @@ function entrypoint(...parts) {
 
 const commands = {
   async serve() {
-    const { values: flags } = parseArgs({
+    const { values: flags, positionals } = parseArgs({
       args: rest,
+      allowPositionals: true,
       options: { port: { type: "string" }, open: { type: "boolean" } },
     });
+    if (positionals.length > 0 && positionals[0] !== "#") {
+      fail(`unexpected argument "${positionals[0]}" — run "sideshow help"`);
+    }
     const port = flags.port ?? process.env.PORT ?? "4242";
     const child = spawn(process.execPath, [entrypoint("server", "index.ts")], {
       stdio: "inherit",
@@ -350,6 +368,35 @@ const commands = {
       }
     }
     console.log(`Seeded ${DEMO_SESSIONS.length} demo sessions — open ${BASE} to look around.`);
+  },
+
+  async skill() {
+    const [subcmd, ...skillRest] = rest;
+    if (subcmd === "path") {
+      const source = skillPath();
+      if (!existsSync(source)) fail(`packaged skill not found at ${source}`);
+      console.log(source);
+      return;
+    }
+    if (subcmd === "install") {
+      const { values: flags } = parseArgs({
+        args: skillRest,
+        options: { target: { type: "string" }, force: { type: "boolean" } },
+      });
+      const source = skillPath();
+      if (!existsSync(source)) fail(`packaged skill not found at ${source}`);
+      const targetRoot = resolve(expandHome(flags.target ?? "~/.claude/skills"));
+      const target = join(targetRoot, "sideshow");
+      if (existsSync(target) && !flags.force) {
+        fail(`skill already exists at ${target} — pass --force to overwrite`);
+      }
+      mkdirSync(targetRoot, { recursive: true });
+      rmSync(target, { recursive: true, force: true });
+      cpSync(source, target, { recursive: true });
+      out({ installed: true, path: target });
+      return;
+    }
+    fail("usage: sideshow skill path | sideshow skill install [--target <dir>] [--force]");
   },
 
   async guide() {
