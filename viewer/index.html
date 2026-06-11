@@ -98,6 +98,10 @@
       .sess:hover {
         background: var(--hover);
       }
+      .sess:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
       .sess.sel {
         background: var(--surface);
         box-shadow: 0 0 0 0.5px var(--border);
@@ -132,7 +136,7 @@
         position: absolute;
         top: 8px;
         right: 6px;
-        display: none;
+        opacity: 0;
         border: none;
         background: none;
         color: var(--faint);
@@ -142,10 +146,12 @@
         border-radius: 5px;
         font-family: inherit;
       }
-      .sess:hover .x {
-        display: block;
+      .sess:hover .x,
+      .sess:focus-within .x {
+        opacity: 1;
       }
-      .sess:hover .dot {
+      .sess:hover .dot,
+      .sess:focus-within .dot {
         display: none;
       }
       .sess .x:hover {
@@ -259,7 +265,8 @@
         opacity: 0;
         transition: opacity 0.15s;
       }
-      .card:hover .act {
+      .card:hover .act,
+      .card:focus-within .act {
         opacity: 1;
       }
       .card-head .act:hover {
@@ -459,14 +466,20 @@
         </div>
         <div id="sessionView" hidden>
           <div class="session-head">
-            <span id="sessTitle" contenteditable="true" spellcheck="false"></span>
+            <span
+              id="sessTitle"
+              contenteditable="true"
+              spellcheck="false"
+              role="textbox"
+              aria-label="Session title"
+            ></span>
             <span class="meta" id="sessMeta"></span>
           </div>
           <div id="stream"></div>
         </div>
       </main>
     </div>
-    <div id="toast"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
     <script>
       const $ = (id) => document.getElementById(id);
       const state = {
@@ -511,6 +524,13 @@
 
       function renderSidebar() {
         const list = $("sessionList");
+        // re-renders replace the rows wholesale; put keyboard focus back where it was
+        const focused = list.contains(document.activeElement)
+          ? {
+              id: document.activeElement.closest(".sess")?.dataset.id,
+              x: document.activeElement.classList.contains("x"),
+            }
+          : null;
         list.replaceChildren();
         for (const s of state.sessions) {
           const el = document.createElement("div");
@@ -518,7 +538,17 @@
             "sess" +
             (s.id === state.selected ? " sel" : "") +
             (state.unread.has(s.id) ? " unread" : "");
+          el.dataset.id = s.id;
+          el.setAttribute("role", "button");
+          el.tabIndex = 0;
+          if (s.id === state.selected) el.setAttribute("aria-current", "true");
           el.onclick = () => select(s.id);
+          el.onkeydown = (e) => {
+            if (e.target === el && (e.key === "Enter" || e.key === " ")) {
+              e.preventDefault();
+              select(s.id);
+            }
+          };
 
           const title = document.createElement("div");
           title.className = "sess-title";
@@ -532,6 +562,7 @@
           x.className = "x";
           x.textContent = "✕";
           x.title = "Delete session";
+          x.setAttribute("aria-label", `Delete session "${sessionLabel(s)}"`);
           x.onclick = async (e) => {
             e.stopPropagation();
             if (!confirm(`Delete "${sessionLabel(s)}" and its snippets?`)) return;
@@ -539,6 +570,10 @@
           };
           el.append(title, meta, dot, x);
           list.appendChild(el);
+        }
+        if (focused?.id) {
+          const row = list.querySelector(`.sess[data-id="${CSS.escape(focused.id)}"]`);
+          if (row) (focused.x ? row.querySelector(".x") : row).focus();
         }
         $("onboard").hidden = state.sessions.length > 0;
         $("sessionView").hidden = state.sessions.length === 0;
@@ -573,6 +608,10 @@
         titleEl.onkeydown = (e) => {
           if (e.key === "Enter") {
             e.preventDefault();
+            titleEl.blur();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            titleEl.textContent = sessionLabel(s);
             titleEl.blur();
           }
         };
@@ -721,6 +760,7 @@
         }
 
         const iframe = card.querySelector("iframe");
+        iframe.title = s.title;
         const src = `/s/${s.id}?cb=${s.version}`;
         if (iframe.getAttribute("src") !== src) iframe.src = src;
 
