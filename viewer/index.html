@@ -338,6 +338,25 @@
         color: var(--text);
         background: var(--hover);
       }
+      .cmt.pending {
+        opacity: 0.55;
+      }
+      #newPill {
+        position: fixed;
+        left: 50%;
+        bottom: 64px;
+        transform: translateX(-50%);
+        font-family: inherit;
+        font-size: 12.5px;
+        color: var(--accent);
+        background: var(--accent-bg);
+        border: 0.5px solid var(--accent);
+        border-radius: 999px;
+        padding: 6px 14px;
+        cursor: pointer;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+        z-index: 40;
+      }
 
       .empty {
         text-align: center;
@@ -467,6 +486,7 @@
       </main>
     </div>
     <div id="toast"></div>
+    <button id="newPill" hidden>new snippet ↓</button>
     <script>
       const $ = (id) => document.getElementById(id);
       const state = {
@@ -542,6 +562,7 @@
         }
         $("onboard").hidden = state.sessions.length > 0;
         $("sessionView").hidden = state.sessions.length === 0;
+        document.title = state.unread.size ? `(${state.unread.size}) sideshow` : "sideshow";
       }
 
       async function refreshSessions() {
@@ -582,6 +603,7 @@
       async function select(id) {
         state.selected = id;
         state.unread.delete(id);
+        $("newPill").hidden = true;
         renderSidebar();
         renderSessionHead();
         const stream = $("stream");
@@ -621,21 +643,48 @@
             <button>Send</button>
           </div>
         </div>`;
+        wireComposer(card, (text) => ({ session: state.selected, text, author: "user" }));
+        $("stream").appendChild(card);
+      }
+
+      // Shared composer behavior: echo the comment immediately (pending until
+      // the POST confirms), and on failure put the text back in the input —
+      // a user message must never be silently lost.
+      function wireComposer(card, makeBody) {
         const input = card.querySelector(".composer input");
         const send = async () => {
           const text = input.value.trim();
           if (!text) return;
           input.value = "";
-          await api("/api/comments", {
-            method: "POST",
-            body: JSON.stringify({ session: state.selected, text, author: "user" }),
-          });
+          const el = renderComment(
+            { author: "user", text, createdAt: new Date().toISOString() },
+            card,
+          );
+          el?.classList.add("pending");
+          try {
+            const created = await api("/api/comments", {
+              method: "POST",
+              body: JSON.stringify(makeBody(text)),
+            });
+            // the SSE refetch may have rendered it already; keep one copy
+            if (card.querySelector(`[data-cid="${created.id}"]`)) el?.remove();
+            else if (el) {
+              el.dataset.cid = created.id;
+              el.classList.remove("pending");
+            }
+          } catch (err) {
+            el?.remove();
+            if (!input.value) input.value = text;
+            input.focus();
+            toast(
+              `Couldn't send — ${err.message || "network error"}. Your message is back in the box.`,
+            );
+          }
         };
         input.onkeydown = (e) => {
           if (e.key === "Enter") send();
         };
         card.querySelector(".composer button").onclick = send;
-        $("stream").appendChild(card);
       }
 
       // --- snippet cards ---
@@ -667,20 +716,7 @@
             <button>Send</button>
           </div>
         </div>`;
-          const input = card.querySelector(".composer input");
-          const send = async () => {
-            const text = input.value.trim();
-            if (!text) return;
-            input.value = "";
-            await api("/api/comments", {
-              method: "POST",
-              body: JSON.stringify({ snippet: s.id, text, author: "user" }),
-            });
-          };
-          input.onkeydown = (e) => {
-            if (e.key === "Enter") send();
-          };
-          card.querySelector(".composer button").onclick = send;
+          wireComposer(card, (text) => ({ snippet: s.id, text, author: "user" }));
           card.querySelector(".del").onclick = async () => {
             if (
               confirm(`Delete "${state.cards.get(s.id).querySelector(".card-title").textContent}"?`)
@@ -724,17 +760,34 @@
         const src = `/s/${s.id}?cb=${s.version}`;
         if (iframe.getAttribute("src") !== src) iframe.src = src;
 
-        if (fresh && scroll) card.scrollIntoView({ behavior: "smooth", block: "start" });
+        // Follow new snippets only when the user is already at the bottom;
+        // never yank them away from whatever they're reading mid-scroll.
+        if (fresh && scroll) {
+          if (nearBottom()) card.scrollIntoView({ behavior: "smooth", block: "start" });
+          else showNewPill(s.id);
+        }
       }
 
-      function renderComment(c) {
-        const card = c.snippetId ? state.cards.get(c.snippetId) : $("sessionThread");
-        if (!card) return;
+      function nearBottom() {
+        const m = document.querySelector("main");
+        return m.scrollHeight - m.scrollTop - m.clientHeight < 200;
+      }
+
+      function showNewPill(snippetId) {
+        const pill = $("newPill");
+        pill.dataset.target = snippetId;
+        pill.hidden = false;
+      }
+
+      function renderComment(c, targetCard) {
+        const card =
+          targetCard || (c.snippetId ? state.cards.get(c.snippetId) : $("sessionThread"));
+        if (!card) return null;
         const cmts = card.querySelector(".cmts");
-        if (cmts.querySelector(`[data-cid="${c.id}"]`)) return;
+        if (c.id && cmts.querySelector(`[data-cid="${c.id}"]`)) return null;
         const el = document.createElement("div");
         el.className = "cmt" + (c.author === "user" ? " user" : "");
-        el.dataset.cid = c.id;
+        if (c.id) el.dataset.cid = c.id;
         const who = document.createElement("span");
         who.className = "who";
         who.textContent = c.author === "user" ? "you" : c.author;
@@ -746,6 +799,7 @@
         when.textContent = relTime(c.createdAt);
         el.append(who, txt, when);
         cmts.appendChild(el);
+        return el;
       }
 
       // --- bridge messages from sandboxed snippets ---
@@ -778,31 +832,61 @@
 
       function connect() {
         const es = new EventSource("/api/events");
-        es.onopen = () => $("live").classList.add("on");
+        let everConnected = false;
+        es.onopen = async () => {
+          $("live").classList.add("on");
+          // events that fired during a gap are gone for good — refetch so the
+          // board can't silently go stale while still looking live
+          if (everConnected) await resyncSelected();
+          everConnected = true;
+        };
         es.onerror = () => $("live").classList.remove("on");
         es.onmessage = async (ev) => {
           const e = JSON.parse(ev.data);
+          // activity the user isn't looking at — other session or hidden tab —
+          // marks the session unread, which also badges the tab title
+          const away = e.sessionId && (e.sessionId !== state.selected || document.hidden);
           if (e.type.startsWith("session-")) {
             await refreshSessions();
           } else if (e.type === "snippet-created" || e.type === "snippet-updated") {
+            if (away) state.unread.add(e.sessionId);
             if (e.sessionId === state.selected) await upsertCard(e.id);
-            else state.unread.add(e.sessionId);
             await refreshSessionsQuiet();
           } else if (e.type === "snippet-deleted") {
             state.cards.get(e.id)?.remove();
             state.cards.delete(e.id);
             await refreshSessionsQuiet();
           } else if (e.type === "comment-created") {
+            if (away) state.unread.add(e.sessionId);
             if (e.sessionId === state.selected) {
               const query = e.snippetId ? `snippet=${e.snippetId}` : `session=${e.sessionId}`;
               const { comments } = await api(`/api/comments?${query}`);
               for (const c of comments) renderComment(c);
-            } else {
-              state.unread.add(e.sessionId);
-              renderSidebar();
             }
+            renderSidebar();
           }
         };
+      }
+
+      // Re-fetch the selected session's snippets and comments after an SSE
+      // reconnect; cards reconcile by id and comments dedupe by data-cid.
+      async function resyncSelected() {
+        const before = state.selected;
+        await refreshSessions();
+        if (!state.selected || state.selected !== before) return; // select() rebuilt the stream
+        const snippets = await api(`/api/sessions/${state.selected}/snippets`).catch(() => []);
+        const ids = new Set(snippets.map((s) => s.id));
+        for (const [id, card] of [...state.cards]) {
+          if (!ids.has(id)) {
+            card.remove();
+            state.cards.delete(id);
+          }
+        }
+        for (const meta of snippets) await upsertCard(meta.id, { scroll: false });
+        const { comments } = await api(`/api/comments?session=${state.selected}`).catch(() => ({
+          comments: [],
+        }));
+        for (const c of comments) renderComment(c);
       }
 
       async function refreshSessionsQuiet() {
@@ -822,6 +906,27 @@
           setTimeout(() => (e.target.textContent = "copy"), 1500);
         };
       }
+
+      $("newPill").onclick = () => {
+        const card = state.cards.get($("newPill").dataset.target);
+        card?.scrollIntoView({ behavior: "smooth", block: "start" });
+        $("newPill").hidden = true;
+      };
+      document.querySelector("main").addEventListener(
+        "scroll",
+        () => {
+          if (nearBottom()) $("newPill").hidden = true;
+        },
+        { passive: true },
+      );
+
+      // returning to the tab counts as seeing the selected session
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && state.selected) {
+          state.unread.delete(state.selected);
+          renderSidebar();
+        }
+      });
 
       setInterval(() => {
         if (state.sessions.length > 0) refreshSessionsQuiet();

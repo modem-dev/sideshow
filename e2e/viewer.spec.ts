@@ -86,6 +86,103 @@ test("session thread shows snippet-less comments and messages the agent", async 
   await expect(page.locator("#stream > .card")).toHaveCount(3);
 });
 
+test("a failed comment send restores the input instead of losing the message", async ({
+  page,
+  server,
+}) => {
+  await publish(server.url, { html: "<p>x</p>", title: "Doc", agent: "e2e" });
+
+  await page.goto(server.url);
+  const card = page.locator(".card:not(#sessionThread)");
+  await page.route("**/api/comments", (route) =>
+    route.request().method() === "POST" ? route.abort() : route.fallback(),
+  );
+
+  const input = card.locator(".composer input");
+  await input.fill("important feedback");
+  await input.press("Enter");
+
+  await expect(page.locator("#toast")).toContainText("Couldn't send");
+  await expect(input).toHaveValue("important feedback");
+  await expect(card.locator(".cmt")).toHaveCount(0);
+
+  // and once the network is back, the same send goes through
+  await page.unroute("**/api/comments");
+  await input.press("Enter");
+  await expect(card.locator(".cmt .txt")).toHaveText("important feedback");
+});
+
+test("a comment echoes immediately, before the SSE round-trip confirms it", async ({
+  page,
+  server,
+}) => {
+  await publish(server.url, { html: "<p>x</p>", title: "Doc", agent: "e2e" });
+
+  await page.goto(server.url);
+  const card = page.locator(".card:not(#sessionThread)");
+  // hold the POST open so only the optimistic echo can render
+  await page.route("**/api/comments", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.continue();
+  });
+
+  const input = card.locator(".composer input");
+  await input.fill("instant echo");
+  await input.press("Enter");
+
+  const cmt = card.locator(".cmt");
+  await expect(cmt).toHaveClass(/pending/);
+  await expect(cmt.locator(".txt")).toHaveText("instant echo");
+  // settles into a confirmed comment, still exactly one copy
+  await expect(cmt).not.toHaveClass(/pending/, { timeout: 10_000 });
+  await expect(card.locator(".cmt")).toHaveCount(1);
+});
+
+test("a snippet published while scrolled up shows a pill instead of yanking", async ({
+  page,
+  server,
+}) => {
+  const first = await publish(server.url, {
+    html: '<div style="height: 1400px">tall content</div>',
+    title: "Tall",
+    agent: "e2e",
+  });
+
+  await page.goto(server.url);
+  const main = page.locator("main");
+  // wait for the bridge to grow the iframe so the stream actually overflows
+  await expect
+    .poll(() => main.evaluate((m) => m.scrollHeight - m.clientHeight), { timeout: 15_000 })
+    .toBeGreaterThan(400);
+  await main.evaluate((m) => (m.scrollTop = 0));
+
+  await publish(server.url, { html: "<p>new</p>", title: "Later", session: first.sessionId });
+
+  await expect(page.locator("#newPill")).toBeVisible();
+  expect(await main.evaluate((m) => m.scrollTop)).toBe(0); // reading position kept
+
+  await page.locator("#newPill").click();
+  await expect(page.locator("#newPill")).toBeHidden();
+  await expect.poll(() => main.evaluate((m) => m.scrollTop)).toBeGreaterThan(200);
+});
+
+test("activity in an unselected session badges the tab title until viewed", async ({
+  page,
+  server,
+}) => {
+  await publish(server.url, { html: "<p>a</p>", title: "First", agent: "one" });
+
+  await page.goto(server.url);
+  await expect(page).toHaveTitle("sideshow");
+
+  await publish(server.url, { html: "<p>b</p>", title: "Second", agent: "two" });
+
+  await expect(page).toHaveTitle("(1) sideshow");
+  await page.locator(".sess", { hasText: "two" }).click();
+  await expect(page).toHaveTitle("sideshow");
+});
+
 test("version select appears live after an update", async ({ page, server }) => {
   const snippet = await publish(server.url, { html: "<p>v1</p>", title: "Doc", agent: "e2e" });
 
