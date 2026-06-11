@@ -39,11 +39,34 @@ export interface CommentWait {
   waitSeconds: number;
 }
 
+// Lean comment shape attached to agent-facing responses.
+export const feedbackView = (c: Comment) => ({
+  snippetId: c.snippetId,
+  snippetTitle: c.snippetTitle,
+  text: c.text,
+  at: c.createdAt,
+});
+
+export type Feedback = ReturnType<typeof feedbackView>;
+
 export function createApp({ store, viewerHtml, guideMarkdown, setupText, authToken }: AppOptions) {
   const app = new Hono();
   const bus = new EventBus();
 
   // --- shared flows (used by both the REST API and the MCP endpoint) ---
+
+  // User comments the agent has not seen yet ride along on its next write, so
+  // agents hear feedback without blocking on the long-poll. The cursor also
+  // advances past the agent's own comments to keep reads cheap.
+  async function collectFeedback(sessionId: string): Promise<Feedback[] | undefined> {
+    const session = await store.getSession(sessionId);
+    if (!session) return undefined;
+    const fresh = await store.listComments({ sessionId, afterSeq: session.agentSeq });
+    if (fresh.length === 0) return undefined;
+    await store.markAgentSeen(sessionId, fresh[fresh.length - 1].seq);
+    const feedback = fresh.filter((cm) => cm.author === "user");
+    return feedback.length > 0 ? feedback.map(feedbackView) : undefined;
+  }
 
   async function publishSnippet(input: {
     html: string;
@@ -51,7 +74,9 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
     session?: string;
     agent?: string;
     cwd?: string;
-  }): Promise<{ snippet: Snippet } | { error: string; status: 404 | 413 }> {
+  }): Promise<
+    { snippet: Snippet; userFeedback?: Feedback[] } | { error: string; status: 404 | 413 }
+  > {
     if (input.html.length > MAX_HTML_BYTES) {
       return { error: `html exceeds ${MAX_HTML_BYTES} bytes`, status: 413 };
     }
@@ -71,13 +96,15 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
     });
     if (!snippet) return { error: "session not found", status: 404 };
     bus.broadcast({ type: "snippet-created", id: snippet.id, sessionId, version: 1 });
-    return { snippet };
+    return { snippet, userFeedback: await collectFeedback(sessionId) };
   }
 
   async function reviseSnippet(
     id: string,
     patch: { html?: string; title?: string },
-  ): Promise<{ snippet: Snippet } | { error: string; status: 404 | 413 }> {
+  ): Promise<
+    { snippet: Snippet; userFeedback?: Feedback[] } | { error: string; status: 404 | 413 }
+  > {
     if (typeof patch.html === "string" && patch.html.length > MAX_HTML_BYTES) {
       return { error: `html exceeds ${MAX_HTML_BYTES} bytes`, status: 413 };
     }
@@ -89,7 +116,7 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
       sessionId: snippet.sessionId,
       version: snippet.version,
     });
-    return { snippet };
+    return { snippet, userFeedback: await collectFeedback(snippet.sessionId) };
   }
 
   async function createComment(input: {
@@ -97,7 +124,9 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
     snippet?: string;
     session?: string;
     author: string;
-  }): Promise<{ comment: Comment } | { error: string; status: 400 | 404 }> {
+  }): Promise<
+    { comment: Comment; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 }
+  > {
     let sessionId = input.session;
     if (input.snippet) {
       const snippet = await store.getSnippet(input.snippet);
@@ -119,7 +148,11 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
       snippetId: comment.snippetId,
       seq: comment.seq,
     });
-    return { comment };
+    // agent replies are writes too — piggyback pending feedback on them, but
+    // never on the user's own comments
+    const userFeedback =
+      input.author === "user" ? undefined : await collectFeedback(comment.sessionId);
+    return { comment, userFeedback };
   }
 
   // Long-poll: resolves as soon as a matching comment lands, or at timeout.
@@ -150,6 +183,11 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
       comments = matches(await store.listComments(query));
     }
     const lastSeq = comments.length > 0 ? comments[comments.length - 1].seq : (q.afterSeq ?? 0);
+    // An author=user query is the agent listening (the viewer never filters by
+    // author) — what it receives here should not be re-delivered as piggyback.
+    if (q.author === "user" && q.sessionId && comments.length > 0) {
+      await store.markAgentSeen(q.sessionId, lastSeq);
+    }
     return { comments, lastSeq };
   }
 
@@ -257,7 +295,13 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
       cwd: typeof body.cwd === "string" ? body.cwd : undefined,
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
-    return c.json(snippetMeta(result.snippet), 201);
+    return c.json(
+      {
+        ...snippetMeta(result.snippet),
+        ...(result.userFeedback && { userFeedback: result.userFeedback }),
+      },
+      201,
+    );
   });
 
   app.put("/api/snippets/:id", async (c) => {
@@ -268,7 +312,10 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
       title: typeof body.title === "string" ? body.title : undefined,
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
-    return c.json(snippetMeta(result.snippet));
+    return c.json({
+      ...snippetMeta(result.snippet),
+      ...(result.userFeedback && { userFeedback: result.userFeedback }),
+    });
   });
 
   app.delete("/api/snippets/:id", async (c) => {
@@ -293,7 +340,10 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
       author: typeof body.author === "string" ? body.author : "user",
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
-    return c.json(result.comment, 201);
+    return c.json(
+      { ...result.comment, ...(result.userFeedback && { userFeedback: result.userFeedback }) },
+      201,
+    );
   });
 
   // Long-poll friendly: ?wait=N holds the request open up to N seconds until

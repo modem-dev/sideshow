@@ -23,8 +23,11 @@ test("JsonFileStore: data survives a reload from disk", async () => {
     text: "hi",
   });
 
+  await store.markAgentSeen(session.id, 1);
+
   const reloaded = new JsonFileStore(path);
   assert.equal((await reloaded.getSession(session.id))?.title, "Persisted");
+  assert.equal((await reloaded.getSession(session.id))?.agentSeq, 1);
   const got = await reloaded.getSnippet(snippet?.id ?? "");
   assert.equal(got?.version, 2);
   assert.equal(got?.history.length, 1);

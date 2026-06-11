@@ -23,11 +23,23 @@ are kept and the user can flip between them.
 
 ## The feedback loop
 
-The user can type comments under any snippet. Poll or block on
-`wait_for_feedback` (MCP), `sideshow wait` (CLI), or the long-poll endpoint
-after publishing something that needs a reaction. You can answer in the thread
-with `reply_to_user` / `sideshow comment` — keep replies short; do substantial
-revisions as snippet updates instead.
+The user can type comments under any snippet, or in the session thread at the
+bottom of the stream. Feedback reaches you three ways:
+
+- **Piggyback (automatic).** Every publish/update/reply response may include a
+  `userFeedback` array — comments the user left since your last call. Treat
+  them as messages from the user; they are delivered once. You never need to
+  poll while you are actively publishing.
+- **Blocking wait.** `wait_for_feedback` (MCP), `sideshow wait` (CLI), or the
+  long-poll endpoint — use at a checkpoint when you explicitly want a reaction
+  before continuing.
+- **Background watch.** If your harness supports background processes, arm
+  `sideshow wait --timeout 600` in the background after your first publish and
+  keep working; when it exits with comments, handle them and re-arm. Always arm
+  it on the session you actually published to.
+
+You can answer in the thread with `reply_to_user` / `sideshow comment` — keep
+replies short; do substantial revisions as snippet updates instead.
 
 ## HTML contract
 

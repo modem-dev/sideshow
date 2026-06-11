@@ -67,6 +67,23 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     );
   });
 
+  contract("tracks the delivered-to-agent comment cursor", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    assert.equal(session.agentSeq, 0);
+
+    await store.markAgentSeen(session.id, 5);
+    assert.equal((await store.getSession(session.id))?.agentSeq, 5);
+
+    // never moves backwards
+    await store.markAgentSeen(session.id, 3);
+    assert.equal((await store.getSession(session.id))?.agentSeq, 5);
+    await store.markAgentSeen(session.id, 9);
+    assert.equal((await store.getSession(session.id))?.agentSeq, 9);
+
+    // unknown session is a no-op, not an error
+    await store.markAgentSeen("missing", 1);
+  });
+
   contract("removeSession returns false for unknown ids", async (store) => {
     assert.equal(await store.removeSession("missing"), false);
     const session = await store.createSession({ agent: "pi" });

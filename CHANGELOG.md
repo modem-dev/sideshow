@@ -8,6 +8,12 @@ All notable user-visible changes to this project are documented in this file.
 
 - A session thread at the bottom of each session in the viewer: a composer
   for messaging the agent without picking a snippet.
+- Feedback now reaches agents without polling: publish/update/reply responses
+  carry a `userFeedback` array with any comments the user left since the
+  agent's last call (delivered once; a consumed `wait` also counts as seen).
+- The design guide, setup block, and Claude Code skill teach the background
+  watch pattern: arm `sideshow wait` as a background process after publishing
+  and react when it exits, instead of blocking or polling.
 
 ### Changed
 

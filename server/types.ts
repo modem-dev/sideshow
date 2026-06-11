@@ -7,6 +7,9 @@ export interface Session {
   cwd: string | null;
   createdAt: string;
   lastActiveAt: string;
+  // Highest comment seq already delivered to the agent — lets responses to
+  // agent writes piggyback comments the agent has not seen yet.
+  agentSeq: number;
 }
 
 export interface SnippetVersion {
@@ -76,6 +79,8 @@ export interface Store {
   createSession(input: CreateSessionInput): Promise<Session>;
   renameSession(id: string, title: string): Promise<Session | null>;
   removeSession(id: string): Promise<boolean>;
+  // Advance the delivered-to-agent comment cursor (never moves backwards).
+  markAgentSeen(sessionId: string, seq: number): Promise<void>;
 
   listSnippets(sessionId?: string): Promise<Snippet[]>;
   getSnippet(id: string): Promise<Snippet | null>;

@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import type { CommentWait } from "./app.ts";
+import type { CommentWait, Feedback } from "./app.ts";
 import type { Comment, Snippet, Store } from "./types.ts";
 
 // Stateless MCP over streamable HTTP: every request is self-contained, which
@@ -13,16 +13,16 @@ export interface McpDeps {
     title?: string;
     session?: string;
     agent?: string;
-  }): Promise<{ snippet: Snippet } | { error: string; status: number }>;
+  }): Promise<{ snippet: Snippet; userFeedback?: Feedback[] } | { error: string; status: number }>;
   reviseSnippet(
     id: string,
     patch: { html?: string; title?: string },
-  ): Promise<{ snippet: Snippet } | { error: string; status: number }>;
+  ): Promise<{ snippet: Snippet; userFeedback?: Feedback[] } | { error: string; status: number }>;
   createComment(input: {
     text: string;
     snippet?: string;
     author: string;
-  }): Promise<{ comment: Comment } | { error: string; status: number }>;
+  }): Promise<{ comment: Comment; userFeedback?: Feedback[] } | { error: string; status: number }>;
   waitForComments(q: CommentWait): Promise<{ comments: Comment[]; lastSeq: number }>;
   guide: string;
 }
@@ -33,7 +33,9 @@ const INSTRUCTIONS =
   "publish — it defines the HTML contract. Your first publish_snippet creates a session and returns its " +
   "sessionId: pass it as `session` on every later call so your snippets stay grouped. The user can comment on " +
   "snippets in their browser; call wait_for_feedback (passing the lastSeq cursor from the previous result) " +
-  "after publishing something you want a reaction to.";
+  "after publishing something you want a reaction to. Any publish/update/reply result may also carry a " +
+  "userFeedback array — comments the user left since your last call. Treat them as messages from the user; " +
+  "they are delivered once.";
 
 const TOOLS = [
   {
@@ -41,7 +43,8 @@ const TOOLS = [
     description:
       "Publish an HTML snippet to the user's sideshow surface. Send a body fragment only (no " +
       "doctype/html/head/body). Returns the snippet id, view URL, and sessionId — pass sessionId as `session` " +
-      "on later calls. Call get_design_guide first if you have not this session.",
+      "on later calls. If the result includes userFeedback, those are new comments from the user — read them. " +
+      "Call get_design_guide first if you have not this session.",
     inputSchema: {
       type: "object",
       properties: {
@@ -66,7 +69,8 @@ const TOOLS = [
   {
     name: "update_snippet",
     description:
-      "Revise an existing snippet in place (same card, new version). Prefer this over publishing a near-duplicate.",
+      "Revise an existing snippet in place (same card, new version). Prefer this over publishing a " +
+      "near-duplicate. If the result includes userFeedback, those are new comments from the user — read them.",
     inputSchema: {
       type: "object",
       properties: {
@@ -146,7 +150,13 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         if ("error" in result) throw new Error(result.error);
         const s = result.snippet;
         return JSON.stringify(
-          { id: s.id, sessionId: s.sessionId, version: s.version, url: `${origin}/s/${s.id}` },
+          {
+            id: s.id,
+            sessionId: s.sessionId,
+            version: s.version,
+            url: `${origin}/s/${s.id}`,
+            ...(result.userFeedback && { userFeedback: result.userFeedback }),
+          },
           null,
           2,
         );
@@ -159,7 +169,13 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         if ("error" in result) throw new Error(result.error);
         const s = result.snippet;
         return JSON.stringify(
-          { id: s.id, sessionId: s.sessionId, version: s.version, url: `${origin}/s/${s.id}` },
+          {
+            id: s.id,
+            sessionId: s.sessionId,
+            version: s.version,
+            url: `${origin}/s/${s.id}`,
+            ...(result.userFeedback && { userFeedback: result.userFeedback }),
+          },
           null,
           2,
         );
@@ -199,7 +215,11 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           author: typeof args.author === "string" ? args.author : "agent",
         });
         if ("error" in result) throw new Error(result.error);
-        return JSON.stringify(result.comment, null, 2);
+        return JSON.stringify(
+          { ...result.comment, ...(result.userFeedback && { userFeedback: result.userFeedback }) },
+          null,
+          2,
+        );
       }
       case "list_snippets": {
         const snippets = await deps.store.listSnippets(

@@ -21,11 +21,20 @@ snippet instead of posting a new one:
     curl -s -X PUT http://localhost:4242/api/snippets/<id> \
       -H 'content-type: application/json' -d '{"html": "..."}'
 
-The user can comment on your snippets in their browser. Check for feedback
-(blocks up to 60s, returns JSON; use `after` from the previous response's
-`lastSeq` to avoid re-reading):
+The user can comment on your snippets in their browser. Feedback reaches you
+two ways:
 
-    curl -s 'http://localhost:4242/api/comments?session=<sessionId>&author=user&after=<lastSeq>&wait=60'
+1.  Publish/update responses may include a `userFeedback` array — comments the
+    user left since your last call. Treat them as messages from the user; they
+    are delivered once.
+2.  To explicitly wait for a reaction (blocks up to 60s, returns JSON; use
+    `after` from the previous response's `lastSeq` to avoid re-reading):
+
+        curl -s 'http://localhost:4242/api/comments?session=<sessionId>&author=user&after=<lastSeq>&wait=60'
+
+    If you can run background processes, run this in the background after your
+    first publish and keep working — it exits the moment the user comments;
+    handle the output and re-arm it.
 
 If the `sideshow` CLI is installed, these are equivalent and easier:
 `sideshow publish file.html --title "..."`, `sideshow wait`, `sideshow guide`

@@ -257,6 +257,110 @@ test("mcp endpoint requires bearer when token configured", async () => {
   assert.equal(ok.status, 200);
 });
 
+test("agent writes piggyback unseen user comments, delivered once", async () => {
+  const app = makeApp();
+  const s = (await (
+    await app.request("/api/snippets", json({ html: "<p>v1</p>", title: "Doc" }))
+  ).json()) as any;
+  assert.equal(s.userFeedback, undefined);
+
+  // the user comments while the agent works on something else
+  await app.request("/api/comments", json({ snippet: s.id, text: "wrong color", author: "user" }));
+  await app.request("/api/comments", json({ session: s.sessionId, text: "also add a key" }));
+
+  // the agent's next write carries the feedback
+  const updated = (await (
+    await app.request(`/api/snippets/${s.id}`, { ...json({ html: "<p>v2</p>" }), method: "PUT" })
+  ).json()) as any;
+  assert.deepEqual(
+    updated.userFeedback.map((f: any) => f.text),
+    ["wrong color", "also add a key"],
+  );
+  assert.equal(updated.userFeedback[0].snippetTitle, "Doc");
+
+  // delivered once — the next write is clean
+  const again = (await (
+    await app.request(`/api/snippets/${s.id}`, { ...json({ html: "<p>v3</p>" }), method: "PUT" })
+  ).json()) as any;
+  assert.equal(again.userFeedback, undefined);
+
+  // agent replies piggyback too; the user's own comments never do
+  await app.request("/api/comments", json({ snippet: s.id, text: "more", author: "user" }));
+  const userPost = (await (
+    await app.request("/api/comments", json({ snippet: s.id, text: "and more", author: "user" }))
+  ).json()) as any;
+  assert.equal(userPost.userFeedback, undefined);
+  const reply = (await (
+    await app.request("/api/comments", json({ snippet: s.id, text: "on it", author: "claude" }))
+  ).json()) as any;
+  assert.deepEqual(
+    reply.userFeedback.map((f: any) => f.text),
+    ["more", "and more"],
+  );
+});
+
+test("a consumed wait is not re-delivered as piggyback", async () => {
+  const app = makeApp();
+  const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
+  await app.request(
+    "/api/comments",
+    json({ snippet: s.id, text: "seen via wait", author: "user" }),
+  );
+
+  // the agent receives it through the long-poll...
+  const waited = (await (
+    await app.request(`/api/comments?session=${s.sessionId}&author=user`)
+  ).json()) as any;
+  assert.equal(waited.comments.length, 1);
+
+  // ...so the next write carries nothing
+  const updated = (await (
+    await app.request(`/api/snippets/${s.id}`, { ...json({ html: "<p>v2</p>" }), method: "PUT" })
+  ).json()) as any;
+  assert.equal(updated.userFeedback, undefined);
+
+  // the viewer's unfiltered reads do NOT consume the cursor
+  await app.request("/api/comments", json({ snippet: s.id, text: "fresh", author: "user" }));
+  await app.request(`/api/comments?session=${s.sessionId}`); // viewer-style read
+  const next = (await (
+    await app.request(`/api/snippets/${s.id}`, { ...json({ html: "<p>v3</p>" }), method: "PUT" })
+  ).json()) as any;
+  assert.deepEqual(
+    next.userFeedback.map((f: any) => f.text),
+    ["fresh"],
+  );
+});
+
+test("mcp publish result carries userFeedback", async () => {
+  const app = makeApp();
+  const published = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "publish_snippet",
+        arguments: { title: "One", html: "<p>1</p>", agent: "mcp-agent" },
+      }),
+    )
+  ).json()) as any;
+  const first = JSON.parse(published.result.content[0].text);
+  await app.request("/api/comments", json({ snippet: first.id, text: "neat", author: "user" }));
+
+  const second = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "publish_snippet",
+        arguments: { title: "Two", html: "<p>2</p>", session: first.sessionId },
+      }),
+    )
+  ).json()) as any;
+  const payload = JSON.parse(second.result.content[0].text);
+  assert.deepEqual(
+    payload.userFeedback.map((f: any) => f.text),
+    ["neat"],
+  );
+});
+
 test("rejects empty and oversized html", async () => {
   const app = makeApp();
   assert.equal((await app.request("/api/snippets", json({ html: "" }))).status, 400);

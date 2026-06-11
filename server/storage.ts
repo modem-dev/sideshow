@@ -42,7 +42,10 @@ export class JsonFileStore implements Store {
     try {
       const raw = await readFile(this.filePath, "utf8");
       const data = JSON.parse(raw) as FileShape;
-      for (const s of data.sessions ?? []) this.sessions.set(s.id, s);
+      // agentSeq arrived after 0.2.0 — default it for data files written before
+      for (const s of data.sessions ?? []) {
+        this.sessions.set(s.id, { ...s, agentSeq: s.agentSeq ?? 0 });
+      }
       for (const s of data.snippets ?? []) this.snippets.set(s.id, s);
       this.comments = data.comments ?? [];
       this.lastSeq = data.lastSeq ?? 0;
@@ -93,6 +96,7 @@ export class JsonFileStore implements Store {
       cwd: input.cwd ?? null,
       createdAt: now,
       lastActiveAt: now,
+      agentSeq: 0,
     };
     this.sessions.set(session.id, session);
     await this.persist();
@@ -122,6 +126,14 @@ export class JsonFileStore implements Store {
   private touch(sessionId: string) {
     const session = this.sessions.get(sessionId);
     if (session) session.lastActiveAt = new Date().toISOString();
+  }
+
+  async markAgentSeen(sessionId: string, seq: number) {
+    await this.load();
+    const session = this.sessions.get(sessionId);
+    if (!session || seq <= session.agentSeq) return;
+    session.agentSeq = seq;
+    await this.persist();
   }
 
   // --- snippets ---

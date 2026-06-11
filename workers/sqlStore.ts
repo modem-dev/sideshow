@@ -22,7 +22,8 @@ export class SqlStore implements Store {
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY, agent TEXT NOT NULL, title TEXT, cwd TEXT,
-        createdAt TEXT NOT NULL, lastActiveAt TEXT NOT NULL
+        createdAt TEXT NOT NULL, lastActiveAt TEXT NOT NULL,
+        agentSeq INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS snippets (
         id TEXT PRIMARY KEY, sessionId TEXT NOT NULL, title TEXT NOT NULL,
@@ -35,6 +36,12 @@ export class SqlStore implements Store {
         author TEXT NOT NULL, text TEXT NOT NULL, createdAt TEXT NOT NULL
       );
     `);
+    // Boards created before agentSeq existed need the column added; SQLite
+    // has no ADD COLUMN IF NOT EXISTS, so probe and patch.
+    const cols = this.sql.exec("SELECT name FROM pragma_table_info('sessions')").toArray();
+    if (!cols.some((c) => c.name === "agentSeq")) {
+      this.sql.exec("ALTER TABLE sessions ADD COLUMN agentSeq INTEGER NOT NULL DEFAULT 0");
+    }
   }
 
   private rowToSession(r: Record<string, SqlStorageValue>): Session {
@@ -45,6 +52,7 @@ export class SqlStore implements Store {
       cwd: (r.cwd as string) ?? null,
       createdAt: r.createdAt as string,
       lastActiveAt: r.lastActiveAt as string,
+      agentSeq: (r.agentSeq as number) ?? 0,
     };
   }
 
@@ -97,9 +105,10 @@ export class SqlStore implements Store {
       cwd: input.cwd ?? null,
       createdAt: now,
       lastActiveAt: now,
+      agentSeq: 0,
     };
     this.sql.exec(
-      "INSERT INTO sessions (id, agent, title, cwd, createdAt, lastActiveAt) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO sessions (id, agent, title, cwd, createdAt, lastActiveAt, agentSeq) VALUES (?, ?, ?, ?, ?, ?, 0)",
       session.id,
       session.agent,
       session.title,
@@ -131,6 +140,15 @@ export class SqlStore implements Store {
       "UPDATE sessions SET lastActiveAt = ? WHERE id = ?",
       new Date().toISOString(),
       sessionId,
+    );
+  }
+
+  async markAgentSeen(sessionId: string, seq: number) {
+    this.sql.exec(
+      "UPDATE sessions SET agentSeq = ? WHERE id = ? AND agentSeq < ?",
+      seq,
+      sessionId,
+      seq,
     );
   }
 

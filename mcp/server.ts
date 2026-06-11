@@ -58,7 +58,8 @@ const server = new McpServer(
       "concepts, sketch UI ideas, or visualize data while you work. Call get_design_guide once before your first " +
       "publish — it defines the HTML contract. Your snippets are grouped into one session for this conversation. " +
       "The user can comment on snippets in their browser; check with wait_for_feedback after publishing something " +
-      "you want a reaction to.",
+      "you want a reaction to. Any publish/update/reply result may also carry a userFeedback array — comments " +
+      "the user left since your last call. Treat them as messages from the user; they are delivered once.",
   },
 );
 
@@ -67,8 +68,9 @@ server.registerTool(
   {
     description:
       "Publish an HTML snippet to the user's sideshow surface. Send a body fragment only (no " +
-      "doctype/html/head/body). Returns the snippet id and view URL. Call get_design_guide first if you have " +
-      "not this session.",
+      "doctype/html/head/body). Returns the snippet id and view URL. If the result includes userFeedback, " +
+      "those are new comments from the user — read them. Call get_design_guide first if you have not this " +
+      "session.",
     inputSchema: {
       title: z.string().describe("Short human-readable title shown above the snippet"),
       html: z.string().describe("HTML body fragment to render"),
@@ -90,7 +92,8 @@ server.registerTool(
   "update_snippet",
   {
     description:
-      "Revise an existing snippet in place (same card, new version). Prefer this over publishing a near-duplicate.",
+      "Revise an existing snippet in place (same card, new version). Prefer this over publishing a " +
+      "near-duplicate. If the result includes userFeedback, those are new comments from the user — read them.",
     inputSchema: {
       id: z.string().describe("Snippet id returned by publish_snippet"),
       html: z.string().optional().describe("Replacement HTML body fragment"),

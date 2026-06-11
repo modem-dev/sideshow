@@ -43,15 +43,28 @@ Rules of thumb:
 
 ## The feedback loop
 
-After publishing something that needs a reaction:
+Feedback reaches you three ways — prefer them in this order:
 
-```sh
-sideshow wait --timeout 120   # blocks until the user comments, prints JSON
-```
+1. **Piggyback (no action needed).** Publish/update/reply responses may
+   include a `userFeedback` array: comments the user left since your last
+   call, delivered once. Read them whenever they appear and treat them as
+   user instructions.
+2. **Background watch (don't block, don't poll).** After your first publish,
+   arm a listener as a background process and keep working:
 
-Treat returned comments as user instructions. Acknowledge briefly with
-`sideshow comment "..." --snippet <id>` when useful; do substantial changes
-as snippet updates.
+   ```sh
+   sideshow wait --timeout 600   # run in the background (e.g. run_in_background)
+   ```
+
+   It exits the moment the user comments, which surfaces the output to you.
+   Handle the comments, then re-arm it. Always arm it on the session you just
+   published to — never a guessed one.
+
+3. **Blocking wait.** Only when you explicitly need a reaction before
+   continuing: `sideshow wait --timeout 120` in the foreground.
+
+Acknowledge briefly with `sideshow comment "..." --snippet <id>` when useful;
+do substantial changes as snippet updates.
 
 ## Remote surfaces
 
