@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { readFile } from "node:fs/promises";
+import { homedir, platform } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp } from "./app.ts";
@@ -17,8 +18,18 @@ const [viewerHtml, guideMarkdown, setupText] = await Promise.all([
   readFile(join(root, "guide", "AGENT_SETUP.md"), "utf8"),
 ]);
 
+function defaultDataFile() {
+  if (process.env.SIDESHOW_DATA) return process.env.SIDESHOW_DATA;
+  if (process.env.XDG_DATA_HOME)
+    return join(process.env.XDG_DATA_HOME, "sideshow", "sideshow.json");
+  if (platform() === "darwin") {
+    return join(homedir(), "Library", "Application Support", "sideshow", "sideshow.json");
+  }
+  return join(homedir(), ".local", "share", "sideshow", "sideshow.json");
+}
+
 const app = createApp({
-  store: new JsonFileStore(process.env.SIDESHOW_DATA ?? join(root, "data", "sideshow.json")),
+  store: new JsonFileStore(defaultDataFile()),
   viewerHtml,
   guideMarkdown,
   setupText,

@@ -41,6 +41,14 @@ curl -s http://localhost:4242/setup >> AGENTS.md
 
 That block teaches any agent with a shell tool (pi, opencode, amp, codex,
 Claude Code) how to publish snippets and poll for your comments using curl.
+For agents that support skills, install the packaged sideshow workflow from
+npm:
+
+```sh
+npx -y sideshow skill install
+# or choose a skills root explicitly:
+npx -y sideshow skill install --target ~/.pi/agent/skills
+```
 
 No agent handy? `npx sideshow demo` seeds two example sessions so you can
 look around the viewer.
@@ -71,10 +79,17 @@ Use whichever the agent supports:
    `GET /api/comments?wait=60` for long-polling. Documented at `/guide`.
 
 Agents that connect over MCP get usage instructions automatically. For
-everything else there is the `/setup` block above, and Claude Code users can
-optionally install the skill in `skills/sideshow/`
-(`cp -r skills/sideshow ~/.claude/skills/`), which adds workflow guidance for
-illustration requests.
+everything else there is the `/setup` block above. Agents with skill support can
+install the packaged workflow guidance directly from npm:
+
+```sh
+npx -y sideshow skill install                 # defaults to ~/.claude/skills
+npx -y sideshow skill install --target ~/.pi/agent/skills
+cp -r "$(npx -y sideshow skill path)" ~/.claude/skills/
+```
+
+The skill teaches the realtime publish → wait for feedback → update loop, plus
+MCP and CLI recovery details.
 
 ## Concepts
 
@@ -123,6 +138,9 @@ the CLI and stdio MCP pick them up automatically:
 export SIDESHOW_URL=https://sideshow.<account>.workers.dev
 export SIDESHOW_TOKEN=<token>
 ```
+
+Use `SIDESHOW_AGENT` to name sessions created by an agent and
+`SIDESHOW_SESSION` to force later CLI publishes into a known session.
 
 Remote agents can also connect MCP straight to the deployment:
 

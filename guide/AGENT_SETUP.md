@@ -28,10 +28,19 @@ The user can comment on your snippets in their browser. Check for feedback
     curl -s 'http://localhost:4242/api/comments?session=<sessionId>&author=user&after=<lastSeq>&wait=60'
 
 If the `sideshow` CLI is installed, these are equivalent and easier:
-`sideshow publish file.html --title "..."`, `sideshow wait`, `sideshow guide`
-(session handling is automatic).
+`sideshow publish file.html --title "..."`, `sideshow update <id> file.html`,
+`sideshow wait`, `sideshow list --all`, `sideshow sessions`, `sideshow guide`
+(session handling is automatic). `sideshow guide` also works without a running
+server by falling back to the packaged guide.
 
 If this surface is a deployed instance that requires a token, add
 `-H "Authorization: Bearer $SIDESHOW_TOKEN"` to every curl call — or set
 `SIDESHOW_URL` and `SIDESHOW_TOKEN` in your environment and use the CLI,
-which sends them automatically.
+which sends them automatically. The browser viewer must be opened once as
+`/?key=<token>` to set its cookie.
+
+For agents with skill support, users can install the packaged workflow guide
+from npm:
+
+    npx -y sideshow skill install
+    npx -y sideshow skill install --target ~/.pi/agent/skills

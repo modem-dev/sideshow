@@ -9,10 +9,20 @@ All notable user-visible changes to this project are documented in this file.
 - `sideshow demo` seeds two example sessions (a sequence diagram with a
   comment thread, an interactive explainer, a metrics card) so the viewer can
   be explored without an agent.
+- `sideshow skill path` and `sideshow skill install` make the packaged agent
+  skill discoverable and installable from npm without a repository checkout.
 
 ### Changed
 
+- The sideshow skill now documents MCP and CLI realtime workflows, session
+  recovery, feedback cursors, remote auth, and troubleshooting.
+- The local server stores JSON data in a user data directory by default instead
+  of writing inside the package directory; `SIDESHOW_DATA` still overrides it.
+
 ### Fixed
+
+- `sideshow serve --open # comment` now tolerates pasted inline comments instead
+  of treating `#` as an unexpected positional argument.
 
 ## [0.1.0] - 2026-06-11
 
