@@ -741,25 +741,29 @@
         es.onopen = () => $("live").classList.add("on");
         es.onerror = () => $("live").classList.remove("on");
         es.onmessage = async (ev) => {
-          const e = JSON.parse(ev.data);
-          if (e.type.startsWith("session-")) {
-            await refreshSessions();
-          } else if (e.type === "snippet-created" || e.type === "snippet-updated") {
-            if (e.sessionId === state.selected) await upsertCard(e.id);
-            else state.unread.add(e.sessionId);
-            await refreshSessionsQuiet();
-          } else if (e.type === "snippet-deleted") {
-            state.cards.get(e.id)?.remove();
-            state.cards.delete(e.id);
-            await refreshSessionsQuiet();
-          } else if (e.type === "comment-created") {
-            if (e.sessionId === state.selected && e.snippetId) {
-              const { comments } = await api(`/api/comments?snippet=${e.snippetId}`);
-              for (const c of comments) renderComment(c);
-            } else if (e.sessionId !== state.selected) {
-              state.unread.add(e.sessionId);
-              renderSidebar();
+          try {
+            const e = JSON.parse(ev.data);
+            if (e.type.startsWith("session-")) {
+              await refreshSessions();
+            } else if (e.type === "snippet-created" || e.type === "snippet-updated") {
+              if (e.sessionId === state.selected) await upsertCard(e.id);
+              else state.unread.add(e.sessionId);
+              await refreshSessionsQuiet();
+            } else if (e.type === "snippet-deleted") {
+              state.cards.get(e.id)?.remove();
+              state.cards.delete(e.id);
+              await refreshSessionsQuiet();
+            } else if (e.type === "comment-created") {
+              if (e.sessionId === state.selected && e.snippetId) {
+                const { comments } = await api(`/api/comments?snippet=${e.snippetId}`);
+                for (const c of comments) renderComment(c);
+              } else if (e.sessionId !== state.selected) {
+                state.unread.add(e.sessionId);
+                renderSidebar();
+              }
             }
+          } catch {
+            // server briefly unreachable; refreshSessions() or reconnect will resync
           }
         };
       }
@@ -783,7 +787,7 @@
       }
 
       setInterval(() => {
-        if (state.sessions.length > 0) refreshSessionsQuiet();
+        if (state.sessions.length > 0) refreshSessionsQuiet().catch(() => {});
       }, 45000);
 
       refreshSessions();

@@ -10,6 +10,10 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Fixed
 
+- Viewer no longer spams uncaught "Failed to fetch" console errors when the
+  server is briefly unreachable (e.g. during a restart): the 45s session
+  refresh and SSE event handlers now swallow transient fetch failures.
+
 ## [0.2.0] - 2026-06-11
 
 ### Added
