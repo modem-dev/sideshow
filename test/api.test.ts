@@ -118,13 +118,18 @@ test("update bumps version and keeps history; old version renderable", async () 
   assert.ok(old.includes("<p>v1</p>"));
 });
 
-test("snippet page is wrapped with CSP and bridge", async () => {
+test("snippet page is wrapped with CSP, bridge, and kit", async () => {
   const app = makeApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
   const page = await (await app.request(`/s/${s.id}`)).text();
   assert.ok(page.includes("Content-Security-Policy"));
   assert.ok(page.includes("window.sendPrompt"));
   assert.ok(page.includes("__sideshow"));
+  // Snippet kit: SVG utilities in the stylesheet and the shared arrow marker
+  // injected before the snippet body so url(#arrow) resolves.
+  assert.ok(page.includes(".c-blue"));
+  assert.ok(page.indexOf('<marker id="arrow"') < page.indexOf("<p>x</p>"));
+  assert.ok(page.includes('<marker id="arrow"'));
 });
 
 test("comments attach to snippets and filter by author/after", async () => {

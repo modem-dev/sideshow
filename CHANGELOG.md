@@ -18,6 +18,12 @@ All notable user-visible changes to this project are documented in this file.
   body and both MCP `publish_snippet` tools, `--session-title` on
   `sideshow publish`. Applied only when the publish creates the session —
   it never overwrites a title, including renames made in the viewer.
+- A snippet kit baked into every snippet doc, so agents publish compact
+  markup instead of hand-written inline CSS: bare `button`/`input`/`select`/
+  `textarea` pre-styled to match the viewer, SVG utility classes (`t`/`ts`/
+  `th` text presets, `box`, `arr`, `leader`, `node`, `c-*` color ramps with
+  dark-mode-aware text), and a shared `#arrow` marker injected into every
+  doc. The design guide documents it as a compact reference table.
 
 ### Changed
 

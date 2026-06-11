@@ -43,7 +43,9 @@ Rules of thumb:
   beats one giant page.
 - **Iterate with `sideshow update <id>`** (same card, new version) instead of
   publishing near-duplicates. Versions are kept; the user can flip between them.
-- Use the theme CSS variables from the guide so snippets work in dark mode.
+- Use the built-in kit from the guide (pre-styled form elements, SVG utility
+  classes) before writing CSS; for anything else use the theme CSS variables
+  so snippets work in dark mode.
 
 ## The feedback loop
 

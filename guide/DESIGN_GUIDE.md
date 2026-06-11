@@ -55,19 +55,53 @@ replies short; do substantial revisions as snippet updates instead.
 - **Never use `position: fixed`** — the iframe sizes to content height and
   fixed elements break that. Use normal-flow layout.
 
+## Built-in kit — reach for it before writing CSS
+
+Bare `button`, `input`, `select`, and `textarea` are pre-styled to match the
+viewer, hover/focus included — write the plain element, don't restyle it.
+Checkboxes, radios, ranges, and progress bars are themed via `accent-color`.
+
+SVG utility classes, available in every snippet:
+
+| class                                                            | effect                                                                                                               |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `t` / `ts` / `th`                                                | text presets: 14px / 12px muted / 14px medium heading                                                                |
+| `box`                                                            | neutral rect — secondary fill, faint stroke, rx 8                                                                    |
+| `arr`                                                            | 1.2px connector line                                                                                                 |
+| `leader`                                                         | dashed guide line                                                                                                    |
+| `node`                                                           | pointer cursor + hover dim, for clickable shapes                                                                     |
+| `c-blue` `c-teal` `c-amber` `c-coral` `c-green` `c-red` `c-gray` | color ramp: fill+stroke on shapes (or a whole `<g>`); child `<text>` auto-switches to readable ink in light and dark |
+
+A `<marker id="arrow">` is injected into every snippet doc — end any line with
+`marker-end="url(#arrow)"` and the arrowhead inherits the line's stroke color.
+
+```html
+<svg width="100%" viewBox="0 0 680 70">
+  <g class="c-blue">
+    <rect class="box" x="10" y="10" width="130" height="40" />
+    <text class="th" x="75" y="35" text-anchor="middle">API</text>
+  </g>
+  <text class="ts" x="250" y="24" text-anchor="middle">202 + job id</text>
+  <line class="arr" x1="140" y1="30" x2="360" y2="30" marker-end="url(#arrow)" />
+</svg>
+```
+
+Icons: the Tabler webfont is on the CSP allowlist —
+`<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3/dist/tabler-icons.min.css">`
+then `<i class="ti ti-check"></i>`.
+
 ## Theming — dark mode is mandatory
 
-CSS variables are pre-defined and adapt to light/dark automatically. Use them
-instead of hardcoded colors; never write `color: #333` (invisible in dark mode).
+For anything the kit doesn't cover, use the pre-defined CSS variables — they
+adapt to light/dark automatically. Never hardcode colors; `color: #333` is
+invisible in dark mode.
 
-- Backgrounds: `--color-background-primary` (surface), `-secondary`, `-tertiary`,
-  and semantic `-info`, `-danger`, `-success`, `-warning`
-- Text: `--color-text-primary`, `-secondary` (muted), `-tertiary` (hints),
-  plus semantic variants as above
+- Backgrounds: `--color-background-primary|secondary|tertiary` and semantic
+  `-info|-danger|-success|-warning`
+- Text: `--color-text-primary|secondary|tertiary`, plus the same semantic variants
 - Borders: `--color-border-tertiary` (default, faint), `-secondary`, `-primary`,
   plus semantic variants
-- Fonts: `--font-sans` (default), `--font-serif`, `--font-mono`
-- Radius: `--border-radius-md` (8px), `-lg` (12px), `-xl` (16px)
+- Fonts: `--font-sans|serif|mono`; radius: `--border-radius-md|lg|xl` (8/12/16px)
 
 Mental test: if the background were near-black, would every element still read?
 
@@ -91,6 +125,7 @@ Two globals are injected into every snippet:
 - Flat and clean: no gradients, drop shadows, or decorative effects.
 - Sentence case for headings and labels. No emoji.
 - Two font weights only: 400 and 500.
-- SVG works great — for diagrams use `<svg width="100%" viewBox="0 0 680 H">`.
+- SVG works great — for diagrams use `<svg width="100%" viewBox="0 0 680 H">`
+  with the kit classes above.
 - Keep it focused: one concept per snippet. Publish a series of small snippets
   with distinct titles rather than one giant page.

@@ -88,6 +88,80 @@ body {
 }
 `;
 
+// Snippet kit: element defaults and SVG utility classes baked into every
+// snippet doc so agents publish compact markup instead of hand-writing inline
+// CSS. Documented as a reference table in guide/DESIGN_GUIDE.md — keep the
+// two in sync. Note: CSS rules override SVG presentation attributes, so bare
+// element selectors here must never set properties snippets commonly set via
+// attributes (fill/font-size on text, etc.) — that's why text styling is
+// opt-in via classes.
+const KIT_CSS = `
+:root {
+  color-scheme: light dark;
+  --c-teal-bg: #e1f4f1; --c-teal-line: #1fa996; --c-teal-text: #0c6e62;
+  --c-coral-bg: #fdece5; --c-coral-line: #e8835e; --c-coral-text: #a44f28;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-teal-bg: rgba(31, 169, 150, 0.18); --c-teal-text: #6fd0c2;
+    --c-coral-bg: rgba(232, 131, 94, 0.18); --c-coral-text: #f0a987;
+  }
+}
+button {
+  font: 500 14px/1.4 var(--font-sans);
+  color: var(--color-text-primary);
+  background: none;
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--border-radius-md);
+  padding: 6px 14px;
+  cursor: pointer;
+}
+button:hover { background: var(--color-background-secondary); }
+input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea {
+  font: 14px/1.4 var(--font-sans);
+  color: var(--color-text-primary);
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--border-radius-md);
+  padding: 6px 10px;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--color-border-info); }
+input::placeholder, textarea::placeholder { color: var(--color-text-tertiary); }
+textarea { resize: vertical; }
+input[type=checkbox], input[type=radio], input[type=range], progress {
+  accent-color: var(--color-border-info);
+}
+svg { font-family: var(--font-sans); fill: var(--color-text-primary); }
+.t { font-size: 14px; }
+.ts { font-size: 12px; fill: var(--color-text-secondary); }
+.th { font-size: 14px; font-weight: 500; }
+.box { fill: var(--color-background-secondary); stroke: var(--color-border-tertiary); rx: 8px; }
+.arr { stroke: var(--color-text-secondary); stroke-width: 1.2; fill: none; }
+.leader { stroke: var(--color-border-secondary); stroke-width: 1; stroke-dasharray: 3 4; fill: none; }
+.node { cursor: pointer; }
+.node:hover { opacity: 0.75; }
+.c-blue, .c-blue .box { fill: var(--color-background-info); stroke: var(--color-border-info); }
+.c-blue text, text.c-blue { fill: var(--color-text-info); stroke: none; }
+.c-teal, .c-teal .box { fill: var(--c-teal-bg); stroke: var(--c-teal-line); }
+.c-teal text, text.c-teal { fill: var(--c-teal-text); stroke: none; }
+.c-amber, .c-amber .box { fill: var(--color-background-warning); stroke: var(--color-border-warning); }
+.c-amber text, text.c-amber { fill: var(--color-text-warning); stroke: none; }
+.c-coral, .c-coral .box { fill: var(--c-coral-bg); stroke: var(--c-coral-line); }
+.c-coral text, text.c-coral { fill: var(--c-coral-text); stroke: none; }
+.c-green, .c-green .box { fill: var(--color-background-success); stroke: var(--color-border-success); }
+.c-green text, text.c-green { fill: var(--color-text-success); stroke: none; }
+.c-red, .c-red .box { fill: var(--color-background-danger); stroke: var(--color-border-danger); }
+.c-red text, text.c-red { fill: var(--color-text-danger); stroke: none; }
+.c-gray, .c-gray .box { fill: var(--color-background-secondary); stroke: var(--color-border-secondary); }
+.c-gray text, text.c-gray { fill: var(--color-text-secondary); stroke: none; }
+`;
+
+// Shared SVG defs injected into every snippet doc. Inline SVGs anywhere in
+// the document can reference these by id; the arrowhead inherits the
+// referencing line's stroke color via context-stroke.
+const SVG_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg>`;
+
 // Bridge to the host viewer: sendPrompt/openLink mirror Claude's widget
 // globals, and a ResizeObserver reports content height so the parent can
 // size the sandboxed (opaque-origin) iframe.
@@ -135,9 +209,10 @@ export function renderSnippetPage(snippet: Snippet): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${CSP}">
 <title>${escapeHtml(snippet.title)}</title>
-<style>${TOKENS_CSS}</style>
+<style>${TOKENS_CSS}${KIT_CSS}</style>
 </head>
 <body>
+${SVG_DEFS}
 ${snippet.html}
 <script>${BRIDGE_JS}</script>
 </body>

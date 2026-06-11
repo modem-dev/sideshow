@@ -2,44 +2,30 @@
 // agents draw on the surface. Keep this file dependency-free like the CLI.
 
 const JWT_DIAGRAM = `
-<svg width="100%" viewBox="0 0 680 320" font-family="var(--font-sans)" font-size="13">
-  <defs>
-    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
-      <path d="M0 0L10 5L0 10z" fill="var(--color-text-secondary)"/>
-    </marker>
-    <marker id="arr-danger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
-      <path d="M0 0L10 5L0 10z" fill="var(--color-text-danger)"/>
-    </marker>
-    <marker id="arr-success" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
-      <path d="M0 0L10 5L0 10z" fill="var(--color-text-success)"/>
-    </marker>
-  </defs>
+<svg width="100%" viewBox="0 0 680 320">
+  <line class="leader" x1="110" y1="52" x2="110" y2="300"/>
+  <line class="leader" x1="340" y1="52" x2="340" y2="300"/>
+  <line class="leader" x1="570" y1="52" x2="570" y2="300"/>
 
-  <line x1="110" y1="52" x2="110" y2="300" stroke="var(--color-border-tertiary)" stroke-dasharray="3 4"/>
-  <line x1="340" y1="52" x2="340" y2="300" stroke="var(--color-border-tertiary)" stroke-dasharray="3 4"/>
-  <line x1="570" y1="52" x2="570" y2="300" stroke="var(--color-border-tertiary)" stroke-dasharray="3 4"/>
+  <rect class="box" x="35" y="10" width="150" height="40"/>
+  <text class="th" x="110" y="35" text-anchor="middle">Client</text>
+  <g class="c-blue"><rect class="box" x="265" y="10" width="150" height="40"/><text class="th" x="340" y="35" text-anchor="middle">/api (guarded)</text></g>
+  <g class="c-amber"><rect class="box" x="495" y="10" width="150" height="40"/><text class="th" x="570" y="35" text-anchor="middle">/auth/refresh</text></g>
 
-  <rect x="35" y="10" width="150" height="40" rx="8" fill="var(--color-background-secondary)" stroke="var(--color-border-tertiary)"/>
-  <text x="110" y="35" text-anchor="middle" font-weight="500" fill="var(--color-text-primary)">Client</text>
-  <rect x="265" y="10" width="150" height="40" rx="8" fill="var(--color-background-info)" stroke="var(--color-border-info)"/>
-  <text x="340" y="35" text-anchor="middle" font-weight="500" fill="var(--color-text-info)">/api (guarded)</text>
-  <rect x="495" y="10" width="150" height="40" rx="8" fill="var(--color-background-warning)" stroke="var(--color-border-warning)"/>
-  <text x="570" y="35" text-anchor="middle" font-weight="500" fill="var(--color-text-warning)">/auth/refresh</text>
+  <text class="ts" x="225" y="84" text-anchor="middle">request + expired JWT</text>
+  <line class="arr" x1="110" y1="92" x2="334" y2="92" marker-end="url(#arrow)"/>
 
-  <text x="225" y="84" text-anchor="middle" fill="var(--color-text-secondary)">request + expired JWT</text>
-  <line x1="110" y1="92" x2="334" y2="92" stroke="var(--color-text-secondary)" marker-end="url(#arr)"/>
+  <text class="ts c-red" x="225" y="120" text-anchor="middle">401 token_expired</text>
+  <line class="arr c-red" x1="340" y1="128" x2="116" y2="128" marker-end="url(#arrow)"/>
 
-  <text x="225" y="120" text-anchor="middle" fill="var(--color-text-danger)">401 token_expired</text>
-  <line x1="340" y1="128" x2="116" y2="128" stroke="var(--color-text-danger)" marker-end="url(#arr-danger)"/>
+  <text class="ts" x="340" y="172" text-anchor="middle">refresh token (httpOnly cookie)</text>
+  <line class="arr" x1="110" y1="180" x2="564" y2="180" marker-end="url(#arrow)"/>
 
-  <text x="340" y="172" text-anchor="middle" fill="var(--color-text-secondary)">refresh token (httpOnly cookie)</text>
-  <line x1="110" y1="180" x2="564" y2="180" stroke="var(--color-text-secondary)" marker-end="url(#arr)"/>
+  <text class="ts c-green" x="340" y="208" text-anchor="middle">new JWT + rotated refresh token</text>
+  <line class="arr c-green" x1="570" y1="216" x2="116" y2="216" marker-end="url(#arrow)"/>
 
-  <text x="340" y="208" text-anchor="middle" fill="var(--color-text-success)">new JWT + rotated refresh token</text>
-  <line x1="570" y1="216" x2="116" y2="216" stroke="var(--color-text-success)" marker-end="url(#arr-success)"/>
-
-  <text x="225" y="260" text-anchor="middle" fill="var(--color-text-secondary)">retry with new JWT</text>
-  <line x1="110" y1="268" x2="334" y2="268" stroke="var(--color-text-secondary)" marker-end="url(#arr)"/>
+  <text class="ts" x="225" y="260" text-anchor="middle">retry with new JWT</text>
+  <line class="arr" x1="110" y1="268" x2="334" y2="268" marker-end="url(#arrow)"/>
 </svg>`;
 
 const JWT_EXPLAINER = `
