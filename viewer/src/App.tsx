@@ -1,0 +1,243 @@
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { api, relTime, sessionLabel, type SessionRow } from "./api.ts";
+import { Card, cardIframes, SessionThread } from "./Card.tsx";
+import {
+  connect,
+  live,
+  refreshSessions,
+  refreshSessionsQuiet,
+  select,
+  selected,
+  sessions,
+  snippets,
+  streamLoading,
+  toast,
+  toastShow,
+  toastText,
+  unread,
+} from "./state.ts";
+
+export default function App() {
+  onMount(() => {
+    refreshSessions();
+    connect();
+    const timer = setInterval(() => {
+      if (sessions.length > 0) refreshSessionsQuiet();
+    }, 45_000);
+    onCleanup(() => clearInterval(timer));
+    window.addEventListener("message", onBridgeMessage);
+    onCleanup(() => window.removeEventListener("message", onBridgeMessage));
+  });
+
+  return (
+    <>
+      <div id="app">
+        <aside>
+          <div class="brand">
+            <span id="live" classList={{ on: live() }}></span>sideshow
+          </div>
+          <div id="sessionList">
+            <For each={sessions}>{(s) => <SessionItem session={s} />}</For>
+          </div>
+          <div class="aside-foot">
+            <a href="/guide" target="_blank">
+              design guide
+            </a>{" "}
+            &nbsp;·&nbsp;{" "}
+            <a href="/setup" target="_blank">
+              agent setup
+            </a>
+          </div>
+        </aside>
+        <main>
+          <Onboard />
+          <SessionView />
+        </main>
+      </div>
+      <div id="toast" role="status" aria-live="polite" classList={{ show: toastShow() }}>
+        {toastText()}
+      </div>
+    </>
+  );
+}
+
+// Messages from sandboxed snippet iframes (see server/snippetPage.ts bridge).
+async function onBridgeMessage(ev: MessageEvent) {
+  const d = ev.data as {
+    __sideshow?: boolean;
+    type?: string;
+    height?: number;
+    text?: unknown;
+    url?: string;
+  } | null;
+  if (!d || !d.__sideshow) return;
+  let sourceId: string | null = null;
+  let sourceFrame: HTMLIFrameElement | null = null;
+  for (const [id, frame] of cardIframes) {
+    if (frame.contentWindow === ev.source) {
+      sourceId = id;
+      sourceFrame = frame;
+      break;
+    }
+  }
+  if (d.type === "resize" && sourceFrame) {
+    sourceFrame.style.height = Math.min(Math.max(Number(d.height), 48), 2200) + "px";
+  } else if (d.type === "send-prompt" && sourceId) {
+    await api("/api/comments", {
+      method: "POST",
+      body: JSON.stringify({ snippet: sourceId, text: String(d.text), author: "user" }),
+    });
+    toast("Sent to agent: " + d.text);
+  } else if (d.type === "open-link") {
+    if (confirm(`Open external link?\n\n${d.url}`)) window.open(d.url, "_blank", "noopener");
+  }
+}
+
+function SessionItem(props: { session: SessionRow }) {
+  const label = () => sessionLabel(props.session);
+  return (
+    <div
+      class="sess"
+      classList={{
+        sel: props.session.id === selected(),
+        unread: unread().has(props.session.id),
+      }}
+      data-id={props.session.id}
+      role="button"
+      tabIndex={0}
+      aria-current={props.session.id === selected() ? "true" : undefined}
+      onClick={() => select(props.session.id)}
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          select(props.session.id);
+        }
+      }}
+    >
+      <div class="sess-title">{label()}</div>
+      <div class="sess-meta">
+        {props.session.agent} · {props.session.snippetCount} snippet
+        {props.session.snippetCount === 1 ? "" : "s"} · {relTime(props.session.lastActiveAt)}
+      </div>
+      <span class="dot"></span>
+      <button
+        class="x"
+        title="Delete session"
+        aria-label={`Delete session "${label()}"`}
+        onClick={async (e) => {
+          e.stopPropagation();
+          if (!confirm(`Delete "${label()}" and its snippets?`)) return;
+          await api(`/api/sessions/${props.session.id}`, { method: "DELETE" });
+        }}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
+function SessionView() {
+  const current = createMemo(() => sessions.find((x) => x.id === selected()));
+  return (
+    <div id="sessionView" hidden={sessions.length === 0}>
+      <div class="session-head">
+        <SessionTitle current={current()} />
+        <span class="meta" id="sessMeta">
+          {current() ? `${current()!.agent} · started ${relTime(current()!.createdAt)}` : ""}
+        </span>
+      </div>
+      <div id="stream">
+        <Show when={!streamLoading() && snippets.length === 0}>
+          <div class="empty" id="streamEmpty">
+            No snippets in this session yet.
+          </div>
+        </Show>
+        <For each={snippets}>{(s) => <Card snippet={s} />}</For>
+        <SessionThread />
+      </div>
+    </div>
+  );
+}
+
+function SessionTitle(props: { current: SessionRow | undefined }) {
+  let el!: HTMLSpanElement;
+  // contenteditable owns its text while focused; sync from state otherwise
+  createEffect(() => {
+    if (props.current && document.activeElement !== el) {
+      el.textContent = sessionLabel(props.current);
+    }
+  });
+  const commit = async () => {
+    if (!props.current) return;
+    const next = el.textContent?.trim() ?? "";
+    if (next && next !== sessionLabel(props.current)) {
+      await api(`/api/sessions/${props.current.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: next }),
+      });
+    }
+  };
+  return (
+    <span
+      id="sessTitle"
+      ref={(span) => (el = span)}
+      contentEditable={true}
+      spellcheck={false}
+      role="textbox"
+      aria-label="Session title"
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          el.blur();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          if (props.current) el.textContent = sessionLabel(props.current);
+          el.blur();
+        }
+      }}
+    ></span>
+  );
+}
+
+// withOrigin on the server rewrites these localhost URLs to the deployed
+// origin when serving the built document — keep them as plain literals.
+const SETUP_SNIP = "curl -s http://localhost:4242/setup >> AGENTS.md";
+const TRY_SNIP =
+  "curl -s -X POST http://localhost:4242/api/snippets -H 'content-type: application/json' " +
+  `-d '{"agent": "me", "title": "Hello", "html": "<h2>It works</h2>"}'`;
+
+function Onboard() {
+  return (
+    <div id="onboard" hidden={sessions.length > 0}>
+      <h1>The show hasn&rsquo;t started yet</h1>
+      <p class="sub">
+        sideshow is a live surface where coding agents draw HTML snippets — diagrams, sketches,
+        explainers — while they work in your terminal.
+      </p>
+      <h2>teach your agent about it</h2>
+      <Snip text={SETUP_SNIP} />
+      <h2>or try it yourself</h2>
+      <Snip text={TRY_SNIP} />
+    </div>
+  );
+}
+
+function Snip(props: { text: string }) {
+  const [label, setLabel] = createSignal("copy");
+  return (
+    <div class="snip">
+      {props.text}
+      <button
+        class="copy"
+        onClick={() => {
+          navigator.clipboard.writeText(props.text);
+          setLabel("copied");
+          setTimeout(() => setLabel("copy"), 1500);
+        }}
+      >
+        {label()}
+      </button>
+    </div>
+  );
+}

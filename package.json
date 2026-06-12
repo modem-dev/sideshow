@@ -27,14 +27,15 @@
   "files": [
     "bin/",
     "dist/",
-    "viewer/",
+    "viewer/dist/",
     "guide/",
     "skills/"
   ],
   "type": "module",
   "scripts": {
-    "dev": "node --watch server/index.ts",
-    "start": "node server/index.ts",
+    "dev": "vite build && (vite build --watch & node --watch server/index.ts)",
+    "start": "vite build && node server/index.ts",
+    "build:viewer": "vite build",
     "mcp": "node mcp/server.ts",
     "test": "node --test 'test/**/*.test.ts'",
     "test:e2e": "playwright test",
@@ -42,10 +43,10 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint . --deny-warnings",
     "lint:fix": "oxlint . --fix",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.workers.json --noEmit",
-    "build": "tsc -p tsconfig.build.json",
-    "deploy": "wrangler deploy",
-    "dev:cloud": "wrangler dev",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.workers.json --noEmit && tsc -p tsconfig.viewer.json --noEmit",
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "deploy": "npm run build:viewer && wrangler deploy",
+    "dev:cloud": "npm run build:viewer && wrangler dev",
     "prepack": "npm run build",
     "prepare": "simple-git-hooks"
   },
@@ -63,14 +64,18 @@
     "oxfmt": "^0.54.0",
     "oxlint": "^1.69.0",
     "simple-git-hooks": "^2.13.1",
+    "solid-js": "^1.9.13",
     "typescript": "^6.0.3",
+    "vite": "^8.0.16",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vite-plugin-solid": "^2.11.12",
     "wrangler": "^4.99.0"
   },
   "simple-git-hooks": {
     "pre-commit": "npx lint-staged"
   },
   "lint-staged": {
-    "*.{ts,js,mjs,cjs}": [
+    "*.{ts,tsx,js,mjs,cjs}": [
       "oxfmt --write",
       "oxlint --deny-warnings"
     ],

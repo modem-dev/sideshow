@@ -9,7 +9,7 @@
 //     dither=bayer:bayer_scale=5:diff_mode=rectangle" docs/sideshow-demo.gif
 
 import { chromium } from "@playwright/test";
-import { spawn } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -19,6 +19,7 @@ import { DEMO_SESSIONS } from "../bin/demoData.js";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+execSync("npx vite build", { cwd: ROOT, stdio: "inherit" });
 const dataDir = mkdtempSync(join(tmpdir(), "sideshow-rec-"));
 const proc = spawn(process.execPath, [join(ROOT, "server", "index.ts")], {
   env: { ...process.env, PORT: "0", SIDESHOW_DATA: join(dataDir, "data.json") },

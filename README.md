@@ -138,15 +138,17 @@ authoritative, so SSE and long-polling behave the same as the local server.
 ## Development
 
 ```sh
-npm run dev          # server with watch
+npm run dev          # server with watch + viewer watch build
 npm test             # node --test
 npm run typecheck    # tsc --noEmit
 npm run lint         # oxlint
 npm run format       # oxfmt
 ```
 
-There is no build step. TypeScript runs directly on Node via native
-type-stripping; the npm package ships compiled JS built on prepack. See
+The server and CLI have no build step — TypeScript runs directly on Node via
+native type-stripping, and the npm package ships compiled JS built on prepack.
+The viewer (`viewer/src/`, Solid) is the exception: Vite builds it into a
+single self-contained `viewer/dist/index.html` (`npm run build:viewer`). See
 [AGENTS.md](AGENTS.md) for architecture rules.
 
 ## License

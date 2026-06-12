@@ -12,7 +12,10 @@ let root = join(dirname(fileURLToPath(import.meta.url)), "..");
 if (basename(root) === "dist") root = join(root, "..");
 
 const [viewerHtml, guideMarkdown, setupText] = await Promise.all([
-  readFile(join(root, "viewer", "index.html"), "utf8"),
+  readFile(join(root, "viewer", "dist", "index.html"), "utf8").catch(() => {
+    console.error("viewer build missing — run `npm run build:viewer` first");
+    return process.exit(1);
+  }),
   readFile(join(root, "guide", "DESIGN_GUIDE.md"), "utf8"),
   readFile(join(root, "guide", "AGENT_SETUP.md"), "utf8"),
 ]);

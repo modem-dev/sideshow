@@ -37,7 +37,10 @@ consciously, not as a side effect):
   postMessage bridge (resize, sendPrompt, openLink).
 - `server/mcpHttp.ts` — stateless MCP at `/mcp`. `mcp/server.ts` — stdio MCP,
   a thin client over the HTTP API (passes response fields through untouched).
-- `viewer/index.html` — the entire viewer: one file, vanilla JS, no build.
+- `viewer/` — the viewer: Solid + TypeScript in `viewer/src/`, built by Vite
+  (`vite.config.ts`) into a single self-contained `viewer/dist/index.html`
+  (vite-plugin-singlefile) that the server still serves as one in-memory
+  document — there are no static-asset routes.
 - `bin/sideshow.js` — CLI, Node built-ins only; `bin/demoData.js` — seed
   content for `sideshow demo`.
 - `workers/index.ts` — Cloudflare entry; one Durable Object runs the whole app.
@@ -49,9 +52,11 @@ consciously, not as a side effect):
 - `server/{app,events,mcpHttp,snippetPage,types}.ts` stay runtime-agnostic
   (no `node:` imports); `tsconfig.workers.json` typechecks them against
   workers types. Node wiring belongs in `server/index.ts` / `server/storage.ts`.
-- TypeScript runs directly on Node ≥22.18 via type stripping: erasable syntax
-  only (no enums, no parameter properties), `.ts` extensions in relative
-  imports, no build step (`npm pack` compiles `dist/` for the published CLI).
+- Server/CLI TypeScript runs directly on Node ≥22.18 via type stripping:
+  erasable syntax only (no enums, no parameter properties), `.ts` extensions
+  in relative imports, no build step (`npm pack` compiles `dist/` for the
+  published CLI). The viewer is the one exception: Solid JSX needs real
+  compilation, so `viewer/src/` is Vite-built (`npm run build:viewer`).
 - Snippet iframes are sandboxed without `allow-same-origin`. Never weaken
   this. WebKit quirk: in sandboxed iframes ResizeObserver's initial callback
   may not fire and `documentElement.scrollHeight` ratchets to viewport height
@@ -64,17 +69,20 @@ consciously, not as a side effect):
 - `SqlStore` schema changes need in-place migration — deployed Durable
   Objects can't be reset. Follow the `pragma_table_info` probe pattern in its
   constructor.
-- The server reads `viewer/` and `guide/` files at boot — restart it to see
-  viewer changes.
+- The server reads `viewer/dist/index.html` and `guide/` files at boot —
+  rebuild (`npm run build:viewer`) and restart to see viewer changes.
+  `npm run dev` runs a Vite watch build alongside the server; the e2e suite
+  builds the viewer itself (Playwright global setup).
 
 ## Validation
 
 ```sh
 npm test             # unit/API + store contract (node --test)
-npm run typecheck    # two tsc programs: node + workers
+npm run typecheck    # three tsc programs: node + workers + viewer
 npm run lint         # oxlint, warnings are errors
 npm run format:check # oxfmt
-npm run test:e2e     # Playwright, chromium + webkit (separate CI job)
+npm run test:e2e     # Playwright, chromium + webkit (separate CI job);
+                     # builds the viewer first via e2e/globalSetup.ts
 ```
 
 The first four must pass before committing; pre-commit formats staged files

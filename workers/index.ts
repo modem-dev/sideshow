@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import setupText from "../guide/AGENT_SETUP.md";
 import guideMarkdown from "../guide/DESIGN_GUIDE.md";
 import { createApp } from "../server/app.ts";
-import viewerHtml from "../viewer/index.html";
+import viewerHtml from "../viewer/dist/index.html";
 import { SqlStore } from "./sqlStore.ts";
 
 interface Env {

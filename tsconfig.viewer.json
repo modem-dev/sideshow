@@ -1,0 +1,20 @@
+{
+  // Third tsc program: the Vite-built Solid viewer (DOM lib, solid JSX) —
+  // unlike server/, this code is compiled, so it is not erasable-syntax-only.
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["vite/client"],
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["viewer/src", "vite.config.ts"]
+}
