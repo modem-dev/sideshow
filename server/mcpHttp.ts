@@ -35,8 +35,9 @@ const INSTRUCTIONS =
   "sessionId: pass it as `session` on every later call so your snippets stay grouped. On that first publish, " +
   'also pass sessionTitle to name the session after the task at hand (e.g. "Auth refactor") so the user can ' +
   "tell sessions apart in the sidebar. The user can comment on " +
-  "snippets in their browser; call wait_for_feedback (passing the lastSeq cursor from the previous result) " +
-  "after publishing something you want a reaction to. Any publish/update/reply result may also carry a " +
+  "snippets in their browser; call wait_for_feedback after publishing something you want a reaction to — it " +
+  "resumes where you left off, so comments already delivered are not repeated. Any publish/update/reply " +
+  "result may also carry a " +
   "userFeedback array — comments the user left since your last call. Treat them as messages from the user; " +
   "they are delivered once.";
 
@@ -97,7 +98,7 @@ const TOOLS = [
     name: "wait_for_feedback",
     description:
       "Block until the user comments on this session's snippets in their browser (or the timeout passes). " +
-      "Returns new comments and a lastSeq cursor — pass it back as afterSeq next time to avoid re-reading. " +
+      "Returns new comments since the agent last received feedback on any channel (including piggyback). " +
       "Use timeoutSeconds 0 for a non-blocking check.",
     inputSchema: {
       type: "object",
@@ -105,7 +106,8 @@ const TOOLS = [
         session: { type: "string", description: "Session id to watch" },
         afterSeq: {
           type: "number",
-          description: "lastSeq cursor from the previous call (default 0)",
+          description:
+            "explicit cursor override — re-reads comments after this seq (default: where the agent left off)",
         },
         timeoutSeconds: {
           type: "number",
@@ -197,7 +199,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         const result = await deps.waitForComments({
           sessionId: String(args.session ?? ""),
           author: "user",
-          afterSeq: typeof args.afterSeq === "number" ? args.afterSeq : 0,
+          afterSeq: typeof args.afterSeq === "number" ? args.afterSeq : undefined,
           waitSeconds: typeof args.timeoutSeconds === "number" ? args.timeoutSeconds : 60,
         });
         if (result.comments.length === 0) {

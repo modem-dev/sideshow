@@ -38,6 +38,13 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Fixed
 
+- Feedback was re-delivered when channels were mixed: a fresh `sideshow wait`
+  process (or restarted stdio MCP server) started from seq 0 and replayed
+  comments the agent had already received via piggyback or another channel.
+  `author=user` session reads with no explicit `after` now resume from the
+  server-side agent cursor, and the CLI and stdio MCP keep no cursor of their
+  own — delivery is exactly-once across CLI, MCP, and piggyback. Pass
+  `--after <seq>` (CLI) or `afterSeq` (MCP at `/mcp`) to deliberately re-read.
 - A comment that failed to send was silently lost (input cleared, no error).
   The viewer now echoes comments immediately (pending until confirmed) and on
   failure restores the text to the input with an error toast.

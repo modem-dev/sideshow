@@ -27,7 +27,8 @@ usage:
   sideshow wait [options]                 block until the user comments (long-poll)
       --session <id>    session to watch (default: auto)
       --timeout <sec>   max seconds to wait (default 120)
-      --after <seq>     only comments after this cursor (default: where you left off)
+      --after <seq>     re-read comments after this cursor (default: where the
+                        agent left off, tracked server-side across CLI/MCP)
   sideshow comment <text> [options]       post a reply comment
       --snippet <id> | --session <id>     attach point (default: auto session)
       --author <name>   defaults to agent name
@@ -148,7 +149,7 @@ async function resolveSession(flags, { create = false } = {}) {
       cwd: process.cwd(),
     }),
   });
-  writeState({ session: session.id, agent: agentName(flags), lastSeq: 0 });
+  writeState({ session: session.id, agent: agentName(flags) });
   return session.id;
 }
 
@@ -260,18 +261,18 @@ const commands = {
     });
     const session = await resolveSession(flags);
     if (!session) fail("no active session — publish something first, or pass --session");
-    const state = readState();
-    const after = flags.after ?? state.lastSeq ?? 0;
     const timeout = Math.max(1, Number(flags.timeout ?? 120));
     const deadline = Date.now() + timeout * 1000;
-    let result = { comments: [], lastSeq: Number(after) };
+    // No client-side cursor: without --after, the server resumes from the
+    // session's agent cursor, shared with piggyback and MCP delivery.
+    let cursor = flags.after;
+    let result = { comments: [] };
     while (Date.now() < deadline && result.comments.length === 0) {
       const chunk = Math.min(60, Math.ceil((deadline - Date.now()) / 1000));
-      result = await api(
-        `/api/comments?session=${session}&author=user&after=${result.lastSeq}&wait=${chunk}`,
-      );
+      const afterParam = cursor === undefined ? "" : `&after=${cursor}`;
+      result = await api(`/api/comments?session=${session}&author=user${afterParam}&wait=${chunk}`);
+      cursor = result.lastSeq;
     }
-    if (!flags.after) writeState({ lastSeq: result.lastSeq });
     out(
       result.comments.length > 0
         ? { comments: result.comments }

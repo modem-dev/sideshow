@@ -36,7 +36,6 @@ const text = (value: unknown) => ({
 // One MCP server process lives as long as one agent conversation, so a
 // lazily-created session shared across tool calls maps cleanly onto it.
 let sessionId: string | null = process.env.SIDESHOW_SESSION ?? null;
-let lastSeq = 0;
 
 // `title` is used only when this call creates the session — once one exists
 // (here or in the viewer, where the user can rename it) it is never retitled.
@@ -140,10 +139,11 @@ server.registerTool(
   async ({ timeoutSeconds }) => {
     const session = await ensureSession();
     const wait = timeoutSeconds ?? 120;
+    // No client-side cursor: the server resumes author=user reads from the
+    // session's agent cursor, shared with piggyback delivery.
     const result = JSON.parse(
-      await api(`/api/comments?session=${session}&author=user&after=${lastSeq}&wait=${wait}`),
+      await api(`/api/comments?session=${session}&author=user&wait=${wait}`),
     );
-    lastSeq = result.lastSeq;
     if (result.comments.length === 0) {
       return text({ comments: [], note: "no user feedback yet — continue, or wait again later" });
     }

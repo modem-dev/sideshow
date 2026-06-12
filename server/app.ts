@@ -166,7 +166,14 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
   async function waitForComments(
     q: CommentWait,
   ): Promise<{ comments: Comment[]; lastSeq: number }> {
-    const query = { sessionId: q.sessionId, snippetId: q.snippetId, afterSeq: q.afterSeq };
+    // An author=user session wait with no explicit cursor resumes from the
+    // session's agentSeq — "where the agent left off" lives server-side so the
+    // CLI, both MCP transports, and piggyback share one exactly-once stream.
+    let afterSeq = q.afterSeq;
+    if (afterSeq === undefined && q.author === "user" && q.sessionId) {
+      afterSeq = (await store.getSession(q.sessionId))?.agentSeq;
+    }
+    const query = { sessionId: q.sessionId, snippetId: q.snippetId, afterSeq };
     const matches = (list: Comment[]) =>
       q.author ? list.filter((cm) => cm.author === q.author) : list;
     const wait = Math.min(Math.max(q.waitSeconds, 0), MAX_WAIT_SECONDS);
@@ -189,7 +196,7 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
       });
       comments = matches(await store.listComments(query));
     }
-    const lastSeq = comments.length > 0 ? comments[comments.length - 1].seq : (q.afterSeq ?? 0);
+    const lastSeq = comments.length > 0 ? comments[comments.length - 1].seq : (afterSeq ?? 0);
     // An author=user query is the agent listening (the viewer never filters by
     // author) — what it receives here should not be re-delivered as piggyback.
     if (q.author === "user" && q.sessionId && comments.length > 0) {
