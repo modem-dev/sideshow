@@ -58,6 +58,10 @@ All notable user-visible changes to this project are documented in this file.
   shown on focus, the editable session title is labeled and Escape cancels
   an edit, snippet iframes carry the snippet title, and toasts are announced
   via a polite live region.
+- `--help`/`-h` on CLI subcommands (`sideshow publish --help`, …) printed a
+  raw parseArgs stack trace; it now prints the usage text and exits 0. An
+  unknown option or missing option value likewise fails with a one-line
+  error and a `sideshow help` hint instead of a stack trace.
 
 ## [0.2.0] - 2026-06-11
 
