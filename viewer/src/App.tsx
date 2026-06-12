@@ -1,8 +1,11 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { api, relTime, sessionLabel, type SessionRow } from "./api.ts";
 import { Card, cardEls, SessionThread } from "./Card.tsx";
+import { renderNotes } from "./notes.ts";
 import {
+  checkVersion,
   connect,
+  dismissUpdate,
   live,
   navOpen,
   nearBottom,
@@ -21,12 +24,14 @@ import {
   toastShow,
   toastText,
   unread,
+  updateNotice,
 } from "./state.ts";
 
 export default function App() {
   onMount(() => {
     refreshSessions();
     connect();
+    checkVersion();
     const timer = setInterval(() => {
       if (sessions.length > 0) refreshSessionsQuiet();
     }, 45_000);
@@ -75,6 +80,7 @@ export default function App() {
           <div class="brand">
             <span class="livedot" classList={{ on: live() }}></span>sideshow
           </div>
+          <UpdateBanner />
           <div id="sessionList">
             <For each={sessions}>{(s) => <SessionItem session={s} />}</For>
           </div>
@@ -114,6 +120,64 @@ export default function App() {
         new snippet ↓
       </button>
     </>
+  );
+}
+
+// Sidebar notice for a newer published release; the matching release notes
+// render as a card at the top of the stream (see WhatsNewCard). Dismissing
+// either hides both until the next release.
+function UpdateBanner() {
+  return (
+    <Show when={updateNotice()} keyed>
+      {(v) => (
+        <div class="update-banner" role="status">
+          <div class="update-head">
+            New version <strong>{v.latest}</strong>
+            <button
+              class="x"
+              aria-label={`Dismiss update notice for ${v.latest}`}
+              onClick={() => dismissUpdate(v.latest!)}
+            >
+              ✕
+            </button>
+          </div>
+          <Show when={v.upgradeCommand}>
+            <button
+              class="update-cmd"
+              title="Copy upgrade command"
+              onClick={() => {
+                navigator.clipboard.writeText(v.upgradeCommand!);
+                toast("Copied: " + v.upgradeCommand);
+              }}
+            >
+              <code>{v.upgradeCommand}</code> ⧉
+            </button>
+          </Show>
+        </div>
+      )}
+    </Show>
+  );
+}
+
+// Release notes as a card in the stream — the surface already renders cards,
+// so "what's new" is just content. Shares dismissal with the banner.
+function WhatsNewCard() {
+  return (
+    <Show when={updateNotice()?.notes ? updateNotice() : null} keyed>
+      {(v) => (
+        <div class="card" id="whatsNew">
+          <div class="card-head">
+            <span class="card-title">What&rsquo;s new in {v.latest}</span>
+            <span class="card-meta">update available</span>
+            <span class="sp"></span>
+            <button class="act del" onClick={() => dismissUpdate(v.latest!)}>
+              dismiss
+            </button>
+          </div>
+          <div class="update-notes" innerHTML={renderNotes(v.notes!)}></div>
+        </div>
+      )}
+    </Show>
   );
 }
 
@@ -203,6 +267,7 @@ function SessionView() {
         </span>
       </div>
       <div id="stream">
+        <WhatsNewCard />
         <Show when={!streamLoading() && snippets.length === 0}>
           <div class="empty" id="streamEmpty">
             No snippets in this session yet.

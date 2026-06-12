@@ -18,6 +18,9 @@ export const test = base.extend<{ server: { url: string } }>({
         PORT: "0",
         SIDESHOW_DATA: join(dataDir, "data.json"),
         SIDESHOW_TOKEN: "",
+        // empty = no version = no update check: keeps tests off the network
+        // and the update banner out of the DOM
+        SIDESHOW_VERSION: "",
       },
       stdio: ["ignore", "pipe", "inherit"],
     });

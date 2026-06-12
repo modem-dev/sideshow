@@ -2,7 +2,7 @@
 // rows/cards persist across refetches (focus, composer drafts, iframes).
 import { createSignal } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
-import { api, type Comment, type SessionRow, type Snippet } from "./api.ts";
+import { api, type Comment, type SessionRow, type Snippet, type VersionInfo } from "./api.ts";
 
 // A comment as the viewer renders it: server comments plus the optimistic
 // local echo (pending until the POST confirms).
@@ -37,6 +37,29 @@ export function toast(text: string) {
 
 function markUnread(sessionId: string) {
   setUnread((prev) => new Set(prev).add(sessionId));
+}
+
+// Update notice: shown when the server reports a newer release the user has
+// not dismissed. Dismissal stores the version, not a flag, so dismissing
+// 0.4.0 keeps it gone until 0.5.0 actually ships.
+const DISMISSED_UPDATE_KEY = "sideshow-dismissed-update";
+const [versionInfo, setVersionInfo] = createSignal<VersionInfo | null>(null);
+const [dismissedUpdate, setDismissedUpdate] = createSignal(
+  localStorage.getItem(DISMISSED_UPDATE_KEY),
+);
+
+export async function checkVersion() {
+  setVersionInfo(await api<VersionInfo>("/api/version").catch(() => null));
+}
+
+export function dismissUpdate(version: string) {
+  localStorage.setItem(DISMISSED_UPDATE_KEY, version);
+  setDismissedUpdate(version);
+}
+
+export function updateNotice(): VersionInfo | null {
+  const v = versionInfo();
+  return v?.updateAvailable && v.latest && v.latest !== dismissedUpdate() ? v : null;
 }
 
 export async function refreshSessionsQuiet() {

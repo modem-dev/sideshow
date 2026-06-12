@@ -11,13 +11,14 @@ import { JsonFileStore } from "./storage.ts";
 let root = join(dirname(fileURLToPath(import.meta.url)), "..");
 if (basename(root) === "dist") root = join(root, "..");
 
-const [viewerHtml, guideMarkdown, setupText] = await Promise.all([
+const [viewerHtml, guideMarkdown, setupText, pkgJson] = await Promise.all([
   readFile(join(root, "viewer", "dist", "index.html"), "utf8").catch(() => {
     console.error("viewer build missing — run `npm run build:viewer` first");
     return process.exit(1);
   }),
   readFile(join(root, "guide", "DESIGN_GUIDE.md"), "utf8"),
   readFile(join(root, "guide", "AGENT_SETUP.md"), "utf8"),
+  readFile(join(root, "package.json"), "utf8"),
 ]);
 
 const app = createApp({
@@ -26,6 +27,10 @@ const app = createApp({
   guideMarkdown,
   setupText,
   authToken: process.env.SIDESHOW_TOKEN,
+  // SIDESHOW_VERSION fakes the running version (manual testing of the
+  // notice); set it to the empty string to disable the update check
+  version: process.env.SIDESHOW_VERSION ?? (JSON.parse(pkgJson) as { version: string }).version,
+  upgradeCommand: "npm install -g sideshow",
 });
 
 const port = Number(process.env.PORT ?? 4242);

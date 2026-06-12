@@ -4,6 +4,16 @@ All notable user-visible changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- The viewer notices new releases: a dismissable banner in the sidebar names
+  the latest version with a copyable upgrade command (npm install locally,
+  redeploy for workers), and the release notes render as a card at the top of
+  the stream. Dismissing either hides both until the next release. The check
+  lives server-side at `/api/version` (npm registry + GitHub release notes),
+  is cached for six hours, and fails silently — offline costs nothing but the
+  absence of the notice.
+
 ## [0.3.0] - 2026-06-12
 
 ### Added

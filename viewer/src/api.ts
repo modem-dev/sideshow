@@ -8,6 +8,16 @@ export interface SessionRow extends Session {
   snippetCount: number;
 }
 
+// GET /api/version — upgradeCommand and notes are set only when an update
+// is actually available.
+export interface VersionInfo {
+  current: string | null;
+  latest: string | null;
+  updateAvailable: boolean;
+  upgradeCommand?: string | null;
+  notes?: string | null;
+}
+
 export async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(
     path,

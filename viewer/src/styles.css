@@ -165,6 +165,84 @@ aside {
   color: var(--text);
 }
 
+/* update notice: sidebar banner + release-notes card (#whatsNew) */
+.update-banner {
+  margin: 0 12px 8px;
+  padding: 9px 11px;
+  background: var(--accent-bg);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  font-size: 12.5px;
+}
+.update-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.update-head .x {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 5px;
+  font-family: inherit;
+}
+.update-head .x:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.update-cmd {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px 7px;
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.update-cmd:hover {
+  color: var(--text);
+  border-color: var(--border-2);
+}
+.update-cmd code {
+  font-family: ui-monospace, monospace;
+}
+.update-notes {
+  padding: 6px 16px 12px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.update-notes h4 {
+  margin: 12px 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.update-notes ul {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+.update-notes li {
+  margin: 3px 0;
+}
+.update-notes code {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--hover);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.update-notes a {
+  color: var(--accent);
+}
+
 main {
   flex: 1;
   overflow-y: auto;

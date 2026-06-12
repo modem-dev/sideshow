@@ -98,8 +98,8 @@ Testing notes:
   conflict with `@types/node`.
 - `JsonFileStore` returns live objects that later mutate — capture fields
   before update calls when asserting against them.
-- The session thread is also a `.card`: scope snippet-card e2e selectors with
-  `.card:not(#sessionThread)`.
+- The session thread and the update-notes card are also `.card`s: scope
+  snippet-card e2e selectors with `.card:not(#sessionThread):not(#whatsNew)`.
 
 ## Conventions
 

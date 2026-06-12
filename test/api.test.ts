@@ -202,6 +202,61 @@ test("piggyback delivery advances the cursor seen by author=user waits", async (
   assert.equal(wait.comments.length, 0);
 });
 
+function makeVersionApp(version?: string, latest?: { version: string; notes?: string } | Error) {
+  const dir = mkdtempSync(join(tmpdir(), "sideshow-test-"));
+  return createApp({
+    store: new JsonFileStore(join(dir, "data.json")),
+    viewerHtml: "<html>viewer</html>",
+    guideMarkdown: "# guide",
+    setupText: "# setup",
+    version,
+    upgradeCommand: "npm install -g sideshow",
+    fetchLatestRelease: () =>
+      latest instanceof Error ? Promise.reject(latest) : Promise.resolve(latest ?? null),
+  });
+}
+
+test("version endpoint reports an available update with notes", async () => {
+  const app = makeVersionApp("0.3.0", { version: "0.4.0", notes: "### Added\n- things" });
+  const res = (await (await app.request("/api/version")).json()) as any;
+  assert.deepEqual(res, {
+    current: "0.3.0",
+    latest: "0.4.0",
+    updateAvailable: true,
+    upgradeCommand: "npm install -g sideshow",
+    notes: "### Added\n- things",
+  });
+});
+
+test("version endpoint is quiet when current, unconfigured, or offline", async () => {
+  // up to date — and a same-or-older registry version is never an "update"
+  const same = (await (
+    await makeVersionApp("0.4.0", { version: "0.4.0" }).request("/api/version")
+  ).json()) as any;
+  assert.equal(same.updateAvailable, false);
+  assert.equal(same.upgradeCommand, null);
+  const older = (await (
+    await makeVersionApp("0.4.1", { version: "0.4.0" }).request("/api/version")
+  ).json()) as any;
+  assert.equal(older.updateAvailable, false);
+
+  // no version configured: nothing to compare against
+  const none = (await (await makeVersionApp(undefined).request("/api/version")).json()) as any;
+  assert.deepEqual(none, { current: null, latest: null, updateAvailable: false });
+
+  // lookup failure is silent
+  const offline = (await (
+    await makeVersionApp("0.3.0", new Error("offline")).request("/api/version")
+  ).json()) as any;
+  assert.deepEqual(offline, {
+    current: "0.3.0",
+    latest: null,
+    updateAvailable: false,
+    upgradeCommand: null,
+    notes: null,
+  });
+});
+
 test("long-poll resolves when a comment arrives", async () => {
   const app = makeApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;

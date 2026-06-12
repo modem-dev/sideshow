@@ -20,7 +20,57 @@ export interface AppOptions {
   // When set (cloud deployments), every route except /guide and /setup
   // requires it: Authorization bearer, ?key= query, or the cookie it sets.
   authToken?: string;
+  // Update notice: the running version and the upgrade hint that fits this
+  // deployment (npm install vs redeploy). Without `version`, /api/version
+  // reports nothing and the viewer shows no notice.
+  version?: string;
+  upgradeCommand?: string;
+  // Test seam: replaces the npm-registry/GitHub lookup for the latest release.
+  fetchLatestRelease?: () => Promise<LatestRelease | null>;
 }
+
+export interface LatestRelease {
+  version: string;
+  notes?: string;
+}
+
+// Newer-than for plain x.y.z strings; prerelease suffixes compare as their
+// base version, and garbage compares as "not newer".
+function versionGt(a: string, b: string): boolean {
+  const pa = a.split("-")[0].split(".").map(Number);
+  const pb = b.split("-")[0].split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d > 0;
+  }
+  return false;
+}
+
+// Latest published version from npm, release notes from the matching GitHub
+// release. Notes are garnish: if GitHub is unreachable the version alone
+// still makes a usable notice.
+async function fetchLatestFromRegistry(): Promise<LatestRelease | null> {
+  const res = await fetch("https://registry.npmjs.org/sideshow/latest");
+  if (!res.ok) return null;
+  const pkg = (await res.json()) as { version?: string };
+  if (typeof pkg.version !== "string") return null;
+  let notes: string | undefined;
+  try {
+    const gh = await fetch(
+      `https://api.github.com/repos/modem-dev/sideshow/releases/tags/v${pkg.version}`,
+      { headers: { "user-agent": "sideshow", accept: "application/vnd.github+json" } },
+    );
+    if (gh.ok) {
+      const rel = (await gh.json()) as { body?: string };
+      if (typeof rel.body === "string") notes = rel.body;
+    }
+  } catch {
+    // ignore — see above
+  }
+  return { version: pkg.version, notes };
+}
+
+const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 
 const snippetMeta = (s: Snippet) => ({
   id: s.id,
@@ -49,9 +99,29 @@ export const feedbackView = (c: Comment) => ({
 
 export type Feedback = ReturnType<typeof feedbackView>;
 
-export function createApp({ store, viewerHtml, guideMarkdown, setupText, authToken }: AppOptions) {
+export function createApp({
+  store,
+  viewerHtml,
+  guideMarkdown,
+  setupText,
+  authToken,
+  version,
+  upgradeCommand,
+  fetchLatestRelease,
+}: AppOptions) {
   const app = new Hono();
   const bus = new EventBus();
+
+  // Cached, fail-silent update lookup: being offline or rate-limited must
+  // cost nothing but the absence of the notice. Failures are cached too, so
+  // a dead network doesn't retry on every viewer load.
+  let updateCache: { at: number; value: LatestRelease | null } | null = null;
+  async function latestRelease(): Promise<LatestRelease | null> {
+    if (updateCache && Date.now() - updateCache.at < UPDATE_CHECK_TTL_MS) return updateCache.value;
+    const value = await (fetchLatestRelease ?? fetchLatestFromRegistry)().catch(() => null);
+    updateCache = { at: Date.now(), value };
+    return value;
+  }
 
   // --- shared flows (used by both the REST API and the MCP endpoint) ---
 
@@ -359,6 +429,20 @@ export function createApp({ store, viewerHtml, guideMarkdown, setupText, authTok
       { ...result.comment, ...(result.userFeedback && { userFeedback: result.userFeedback }) },
       201,
     );
+  });
+
+  // The viewer's update notice: running version vs latest published release.
+  app.get("/api/version", async (c) => {
+    if (!version) return c.json({ current: null, latest: null, updateAvailable: false });
+    const latest = await latestRelease();
+    const updateAvailable = latest !== null && versionGt(latest.version, version);
+    return c.json({
+      current: version,
+      latest: latest?.version ?? null,
+      updateAvailable,
+      upgradeCommand: updateAvailable ? (upgradeCommand ?? null) : null,
+      notes: updateAvailable ? (latest?.notes ?? null) : null,
+    });
   });
 
   // Long-poll friendly: ?wait=N holds the request open up to N seconds until
