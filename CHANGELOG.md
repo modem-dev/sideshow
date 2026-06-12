@@ -48,6 +48,12 @@ All notable user-visible changes to this project are documented in this file.
 - Comments not attached to a snippet (e.g. `sideshow comment` without
   `--snippet`) were stored and delivered to agents but never shown in the
   viewer; they now render in the session thread.
+- The viewer is now usable by keyboard and assistive tech: session rows are
+  focusable and activate with Enter/Space (focus survives live re-renders),
+  hover-only actions (session delete, card open/delete) are reachable and
+  shown on focus, the editable session title is labeled and Escape cancels
+  an edit, snippet iframes carry the snippet title, and toasts are announced
+  via a polite live region.
 
 ## [0.2.0] - 2026-06-11
 
