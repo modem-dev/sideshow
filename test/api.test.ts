@@ -144,8 +144,9 @@ test("comments attach to snippets and filter by author/after", async () => {
   assert.equal(all.comments.length, 2);
   assert.equal(all.comments[0].snippetTitle, "Sketch");
 
+  // explicit after=0: re-read from the start regardless of the agent cursor
   const users = (await (
-    await app.request(`/api/comments?session=${s.sessionId}&author=user`)
+    await app.request(`/api/comments?session=${s.sessionId}&author=user&after=0`)
   ).json()) as any;
   assert.equal(users.comments.length, 1);
   assert.equal(users.comments[0].text, "love it");
@@ -154,6 +155,51 @@ test("comments attach to snippets and filter by author/after", async () => {
     await app.request(`/api/comments?session=${s.sessionId}&after=${all.lastSeq}`)
   ).json()) as any;
   assert.equal(later.comments.length, 0);
+});
+
+test("author=user reads resume from the agent's server-side cursor", async () => {
+  const app = makeApp();
+  const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
+  await app.request("/api/comments", json({ snippet: s.id, text: "first", author: "user" }));
+
+  // no cursor given: delivered once...
+  const first = (await (
+    await app.request(`/api/comments?session=${s.sessionId}&author=user`)
+  ).json()) as any;
+  assert.equal(first.comments.length, 1);
+  assert.equal(first.comments[0].text, "first");
+
+  // ...and not again on the next cursor-less read (e.g. a fresh CLI process)
+  const again = (await (
+    await app.request(`/api/comments?session=${s.sessionId}&author=user`)
+  ).json()) as any;
+  assert.equal(again.comments.length, 0);
+
+  // unfiltered reads (the viewer) never consume the cursor
+  const viewer = (await (await app.request(`/api/comments?session=${s.sessionId}`)).json()) as any;
+  assert.equal(viewer.comments.length, 1);
+});
+
+test("piggyback delivery advances the cursor seen by author=user waits", async () => {
+  const app = makeApp();
+  const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
+  await app.request("/api/comments", json({ snippet: s.id, text: "tweak it", author: "user" }));
+
+  // an agent write piggybacks the pending feedback...
+  const updated = (await (
+    await app.request(`/api/snippets/${s.id}`, {
+      ...json({ html: "<p>v2</p>" }),
+      method: "PUT",
+    })
+  ).json()) as any;
+  assert.equal(updated.userFeedback.length, 1);
+  assert.equal(updated.userFeedback[0].text, "tweak it");
+
+  // ...so a cursor-less wait on another channel must not re-deliver it
+  const wait = (await (
+    await app.request(`/api/comments?session=${s.sessionId}&author=user`)
+  ).json()) as any;
+  assert.equal(wait.comments.length, 0);
 });
 
 test("long-poll resolves when a comment arrives", async () => {

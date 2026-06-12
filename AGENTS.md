@@ -64,8 +64,10 @@ consciously, not as a side effect):
   Don't "simplify" it back; e2e covers it on real WebKit.
 - Feedback cursor: each session carries `agentSeq`, the highest comment seq
   already delivered to the agent. Piggyback collection and `author=user`
-  waits advance it; the viewer's unfiltered reads never touch it. Delivery is
-  exactly-once by design.
+  waits advance it, and `author=user` session waits with no explicit `after`
+  resume from it — clients keep no cursor of their own, so CLI, MCP, and
+  piggyback share one stream. The viewer's unfiltered reads never touch it.
+  Delivery is exactly-once by design, across channels.
 - `SqlStore` schema changes need in-place migration — deployed Durable
   Objects can't be reset. Follow the `pragma_table_info` probe pattern in its
   constructor.

@@ -4,6 +4,8 @@ All notable user-visible changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-12
+
 ### Added
 
 - A session thread at the bottom of each session in the viewer: a composer
@@ -38,6 +40,13 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Fixed
 
+- Feedback was re-delivered when channels were mixed: a fresh `sideshow wait`
+  process (or restarted stdio MCP server) started from seq 0 and replayed
+  comments the agent had already received via piggyback or another channel.
+  `author=user` session reads with no explicit `after` now resume from the
+  server-side agent cursor, and the CLI and stdio MCP keep no cursor of their
+  own — delivery is exactly-once across CLI, MCP, and piggyback. Pass
+  `--after <seq>` (CLI) or `afterSeq` (MCP at `/mcp`) to deliberately re-read.
 - A comment that failed to send was silently lost (input cleared, no error).
   The viewer now echoes comments immediately (pending until confirmed) and on
   failure restores the text to the input with an error toast.
@@ -62,6 +71,10 @@ All notable user-visible changes to this project are documented in this file.
   raw parseArgs stack trace; it now prints the usage text and exits 0. An
   unknown option or missing option value likewise fails with a one-line
   error and a `sideshow help` hint instead of a stack trace.
+- Following the README quick start from a git clone failed: `npx sideshow
+serve` exited with `viewer build missing` because nothing built the viewer.
+  `npm install` in the repo now builds it (the published npm package was
+  unaffected — `prepack` already ships a built viewer).
 
 ## [0.2.0] - 2026-06-11
 

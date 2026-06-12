@@ -29,10 +29,11 @@ two ways:
 1.  Publish/update responses may include a `userFeedback` array — comments the
     user left since your last call. Treat them as messages from the user; they
     are delivered once.
-2.  To explicitly wait for a reaction (blocks up to 60s, returns JSON; use
-    `after` from the previous response's `lastSeq` to avoid re-reading):
+2.  To explicitly wait for a reaction (blocks up to 60s, returns JSON; resumes
+    where you left off — comments already delivered, on any channel, are not
+    re-read):
 
-        curl -s 'http://localhost:4242/api/comments?session=<sessionId>&author=user&after=<lastSeq>&wait=60'
+        curl -s 'http://localhost:4242/api/comments?session=<sessionId>&author=user&wait=60'
 
     If you can run background processes, run this in the background after your
     first publish and keep working — it exits the moment the user comments;

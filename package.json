@@ -1,6 +1,6 @@
 {
   "name": "sideshow",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A live visual surface for terminal coding agents — agents draw HTML snippets, you watch them in the browser and comment back.",
   "keywords": [
     "agent-tools",
@@ -48,7 +48,7 @@
     "deploy": "npm run build:viewer && wrangler deploy",
     "dev:cloud": "npm run build:viewer && wrangler dev",
     "prepack": "npm run build",
-    "prepare": "simple-git-hooks"
+    "prepare": "simple-git-hooks && npm run build:viewer"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",

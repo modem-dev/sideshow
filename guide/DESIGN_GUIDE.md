@@ -13,7 +13,7 @@ Via MCP tools (preferred): `publish_snippet`, `update_snippet`,
 ```
 POST /api/snippets        { "title": "...", "html": "...", "session": "<id>", "agent": "your-name" }
 PUT  /api/snippets/:id    { "html": "..." }     # revise — same card, new version
-GET  /api/comments?session=<id>&author=user&after=<lastSeq>&wait=60   # user feedback (long-poll)
+GET  /api/comments?session=<id>&author=user&wait=60   # user feedback (long-poll, resumes where you left off)
 ```
 
 Omit `session` on your first publish and the response's `sessionId` is yours —
