@@ -27,12 +27,28 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Changed
 
+- New snippets no longer steal the scroll position: the viewer only follows
+  them when already at the bottom of the stream, and shows a "new snippet ↓"
+  pill otherwise.
+- Activity the user isn't looking at — another session, or any session while
+  the tab is hidden — badges the tab title with an unread count.
 - The Claude Code skill now documents the repo-local CLI fallback and a
   checkpoint-drain feedback pattern for harnesses that cannot surface
   background watcher output.
 
 ### Fixed
 
+- A comment that failed to send was silently lost (input cleared, no error).
+  The viewer now echoes comments immediately (pending until confirmed) and on
+  failure restores the text to the input with an error toast.
+- After an SSE reconnect the viewer refetches the selected session, so
+  snippets and comments that arrived during the gap can no longer be
+  silently missing from a live-looking board.
+- The viewer layout no longer breaks at phone widths: below 700px the
+  sidebar collapses into a drawer behind a slim top bar (hamburger toggle,
+  unread dot), the stream takes the full width, and hover-only actions
+  (card open/delete, session delete) stay visible on narrow or touch
+  screens.
 - Comments not attached to a snippet (e.g. `sideshow comment` without
   `--snippet`) were stored and delivered to agents but never shown in the
   viewer; they now render in the session thread.

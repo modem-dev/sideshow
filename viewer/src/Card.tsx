@@ -1,18 +1,26 @@
 import { For, onCleanup, onMount, Show } from "solid-js";
-import { api, relTime, type Comment, type Snippet } from "./api.ts";
-import { comments, scrollTarget, selected, setScrollTarget } from "./state.ts";
+import { api, relTime, type Snippet } from "./api.ts";
+import {
+  comments,
+  scrollTarget,
+  selected,
+  sendComment,
+  setScrollTarget,
+  toast,
+  type ViewComment,
+} from "./state.ts";
 
-// iframe registry for the postMessage bridge (resize / send-prompt), keyed by
-// snippet id so the handler in App can find the source card.
-export const cardIframes = new Map<string, HTMLIFrameElement>();
+// Card registry keyed by snippet id: the postMessage bridge in App finds the
+// source iframe here, and the "new snippet" pill scrolls to the card element.
+export const cardEls = new Map<string, { card: HTMLDivElement; iframe: HTMLIFrameElement }>();
 
 export function Card(props: { snippet: Snippet }) {
   let card!: HTMLDivElement;
   let iframe!: HTMLIFrameElement;
 
   onMount(() => {
-    cardIframes.set(props.snippet.id, iframe);
-    onCleanup(() => cardIframes.delete(props.snippet.id));
+    cardEls.set(props.snippet.id, { card, iframe });
+    onCleanup(() => cardEls.delete(props.snippet.id));
     if (scrollTarget() === props.snippet.id) {
       setScrollTarget(null);
       card.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -77,10 +85,7 @@ export function Card(props: { snippet: Snippet }) {
         snippetId={props.snippet.id}
         placeholder="Reply to the agent…"
         send={(text) =>
-          api("/api/comments", {
-            method: "POST",
-            body: JSON.stringify({ snippet: props.snippet.id, text, author: "user" }),
-          })
+          sendComment({ snippet: props.snippet.id, text, author: "user" }, props.snippet.id, text)
         }
       />
     </div>
@@ -100,12 +105,7 @@ export function SessionThread() {
       <Thread
         snippetId={null}
         placeholder="Message the agent…"
-        send={(text) =>
-          api("/api/comments", {
-            method: "POST",
-            body: JSON.stringify({ session: selected(), text, author: "user" }),
-          })
-        }
+        send={(text) => sendComment({ session: selected(), text, author: "user" }, null, text)}
       />
     </div>
   );
@@ -114,7 +114,7 @@ export function SessionThread() {
 function Thread(props: {
   snippetId: string | null;
   placeholder: string;
-  send: (text: string) => Promise<unknown>;
+  send: (text: string) => Promise<string | null>;
 }) {
   const list = () => comments().filter((c) => c.snippetId === props.snippetId);
   return (
@@ -127,11 +127,11 @@ function Thread(props: {
   );
 }
 
-function CommentRow(props: { comment: Comment }) {
+function CommentRow(props: { comment: ViewComment }) {
   return (
     <div
       class="cmt"
-      classList={{ user: props.comment.author === "user" }}
+      classList={{ user: props.comment.author === "user", pending: !!props.comment.pending }}
       data-cid={props.comment.id}
     >
       <span class="who">{props.comment.author === "user" ? "you" : props.comment.author}</span>
@@ -141,13 +141,19 @@ function CommentRow(props: { comment: Comment }) {
   );
 }
 
-function Composer(props: { placeholder: string; send: (text: string) => Promise<unknown> }) {
+function Composer(props: { placeholder: string; send: (text: string) => Promise<string | null> }) {
   let input!: HTMLInputElement;
   const send = async () => {
     const text = input.value.trim();
     if (!text) return;
     input.value = "";
-    await props.send(text);
+    const error = await props.send(text);
+    // on failure the text goes back in the input — never silently lost
+    if (error !== null) {
+      if (!input.value) input.value = text;
+      input.focus();
+      toast(`Couldn't send — ${error}. Your message is back in the box.`);
+    }
   };
   return (
     <div class="composer">

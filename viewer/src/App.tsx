@@ -1,14 +1,20 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { api, relTime, sessionLabel, type SessionRow } from "./api.ts";
-import { Card, cardIframes, SessionThread } from "./Card.tsx";
+import { Card, cardEls, SessionThread } from "./Card.tsx";
 import {
   connect,
   live,
+  navOpen,
+  nearBottom,
+  pillTarget,
   refreshSessions,
   refreshSessionsQuiet,
   select,
   selected,
   sessions,
+  setNavOpen,
+  setPillTarget,
+  setUnread,
   snippets,
   streamLoading,
   toast,
@@ -27,14 +33,47 @@ export default function App() {
     onCleanup(() => clearInterval(timer));
     window.addEventListener("message", onBridgeMessage);
     onCleanup(() => window.removeEventListener("message", onBridgeMessage));
+    // returning to the tab counts as seeing the selected session
+    const onVisibility = () => {
+      const id = selected();
+      if (!document.hidden && id) {
+        setUnread((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    onCleanup(() => document.removeEventListener("visibilitychange", onVisibility));
   });
+
+  // unseen activity badges the tab title
+  createEffect(() => {
+    document.title = unread().size ? `(${unread().size}) sideshow` : "sideshow";
+  });
+  // the mobile drawer slides in via a body class (see styles.css)
+  createEffect(() => document.body.classList.toggle("nav-open", navOpen()));
 
   return (
     <>
       <div id="app">
+        <header class="topbar">
+          <button
+            class="menu"
+            id="menuBtn"
+            aria-label="Show sessions"
+            onClick={() => setNavOpen(!navOpen())}
+          >
+            ☰<span class="dot" id="menuDot" classList={{ show: unread().size > 0 }}></span>
+          </button>
+          <div class="brand">
+            <span class="livedot" classList={{ on: live() }}></span>sideshow
+          </div>
+        </header>
         <aside>
           <div class="brand">
-            <span id="live" classList={{ on: live() }}></span>sideshow
+            <span class="livedot" classList={{ on: live() }}></span>sideshow
           </div>
           <div id="sessionList">
             <For each={sessions}>{(s) => <SessionItem session={s} />}</For>
@@ -49,14 +88,31 @@ export default function App() {
             </a>
           </div>
         </aside>
-        <main>
+        <main
+          onScroll={() => {
+            if (nearBottom()) setPillTarget(null);
+          }}
+        >
           <Onboard />
           <SessionView />
         </main>
       </div>
+      <div id="scrim" onClick={() => setNavOpen(false)}></div>
       <div id="toast" role="status" aria-live="polite" classList={{ show: toastShow() }}>
         {toastText()}
       </div>
+      <button
+        id="newPill"
+        hidden={pillTarget() === null}
+        onClick={() => {
+          const target = pillTarget();
+          if (target)
+            cardEls.get(target)?.card.scrollIntoView({ behavior: "smooth", block: "start" });
+          setPillTarget(null);
+        }}
+      >
+        new snippet ↓
+      </button>
     </>
   );
 }
@@ -73,10 +129,10 @@ async function onBridgeMessage(ev: MessageEvent) {
   if (!d || !d.__sideshow) return;
   let sourceId: string | null = null;
   let sourceFrame: HTMLIFrameElement | null = null;
-  for (const [id, frame] of cardIframes) {
-    if (frame.contentWindow === ev.source) {
+  for (const [id, { iframe }] of cardEls) {
+    if (iframe.contentWindow === ev.source) {
       sourceId = id;
-      sourceFrame = frame;
+      sourceFrame = iframe;
       break;
     }
   }
