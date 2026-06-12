@@ -58,6 +58,10 @@ All notable user-visible changes to this project are documented in this file.
   shown on focus, the editable session title is labeled and Escape cancels
   an edit, snippet iframes carry the snippet title, and toasts are announced
   via a polite live region.
+- Following the README quick start from a git clone failed: `npx sideshow
+serve` exited with `viewer build missing` because nothing built the viewer.
+  `npm install` in the repo now builds it (the published npm package was
+  unaffected — `prepack` already ships a built viewer).
 
 ## [0.2.0] - 2026-06-11
 

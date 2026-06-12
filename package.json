@@ -48,7 +48,7 @@
     "deploy": "npm run build:viewer && wrangler deploy",
     "dev:cloud": "npm run build:viewer && wrangler dev",
     "prepack": "npm run build",
-    "prepare": "simple-git-hooks"
+    "prepare": "simple-git-hooks && npm run build:viewer"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
