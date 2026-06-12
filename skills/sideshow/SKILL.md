@@ -20,7 +20,9 @@ sideshow guide        # or: curl -s $SIDESHOW_URL/guide
 ```
 
 If `SIDESHOW_URL` is unset, the surface is at `http://localhost:4242`. If it
-is not running, start it: `sideshow serve` (or `npx sideshow serve`).
+is not running, start it: `sideshow serve` (or `npx sideshow serve`). If the
+`sideshow` command is not on PATH but you are inside this repo, use
+`node bin/sideshow.js ...` as the CLI command.
 
 ## Publishing
 
@@ -32,6 +34,9 @@ Otherwise use the CLI — session grouping is automatic:
 sideshow publish sketch.html --title "Cache layout" --agent your-name --session-title "Cache redesign"
 echo '<p>...</p>' | sideshow publish - --title "Quick note"
 ```
+
+Save the returned `sessionId` and snippet `id`; all feedback handling depends
+on watching the exact session you published to.
 
 Rules of thumb:
 
@@ -49,28 +54,47 @@ Rules of thumb:
 
 ## The feedback loop
 
-Feedback reaches you three ways — prefer them in this order:
+Treat sideshow as a two-way surface. Do not assume you will automatically see
+comments after publishing; you must either arm a visible watcher or drain
+feedback at checkpoints.
+
+Feedback reaches you four ways — prefer them in this order:
 
 1. **Piggyback (no action needed).** Publish/update/reply responses may
    include a `userFeedback` array: comments the user left since your last
    call, delivered once. Read them whenever they appear and treat them as
    user instructions.
-2. **Background watch (don't block, don't poll).** After your first publish,
-   arm a listener as a background process and keep working:
+2. **Visible background watch (best non-blocking path).** After your first
+   publish, arm a listener as a background process only if your harness will
+   surface the process output back to you:
 
    ```sh
-   sideshow wait --timeout 600   # run in the background (e.g. run_in_background)
+   sideshow wait --session <sessionId> --timeout 600
    ```
 
-   It exits the moment the user comments, which surfaces the output to you.
-   Handle the comments, then re-arm it. Always arm it on the session you just
-   published to — never a guessed one.
+   It exits the moment the user comments. Handle the comments, then re-arm it.
+   Always watch the actual `sessionId` returned by publish — never a guessed
+   or default session. Do not start a blind detached watcher whose output you
+   cannot see.
 
-3. **Blocking wait.** Only when you explicitly need a reaction before
-   continuing: `sideshow wait --timeout 120` in the foreground.
+3. **Checkpoint drain (reliable fallback).** If background output is not
+   surfaced, run a quick drain at the start of each user turn, before final
+   answers, and before major changes:
 
-Acknowledge briefly with `sideshow comment "..." --snippet <id>` when useful;
-do substantial changes as snippet updates.
+   ```sh
+   sideshow wait --session <sessionId> --timeout 1
+   ```
+
+   This is effectively non-blocking but keeps you aware of comments in
+   harnesses without background notifications.
+
+4. **Blocking wait.** Only when you explicitly need a reaction before
+   continuing: `sideshow wait --session <sessionId> --timeout 120` in the
+   foreground.
+
+When comments arrive, acknowledge briefly with
+`sideshow comment "..." --snippet <id>` when useful; do substantial changes as
+snippet updates, then re-arm the watcher or continue checkpoint-draining.
 
 ## Remote surfaces
 

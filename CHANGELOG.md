@@ -32,6 +32,9 @@ All notable user-visible changes to this project are documented in this file.
   pill otherwise.
 - Activity the user isn't looking at — another session, or any session while
   the tab is hidden — badges the tab title with an unread count.
+- The Claude Code skill now documents the repo-local CLI fallback and a
+  checkpoint-drain feedback pattern for harnesses that cannot surface
+  background watcher output.
 
 ### Fixed
 
