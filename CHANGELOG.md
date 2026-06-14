@@ -53,7 +53,18 @@ All notable user-visible changes to this project are documented in this file.
 - `sideshow watch` streams user comments to stdout one per line, re-arming the
   long-poll forever and waiting for the first publish if no session exists yet.
   It rides the shared server-side agent cursor (exactly-once across watch,
-  wait, and piggyback) — the foundation for a Claude Code background monitor.
+  wait, and piggyback), and falls back to resolving the most recently active
+  session matching the current directory when no local session state is shared.
+- A Claude Code plugin (`plugin/`, published via a repo-hosted marketplace)
+  bundles the sideshow MCP server, the skill, and a background monitor that
+  runs `sideshow watch` — browser comments arrive in the agent as notifications
+  without pasting or re-arming a watcher. Install with
+  `/plugin marketplace add modem-dev/sideshow` then
+  `/plugin install sideshow@sideshow`.
+- A "connect Claude Code" link in the viewer (sidebar footer and the onboarding
+  screen) opens an integrations panel with the plugin install commands, what
+  the monitor runs, and the honest caveats (two commands, not a one-click;
+  needs Claude Code ≥ 2.1.105).
 
 ### Changed
 

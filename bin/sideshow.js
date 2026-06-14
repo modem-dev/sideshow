@@ -215,6 +215,29 @@ async function resolveSession(flags, { create = false } = {}) {
   return session.id;
 }
 
+// A monitor process (e.g. the Claude Code plugin) may not share the local
+// state file written by the agent's CLI calls — different spawn tree, so
+// `agentPid()` can hash to a different key. Fall back to asking the server for
+// the most recently active session whose cwd matches ours. Uses raw fetch (not
+// `api()`) so a transient failure returns null instead of exiting the process.
+async function resolveSessionByCwd() {
+  try {
+    const res = await fetch(`${BASE}/api/sessions`, {
+      headers: TOKEN ? { authorization: `Bearer ${TOKEN}` } : {},
+    });
+    if (!res.ok) return null;
+    const sessions = await res.json();
+    const cwd = process.cwd();
+    return (
+      sessions
+        .filter((s) => s.cwd === cwd)
+        .sort((a, b) => String(b.lastActiveAt).localeCompare(String(a.lastActiveAt)))[0]?.id ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
 function readContent(arg) {
   if (!arg || arg === "-") {
     try {
@@ -622,7 +645,7 @@ const commands = {
     // piggybacked write had already consumed.
     let firstAfter = flags.after;
     for (;;) {
-      const session = await resolveSession(flags);
+      const session = (await resolveSession(flags)) ?? (await resolveSessionByCwd());
       if (!session) {
         // No session yet — the agent hasn't published. Wait and retry.
         await sleep(2000);

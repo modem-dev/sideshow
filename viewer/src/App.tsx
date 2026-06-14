@@ -29,7 +29,21 @@ import {
   updateNotice,
 } from "./state.ts";
 
+// The "Connect Claude Code" integrations modal — module-level so the sidebar
+// footer, the onboarding screen, and the overlay can all reach it.
+const [connectOpen, setConnectOpen] = createSignal(false);
+
 export default function App() {
+  // Escape closes the integrations modal while it is open.
+  createEffect(() => {
+    if (!connectOpen()) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConnectOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    onCleanup(() => document.removeEventListener("keydown", onKey));
+  });
+
   onMount(() => {
     refreshSessions();
     connect();
@@ -119,6 +133,16 @@ export default function App() {
             &nbsp;·&nbsp;{" "}
             <a href="/setup" target="_blank">
               agent setup
+            </a>{" "}
+            &nbsp;·&nbsp;{" "}
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                setConnectOpen(true);
+              }}
+            >
+              connect Claude Code
             </a>
           </div>
         </aside>
@@ -132,6 +156,9 @@ export default function App() {
         </main>
       </div>
       <div id="scrim" onClick={() => setNavOpen(false)}></div>
+      <Show when={connectOpen()}>
+        <ConnectModal onClose={() => setConnectOpen(false)} />
+      </Show>
       <div id="toast" role="status" aria-live="polite" classList={{ show: toastShow() }}>
         {toastText()}
       </div>
@@ -373,6 +400,62 @@ function Onboard() {
       <Snip text={SETUP_SNIP} />
       <h2>or try it yourself</h2>
       <Snip text={TRY_SNIP} />
+      <h2>using claude code?</h2>
+      <button class="connect-btn" onClick={() => setConnectOpen(true)}>
+        Connect Claude Code →
+      </button>
+    </div>
+  );
+}
+
+// Install instructions for the Claude Code plugin: a background monitor that
+// streams the user's comments to the agent as notifications, plus the sideshow
+// MCP server. There is no browser→terminal handoff, so "connect" is two
+// copy-paste commands, stated honestly.
+const MARKETPLACE_CMD = "/plugin marketplace add modem-dev/sideshow";
+const INSTALL_CMD = "/plugin install sideshow@sideshow";
+
+function ConnectModal(props: { onClose: () => void }) {
+  return (
+    <div class="modal-backdrop" onClick={props.onClose}>
+      <div
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Connect Claude Code"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div class="modal-head">
+          <h2>Connect Claude Code</h2>
+          <button class="x" aria-label="Close" onClick={props.onClose}>
+            ✕
+          </button>
+        </div>
+        <p class="sub">
+          Install the sideshow plugin so your comments reach the agent on their own. A background
+          monitor streams each comment to Claude Code as a notification — no copy-pasting, no
+          re-arming a watcher.
+        </p>
+        <h3>1 · add the marketplace</h3>
+        <Snip text={MARKETPLACE_CMD} />
+        <h3>2 · install the plugin</h3>
+        <Snip text={INSTALL_CMD} />
+        <p class="note">
+          Run both inside Claude Code. On install it asks for your <strong>Sideshow URL</strong>{" "}
+          (default <code>http://localhost:4242</code>, or your deployed instance) and an optional
+          token.
+        </p>
+        <h3>what it runs</h3>
+        <p class="note">
+          The plugin connects the sideshow MCP server and runs <code>sideshow watch</code> against
+          your board as a background process — unsandboxed, the same trust level as hooks, with no
+          per-comment prompt. Comments are delivered to the agent exactly once.
+        </p>
+        <p class="caveat">
+          Requires Claude Code ≥ 2.1.105. It&rsquo;s two commands, not a true one-click — Claude
+          Code has no browser-to-terminal handoff yet.
+        </p>
+      </div>
     </div>
   );
 }

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace-manifest.json",
+  "name": "sideshow",
+  "owner": { "name": "modem", "email": "ben@modem.dev" },
+  "description": "The sideshow Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "sideshow",
+      "source": "./plugin",
+      "description": "Stream sideshow browser comments to Claude Code as notifications; publish snippets over MCP.",
+      "category": "Integrations",
+      "keywords": ["sideshow", "visualization", "feedback", "mcp"]
+    }
+  ]
+}

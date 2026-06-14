@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "sideshow",
+  "displayName": "sideshow",
+  "version": "0.1.0",
+  "description": "Stream sideshow browser comments to Claude Code as notifications, and publish snippets over MCP.",
+  "author": { "name": "modem", "email": "ben@modem.dev" },
+  "homepage": "https://github.com/modem-dev/sideshow",
+  "repository": "https://github.com/modem-dev/sideshow",
+  "license": "MIT",
+  "keywords": ["sideshow", "visualization", "feedback", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": {
+    "sideshow": {
+      "command": "npx",
+      "args": ["-y", "sideshow@latest", "mcp"],
+      "env": {
+        "SIDESHOW_URL": "${user_config.sideshowUrl}",
+        "SIDESHOW_TOKEN": "${user_config.apiToken}"
+      }
+    }
+  },
+  "experimental": {
+    "monitors": "./monitors.json"
+  },
+  "userConfig": {
+    "sideshowUrl": {
+      "type": "string",
+      "title": "Sideshow URL",
+      "description": "Base URL of your sideshow server. Local default is http://localhost:4242; set your deployed instance (e.g. https://sideshow.you.workers.dev) otherwise.",
+      "default": "http://localhost:4242",
+      "required": true
+    },
+    "apiToken": {
+      "type": "string",
+      "title": "Sideshow token",
+      "description": "Bearer token for a deployed sideshow instance. Leave blank for a local server.",
+      "sensitive": true
+    }
+  }
+}

@@ -126,30 +126,42 @@ https://host/marketplace.json`) BUT relative plugin sources won't work there —
    re-arm + exactly-once. Decided the **channel** question: watch carries no
    client cursor after the first poll, so it resumes from and advances the shared
    `author=user` agent cursor (`waitForComments` → `markAgentSeen`).
-2. Plugin package, validated via `--plugin-dir`.
-3. Repo-hosted marketplace (`.claude-plugin/marketplace.json`, plugin as `git-subdir` of
-   `modem-dev/sideshow`) + docs in `guide/`.
-4. Integrations page in the viewer.
+2. ✅ DONE — Plugin package in `plugin/`: `.claude-plugin/plugin.json` (name
+   `sideshow`, `userConfig` for `sideshowUrl`/`apiToken`, inline `mcpServers`
+   running `npx sideshow@latest mcp`, `experimental.monitors` → `./monitors.json`,
+   `skills` → `./skills/`). `monitors.json` runs `sideshow watch` with the config
+   piped in via `SIDESHOW_URL`/`SIDESHOW_TOKEN`. Plugin skill at
+   `plugin/skills/sideshow/SKILL.md` teaches the notification workflow. Validated
+   with `claude plugin validate ./plugin` on Claude Code 2.1.177 (✔ passed).
+3. ✅ DONE — Repo-hosted marketplace at `.claude-plugin/marketplace.json` (name
+   `sideshow`, plugin source relative `./plugin` — works for git-hosted
+   marketplaces). Validated ✔. Docs in `README.md` ("Claude Code plugin"
+   section). Install: `/plugin marketplace add modem-dev/sideshow` then
+   `/plugin install sideshow@sideshow`.
+4. ✅ DONE — Integrations modal in the viewer (`viewer/src/App.tsx` `ConnectModal`,
+   styles in `styles.css`). Triggered from the sidebar footer ("connect Claude
+   Code") and the onboarding screen. Shows both install commands (copyable),
+   what the monitor runs (transparency), and honest caveats. e2e covers it
+   (`e2e/viewer.spec.ts`).
 
-## Open decisions / risks to settle first
+## Open decisions / risks — all settled
 
-- **Monitor = delivery channel vs. notifier (DECIDE FIRST).** Recommended: **channel** —
-  it consumes via the shared `author=user` cursor, so a comment is delivered exactly once
-  across paste / wait / monitor. Small cost: a session crash between consume and the
-  notification being read could drop one comment (same rare class as today's background-task
-  race). Alternative (read without advancing the cursor; piggyback stays authoritative)
-  never drops but double-surfaces every comment.
-- **Session resolution under the monitor's process tree.** The CLI keys session state on
-  `(agentPid(), cwd)` where `agentPid()` walks up past shells to the Claude Code process
-  (`bin/sideshow.js`, `stateFile()` + `agentPid()` + `resolveSession()`). A monitor running
-  in the same cwd under the same Claude Code process _should_ resolve the same session — but
-  **verify** the monitor's spawn tree resolves to the same PID. Robust fallback: have
-  `sideshow watch` resolve "the most recently active session whose `cwd` matches" by asking
-  the server, instead of trusting the local state file.
-- **API maturity.** `experimental.monitors` + v2.1.105 dependency — build behind a clearly
-  "experimental integration" label; re-verify the contract at build time.
-- **Don't double-run.** If the bundled monitor AND a manual `sideshow wait` background loop
-  both run, document that the agent should use one or the other.
+- **Monitor = delivery channel vs. notifier.** ✅ Decided **channel** — watch
+  reads with `author=user` and keeps no client cursor after the first poll, so it
+  resumes from and advances the shared server-side `agentSeq` (`waitForComments`
+  → `markAgentSeen`). Exactly once across paste / wait / monitor.
+- **Session resolution under the monitor's process tree.** ✅ Addressed with a
+  server-side fallback: `resolveSessionByCwd()` in `bin/sideshow.js` queries
+  `GET /api/sessions` (which exposes `cwd` + `lastActiveAt`) and picks the most
+  recently active session whose `cwd` matches `process.cwd()`, used when the
+  local state file doesn't resolve a session.
+- **API maturity.** `experimental.monitors` + v2.1.105 dependency — surfaced in
+  the viewer modal and README as an explicit caveat. Re-verify the manifest
+  contract on each Claude Code bump.
+- **Don't double-run.** The plugin skill steers the agent to rely on the monitor
+  rather than arming a separate `sideshow wait` loop. NOTE: `watch` is unreleased
+  on npm — the plugin's `npx sideshow@latest watch` only works once a release
+  including `watch` ships.
 
 ## Key code references
 
@@ -166,5 +178,15 @@ https://host/marketplace.json`) BUT relative plugin sources won't work there —
 
 ## Next action
 
-Start Phase 1: implement `sideshow watch` in `bin/sideshow.js` (+ a `test/cli.test.ts` case),
-after settling the channel-vs-notifier decision (recommend channel).
+All four phases are implemented on `feat/comment-and-copy` (PR #16). Remaining
+before this is usable end-to-end:
+
+1. **Publish a sideshow release that includes `sideshow watch`** — the plugin's
+   `npx sideshow@latest watch`/`mcp` resolve to the published package, and
+   `watch` is currently unreleased.
+2. **Live smoke test** with a real Claude Code session: `/plugin marketplace add`
+   the branch/repo, install, publish a snippet, comment in the browser, and
+   confirm the comment arrives as a notification (verifies the monitor's spawn
+   tree resolves the session — `resolveSessionByCwd` is the safety net).
+3. Consider pinning the marketplace plugin `source` to a tagged `ref`/`sha`
+   once released, instead of tracking `main`.

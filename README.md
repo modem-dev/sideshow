@@ -69,6 +69,25 @@ MCP agents get usage instructions automatically; everything else uses the
 `/setup` block above. Claude Code users can also install the skill in
 `skills/sideshow/` (`cp -r skills/sideshow ~/.claude/skills/`).
 
+### Claude Code plugin
+
+Claude Code users can install a plugin that bundles all three at once — the
+MCP server, the skill, and a **background monitor** that streams your browser
+comments to the agent as notifications, so feedback arrives without pasting or
+re-arming a watcher:
+
+```text
+/plugin marketplace add modem-dev/sideshow
+/plugin install sideshow@sideshow
+```
+
+On install it asks for your **Sideshow URL** (default `http://localhost:4242`,
+or your deployed instance) and an optional token. The monitor runs
+`sideshow watch` against your board; comments are delivered to the agent
+exactly once. Requires Claude Code ≥ 2.1.105. The viewer's "connect Claude
+Code" link (sidebar footer) shows the same steps. The plugin lives in
+[`plugin/`](plugin/).
+
 ## Concepts
 
 - **Session** — one agent conversation. Sessions appear in the viewer sidebar;

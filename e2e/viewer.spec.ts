@@ -323,6 +323,24 @@ test("at phone width the sidebar collapses into a drawer and actions stay visibl
   await expect(page.locator("aside")).not.toBeInViewport();
 });
 
+test("the Connect Claude Code modal shows the plugin install commands", async ({
+  page,
+  server,
+}) => {
+  await page.goto(server.url);
+
+  await page.getByRole("link", { name: "connect Claude Code" }).click();
+  const modal = page.getByRole("dialog", { name: "Connect Claude Code" });
+  await expect(modal).toBeVisible();
+  await expect(modal).toContainText("/plugin marketplace add modem-dev/sideshow");
+  await expect(modal).toContainText("/plugin install sideshow@sideshow");
+  await expect(modal).toContainText("sideshow watch");
+
+  // Escape dismisses it
+  await page.keyboard.press("Escape");
+  await expect(modal).toBeHidden();
+});
+
 test("version select appears live after an update", async ({ page, server }) => {
   const snippet = await publish(server.url, { html: "<p>v1</p>", title: "Doc", agent: "e2e" });
 
