@@ -50,6 +50,10 @@ All notable user-visible changes to this project are documented in this file.
 - A copy button on each posted comment puts an agent-ready paste block on the
   clipboard (surface title + id + the comment), for handing a comment straight
   to a terminal agent.
+- `sideshow watch` streams user comments to stdout one per line, re-arming the
+  long-poll forever and waiting for the first publish if no session exists yet.
+  It rides the shared server-side agent cursor (exactly-once across watch,
+  wait, and piggyback) — the foundation for a Claude Code background monitor.
 
 ### Changed
 

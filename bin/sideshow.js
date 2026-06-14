@@ -55,6 +55,13 @@ usage:
       --timeout <sec>   max seconds to wait (default 120)
       --after <seq>     re-read comments after this cursor (default: where the
                         agent left off, tracked server-side across CLI/MCP)
+  sideshow watch [options]                stream user comments forever, one per
+                                          line (re-arms the long-poll; for a
+                                          background monitor)
+      --session <id>    session to watch (default: auto, waits for the first
+                        publish to create one)
+      --after <seq>     re-read comments after this cursor on the first poll
+                        (default: resume where the agent left off, server-side)
   sideshow comment <text> [options]       post a reply comment
       --surface <id> | --session <id>     attach point (default: auto session)
       --author <name>   defaults to agent name
@@ -294,6 +301,20 @@ async function publishSurface(parts, flags) {
       sessionTitle: flags["session-title"],
     }),
   });
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// One comment → one line (one monitor notification). Newlines are collapsed so
+// a multi-line comment stays a single notification.
+function watchLine(c) {
+  const text = String(c.text ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const where = c.surfaceId
+    ? `on “${c.surfaceTitle ?? "a surface"}” (surface ${c.surfaceId})`
+    : "in the session thread";
+  return `sideshow comment ${where}: “${text}”`;
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -580,6 +601,54 @@ const commands = {
             hint: "no user feedback yet — run wait again or continue",
           },
     );
+  },
+
+  async watch() {
+    const { values: flags } = parse({
+      options: {
+        session: { type: "string" },
+        after: { type: "string" },
+      },
+    });
+    // A continuous long-poll that streams each new user comment as one line —
+    // one line is one Claude Code monitor notification. It re-arms forever and
+    // never exits on its own; a transient network error backs off and retries
+    // rather than failing (unlike `api()`, which would exit the process).
+    //
+    // After the first poll it carries no client cursor: reading with
+    // author=user resumes from the session's server-side agent cursor and
+    // advances it, so a comment is delivered exactly once across watch, wait,
+    // and piggyback. Honoring a local cursor here would re-deliver anything a
+    // piggybacked write had already consumed.
+    let firstAfter = flags.after;
+    for (;;) {
+      const session = await resolveSession(flags);
+      if (!session) {
+        // No session yet — the agent hasn't published. Wait and retry.
+        await sleep(2000);
+        continue;
+      }
+      let result;
+      try {
+        const afterParam = firstAfter === undefined ? "" : `&after=${firstAfter}`;
+        const res = await fetch(
+          `${BASE}/api/comments?session=${session}&author=user${afterParam}&wait=60`,
+          { headers: TOKEN ? { authorization: `Bearer ${TOKEN}` } : {} },
+        );
+        if (!res.ok) {
+          await sleep(2000);
+          continue;
+        }
+        result = await res.json();
+      } catch {
+        await sleep(2000);
+        continue;
+      }
+      firstAfter = undefined;
+      for (const c of result.comments ?? []) {
+        console.log(watchLine(c));
+      }
+    }
   },
 
   async comment() {
