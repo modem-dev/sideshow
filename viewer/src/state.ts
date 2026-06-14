@@ -1,7 +1,46 @@
 // Shared state and the flows that mutate it. Stores reconcile by id so DOM
 // rows/cards persist across refetches (focus, composer drafts, iframes).
-import { createSignal } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
+
+export type ColorTheme = string;
+export type ColorScheme = "auto" | "dark" | "light";
+
+// Keys mirror the inline IIFE in viewer/index.html that prevents FOUC.
+// If you rename these, update that script too.
+const THEME_KEY = "sideshow-theme";
+const SCHEME_KEY = "sideshow-mode";
+
+export const [colorTheme, setColorTheme] = createSignal<ColorTheme>(
+  localStorage.getItem(THEME_KEY) || "default",
+);
+export const [colorScheme, setColorScheme] = createSignal<ColorScheme>(
+  (localStorage.getItem(SCHEME_KEY) as ColorScheme) || "auto",
+);
+
+// Wired once at module load — avoids allocating a new MediaQueryList on every
+// reactive update when scheme is "auto".
+const _darkMQ = matchMedia("(prefers-color-scheme: dark)");
+const [_osDark, _setOsDark] = createSignal(_darkMQ.matches);
+_darkMQ.addEventListener("change", (e) => _setOsDark(e.matches));
+
+export function resolvedDark() {
+  const s = colorScheme();
+  return s === "dark" || (s === "auto" && _osDark());
+}
+
+// Separate effects so a scheme change doesn't trigger a redundant theme write
+// and vice versa.
+createEffect(() => localStorage.setItem(SCHEME_KEY, colorScheme()));
+createEffect(() => localStorage.setItem(THEME_KEY, colorTheme()));
+createEffect(() => {
+  const theme = colorTheme();
+  const root = document.documentElement;
+  if (resolvedDark()) root.setAttribute("data-theme", "dark");
+  else root.removeAttribute("data-theme");
+  if (theme !== "default") root.setAttribute("data-color-theme", theme);
+  else root.removeAttribute("data-color-theme");
+});
 import { api, type Comment, type SessionRow, type Snippet, type VersionInfo } from "./api.ts";
 
 // A comment as the viewer renders it: server comments plus the optimistic

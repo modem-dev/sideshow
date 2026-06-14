@@ -4,6 +4,8 @@ import { Card, cardEls, SessionThread } from "./Card.tsx";
 import { renderNotes } from "./notes.ts";
 import {
   checkVersion,
+  colorScheme,
+  colorTheme,
   connect,
   dismissUpdate,
   live,
@@ -12,9 +14,12 @@ import {
   pillTarget,
   refreshSessions,
   refreshSessionsQuiet,
+  resolvedDark,
   select,
   selected,
   sessions,
+  setColorScheme,
+  setColorTheme,
   setNavOpen,
   setPillTarget,
   setUnread,
@@ -159,6 +164,176 @@ function UpdateBanner() {
   );
 }
 
+// Swatch order: [field/panel, surface/elevated, accent/ember, text/ink1]
+const THEMES: { id: string; label: string; dark: string[]; light: string[] }[] = [
+  {
+    id: "default",
+    label: "Default",
+    dark: ["#1f1e1b", "#2a2925", "#85b7eb", "#eceadf"],
+    light: ["#faf9f5", "#ffffff", "#185fa5", "#1a1915"],
+  },
+  {
+    id: "gruvbox",
+    label: "Gruvbox",
+    dark: ["#1d2021", "#32302f", "#fe8019", "#ebdbb2"],
+    light: ["#ede7d5", "#faf7ec", "#d65d0e", "#3c3836"],
+  },
+  {
+    id: "catppuccin",
+    label: "Catppuccin",
+    dark: ["#11111b", "#1e1e2e", "#cba6f7", "#cdd6f4"],
+    light: ["#e6e9ef", "#ffffff", "#8839ef", "#4c4f69"],
+  },
+  {
+    id: "tokyo-night",
+    label: "Tokyo Night",
+    dark: ["#16161e", "#1f2335", "#7aa2f7", "#c0caf5"],
+    light: ["#e1e2e7", "#f7f8fc", "#2e7de9", "#343b58"],
+  },
+  {
+    id: "dracula",
+    label: "Dracula",
+    dark: ["#21222c", "#343746", "#bd93f9", "#f8f8f2"],
+    light: ["#e8e8ee", "#fbfbfd", "#7c3aed", "#16161e"],
+  },
+  {
+    id: "nord",
+    label: "Nord",
+    dark: ["#272c36", "#3b4252", "#88c0d0", "#eceff4"],
+    light: ["#e5e9f0", "#f8f9fb", "#5e81ac", "#2e3440"],
+  },
+  {
+    id: "rose-pine",
+    label: "Rosé Pine",
+    dark: ["#191724", "#26233a", "#c4a7e7", "#e0def4"],
+    light: ["#f2e9e1", "#fffaf3", "#907aa9", "#575279"],
+  },
+  {
+    id: "everforest",
+    label: "Everforest",
+    dark: ["#232a2e", "#343f44", "#a7c080", "#d3c6aa"],
+    light: ["#f4f0d9", "#fffbef", "#6f8352", "#4d5960"],
+  },
+  {
+    id: "one-dark",
+    label: "One Dark",
+    dark: ["#21252b", "#2f343e", "#61afef", "#d7dae0"],
+    light: ["#eaeaeb", "#ffffff", "#4078f2", "#383a42"],
+  },
+  {
+    id: "monokai",
+    label: "Monokai Pro",
+    dark: ["#221f22", "#403e41", "#ffd866", "#fcfcfa"],
+    light: ["#e9e6e4", "#fcfbfa", "#c08a00", "#2c292d"],
+  },
+  {
+    id: "github",
+    label: "GitHub",
+    dark: ["#1f2428", "#2b3138", "#58a6ff", "#e1e4e8"],
+    light: ["#f0f2f4", "#ffffff", "#0366d6", "#24292e"],
+  },
+  {
+    id: "ayu",
+    label: "Ayu",
+    dark: ["#0d1017", "#141821", "#e6b450", "#bfbdb6"],
+    light: ["#eff1f3", "#fcfcfc", "#f2ae49", "#3d4149"],
+  },
+  {
+    id: "vitesse",
+    label: "Vitesse",
+    dark: ["#121212", "#1e1e1e", "#4d9375", "#dbd7ca"],
+    light: ["#f0f0f0", "#ffffff", "#1c6b48", "#393a34"],
+  },
+  {
+    id: "synthwave",
+    label: "Synthwave '84",
+    dark: ["#241b2f", "#322a47", "#ff7edb", "#ffffff"],
+    light: ["#e6e2f0", "#fbfafd", "#c936a6", "#241b2f"],
+  },
+];
+
+function ThemePicker() {
+  const [open, setOpen] = createSignal(false);
+  // oxlint doesn't understand Solid's ref= definite-assignment; suppress false positive
+  // eslint-disable-next-line no-unassigned-vars
+  let picker!: HTMLDivElement;
+
+  createEffect(() => {
+    if (!open()) return;
+    const close = (e: MouseEvent) => {
+      if (!picker.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("click", close);
+    onCleanup(() => document.removeEventListener("click", close));
+  });
+
+  return (
+    <div class="theme-picker" ref={picker}>
+      <button
+        class="theme-pick-btn"
+        classList={{ active: colorTheme() !== "default" || colorScheme() !== "auto" }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(!open());
+        }}
+        title="Theme"
+        aria-label="Theme settings"
+        aria-expanded={open()}
+      >
+        ◑
+      </button>
+      <Show when={open()}>
+        <div class="theme-popover" role="dialog" aria-label="Theme settings">
+          <div class="theme-pop-section">
+            <div class="theme-pop-label">Mode</div>
+            <div class="theme-seg">
+              <button
+                classList={{ on: colorScheme() === "light" }}
+                onClick={() => setColorScheme("light")}
+              >
+                ☼ Light
+              </button>
+              <button
+                classList={{ on: colorScheme() === "auto" }}
+                onClick={() => setColorScheme("auto")}
+              >
+                Auto
+              </button>
+              <button
+                classList={{ on: colorScheme() === "dark" }}
+                onClick={() => setColorScheme("dark")}
+              >
+                ☾ Dark
+              </button>
+            </div>
+          </div>
+          <div class="theme-pop-section">
+            <div class="theme-pop-label">Theme</div>
+            <div class="theme-card-grid">
+              <For each={THEMES}>
+                {(t) => (
+                  <button
+                    class="theme-card"
+                    classList={{ on: colorTheme() === t.id }}
+                    onClick={() => setColorTheme(t.id)}
+                  >
+                    <span class="swatches">
+                      <For each={resolvedDark() ? t.dark : t.light}>
+                        {(c) => <span class="swatch" style={{ background: c }} />}
+                      </For>
+                    </span>
+                    <span class="theme-card-label">{t.label}</span>
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+        </div>
+      </Show>
+    </div>
+  );
+}
+
 // Release notes as a card in the stream — the surface already renders cards,
 // so "what's new" is just content. Shares dismissal with the banner.
 function WhatsNewCard() {
@@ -265,6 +440,7 @@ function SessionView() {
         <span class="meta" id="sessMeta">
           {current() ? `${current()!.agent} · started ${relTime(current()!.createdAt)}` : ""}
         </span>
+        <ThemePicker />
       </div>
       <div id="stream">
         <WhatsNewCard />

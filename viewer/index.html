@@ -4,6 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>sideshow</title>
+    <script>
+      // Apply theme before CSS loads to prevent flash of wrong theme.
+      // Keys must match SCHEME_KEY / THEME_KEY in viewer/src/state.ts.
+      (function () {
+        var mode = localStorage.getItem("sideshow-mode") || "auto";
+        var theme = localStorage.getItem("sideshow-theme") || "default";
+        var dark =
+          mode === "dark" ||
+          (mode === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.setAttribute("data-theme", "dark");
+        if (theme !== "default") document.documentElement.setAttribute("data-color-theme", theme);
+      })();
+    </script>
   </head>
   <body>
     <script type="module" src="/src/main.tsx"></script>
