@@ -77,20 +77,47 @@ async function api(path, init = {}) {
 // cwd-only keying where `ps` is unavailable.
 const SHELLS = new Set(["sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh"]);
 
+function getParentPosix(pid) {
+  const out = execFileSync("ps", ["-o", "ppid=,comm=", "-p", String(pid)], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  }).trim();
+  const m = out.match(/^\s*(\d+)\s+(.*)$/);
+  if (!m) return { ppid: 0, isShell: false };
+  const ppid = Number(m[1]);
+  const comm = m[2].trim().split("/").pop() ?? "";
+  return { ppid, isShell: SHELLS.has(comm.replace(/^-/, "")) };
+}
+
+function agentPidWindows(startPid) {
+  // wmic is removed in Windows 11. Walk the process tree in a single
+  // PowerShell call to avoid repeated startup overhead (~300ms per spawn).
+  const script = `
+    $pid = ${startPid}
+    $shells = @('cmd.exe','powershell.exe','pwsh.exe')
+    for ($i = 0; $i -lt 10; $i++) {
+      $p = Get-CimInstance Win32_Process -Filter "ProcessId=$pid"
+      if (!$p) { break }
+      if ($shells -notcontains $p.Name.ToLower()) { break }
+      if ($p.ParentProcessId -le 1) { break }
+      $pid = $p.ParentProcessId
+    }
+    $pid
+  `;
+  const out = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  }).trim();
+  return Number(out) || startPid;
+}
+
 function agentPid() {
   try {
+    if (process.platform === "win32") return agentPidWindows(process.ppid);
     let pid = process.ppid;
     for (let hops = 0; hops < 10; hops++) {
-      const out = execFileSync("ps", ["-o", "ppid=,comm=", "-p", String(pid)], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
-      const m = out.match(/^\s*(\d+)\s+(.*)$/);
-      if (!m) return pid;
-      const ppid = Number(m[1]);
-      const comm = m[2].trim().split("/").pop() ?? "";
-      if (!SHELLS.has(comm.replace(/^-/, ""))) return pid;
-      if (!ppid || ppid <= 1) return pid;
+      const { ppid, isShell } = getParentPosix(pid);
+      if (!isShell || !ppid || ppid <= 1) return pid;
       pid = ppid;
     }
     return pid;
@@ -215,8 +242,14 @@ const commands = {
       env: { ...process.env, PORT: port },
     });
     if (flags.open) {
-      const opener = process.platform === "darwin" ? "open" : "xdg-open";
-      setTimeout(() => spawn(opener, [`http://localhost:${port}`], { stdio: "ignore" }), 700);
+      const url = `http://localhost:${port}`;
+      const { opener, openerArgs } =
+        process.platform === "darwin"
+          ? { opener: "open", openerArgs: [url] }
+          : process.platform === "win32"
+            ? { opener: "cmd", openerArgs: ["/c", "start", url] }
+            : { opener: "xdg-open", openerArgs: [url] };
+      setTimeout(() => spawn(opener, openerArgs, { stdio: "ignore" }), 700);
     }
     child.on("exit", (code) => process.exit(code ?? 0));
   },
