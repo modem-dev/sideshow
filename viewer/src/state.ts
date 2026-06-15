@@ -96,6 +96,21 @@ export async function select(id: string) {
   mergeComments(res.comments);
 }
 
+// Switch to the session above (-1) or below (+1) the current one in the
+// sidebar list, wrapping at the ends so repeated presses cycle. Drives the
+// Cmd+Option+Up/Down shortcut. No-op with no sessions; jumps to the first
+// when nothing is selected yet.
+export async function selectAdjacent(delta: 1 | -1) {
+  if (sessions.length === 0) return;
+  const idx = sessions.findIndex((s) => s.id === selected());
+  if (idx < 0) {
+    await select(sessions[0].id);
+    return;
+  }
+  const next = (idx + delta + sessions.length) % sessions.length;
+  await select(sessions[next].id);
+}
+
 // Fetch a snippet and insert/update it in the open session's stream.
 export async function upsertSnippet(id: string, { scroll = true } = {}) {
   const s = await api<Snippet>(`/api/snippets/${id}`).catch(() => null);

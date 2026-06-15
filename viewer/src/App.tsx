@@ -13,6 +13,7 @@ import {
   refreshSessions,
   refreshSessionsQuiet,
   select,
+  selectAdjacent,
   selected,
   sessions,
   setNavOpen,
@@ -51,6 +52,20 @@ export default function App() {
     };
     document.addEventListener("visibilitychange", onVisibility);
     onCleanup(() => document.removeEventListener("visibilitychange", onVisibility));
+    // Cmd+Option+Up/Down jumps between sessions without reaching for the
+    // sidebar — Down moves to the next session in the list, Up the previous.
+    const onKeydown = (e: KeyboardEvent) => {
+      if (!e.metaKey || !e.altKey || e.ctrlKey || e.shiftKey) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        void selectAdjacent(1);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        void selectAdjacent(-1);
+      }
+    };
+    window.addEventListener("keydown", onKeydown);
+    onCleanup(() => window.removeEventListener("keydown", onKeydown));
   });
 
   // unseen activity badges the tab title

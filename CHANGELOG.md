@@ -6,6 +6,9 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Added
 
+- Cmd+Option+Up/Down switches between sessions in the viewer without reaching
+  for the sidebar — Down moves to the next session in the list, Up the
+  previous, wrapping at the ends.
 - The viewer notices new releases: a dismissable banner in the sidebar names
   the latest version with a copyable upgrade command (npm install locally,
   redeploy for workers), and the release notes render as a card at the top of

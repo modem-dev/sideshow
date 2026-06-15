@@ -183,6 +183,30 @@ test("activity in an unselected session badges the tab title until viewed", asyn
   await expect(page).toHaveTitle("sideshow");
 });
 
+test("Cmd+Option+Up/Down switches between sessions, wrapping at the ends", async ({
+  page,
+  server,
+}) => {
+  await publish(server.url, { html: "<p>a</p>", title: "First", agent: "one" });
+  await publish(server.url, { html: "<p>b</p>", title: "Second", agent: "two" });
+
+  await page.goto(server.url);
+  // the newest session sits at the top of the list and is selected on load
+  await expect(page.locator(".sess.sel .sess-title")).toHaveText("two session");
+
+  // Down moves to the next (older) session down the list
+  await page.keyboard.press("Meta+Alt+ArrowDown");
+  await expect(page.locator(".sess.sel .sess-title")).toHaveText("one session");
+
+  // Down again wraps back to the top
+  await page.keyboard.press("Meta+Alt+ArrowDown");
+  await expect(page.locator(".sess.sel .sess-title")).toHaveText("two session");
+
+  // Up wraps from the top back to the bottom
+  await page.keyboard.press("Meta+Alt+ArrowUp");
+  await expect(page.locator(".sess.sel .sess-title")).toHaveText("one session");
+});
+
 test("at phone width the sidebar collapses into a drawer and actions stay visible", async ({
   page,
   server,
