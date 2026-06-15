@@ -13,7 +13,7 @@
   "mcpServers": {
     "sideshow": {
       "command": "npx",
-      "args": ["-y", "sideshow@latest", "mcp"],
+      "args": ["-y", "sideshow", "mcp"],
       "env": {
         "SIDESHOW_URL": "${user_config.sideshowUrl}",
         "SIDESHOW_TOKEN": "${user_config.apiToken}"

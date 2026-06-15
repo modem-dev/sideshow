@@ -2,7 +2,7 @@
   {
     "name": "sideshow-comments",
     "description": "Streams new sideshow comments from your browser to Claude as they are posted.",
-    "command": "SIDESHOW_URL=\"${user_config.sideshowUrl}\" SIDESHOW_TOKEN=\"${user_config.apiToken}\" npx -y sideshow@latest watch",
+    "command": "SIDESHOW_URL=\"${user_config.sideshowUrl}\" SIDESHOW_TOKEN=\"${user_config.apiToken}\" npx -y sideshow watch",
     "when": "always"
   }
 ]
