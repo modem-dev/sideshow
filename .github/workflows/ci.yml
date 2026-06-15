@@ -59,3 +59,32 @@ jobs:
           grep -q '"sessionId"' /tmp/out.json
           sideshow demo | grep -q "Seeded 2 demo sessions"
           curl -sf localhost:4242/guide > /dev/null
+
+  # Windows uses entirely separate code paths in the CLI (PowerShell process
+  # tree walk in agentPid, cmd /c start for --open) and OS-specific path/state
+  # keying — none of which the Linux jobs exercise. Keep it lean: unit tests
+  # plus a packed serve+publish round trip that runs the Windows agentPid walk.
+  windows-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm pack
+      - name: Install packed CLI
+        shell: bash
+        run: npm install -g ./sideshow-*.tgz
+      - run: sideshow help
+        shell: bash
+      - name: Smoke-test server and publish round trip
+        shell: bash
+        run: |
+          SIDESHOW_DATA="$RUNNER_TEMP/sideshow.json" PORT=4242 sideshow serve &
+          for i in $(seq 1 20); do curl -sf localhost:4242/api/sessions > /dev/null && break; sleep 0.5; done
+          echo '<p>ci smoke</p>' | sideshow publish - --title "CI smoke" --agent ci | tee "$RUNNER_TEMP/out.json"
+          grep -q '"sessionId"' "$RUNNER_TEMP/out.json"
+          curl -sf localhost:4242/guide > /dev/null
