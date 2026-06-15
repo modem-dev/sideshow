@@ -92,17 +92,19 @@ function getParentPosix(pid) {
 function agentPidWindows(startPid) {
   // wmic is removed in Windows 11. Walk the process tree in a single
   // PowerShell call to avoid repeated startup overhead (~300ms per spawn).
+  // $procId, not $pid: $PID is a PowerShell automatic variable holding the
+  // host process's own id, and reassigning it is confusing at best.
   const script = `
-    $pid = ${startPid}
+    $procId = ${startPid}
     $shells = @('cmd.exe','powershell.exe','pwsh.exe')
     for ($i = 0; $i -lt 10; $i++) {
-      $p = Get-CimInstance Win32_Process -Filter "ProcessId=$pid"
+      $p = Get-CimInstance Win32_Process -Filter "ProcessId=$procId"
       if (!$p) { break }
       if ($shells -notcontains $p.Name.ToLower()) { break }
       if ($p.ParentProcessId -le 1) { break }
-      $pid = $p.ParentProcessId
+      $procId = $p.ParentProcessId
     }
-    $pid
+    $procId
   `;
   const out = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
     encoding: "utf8",
