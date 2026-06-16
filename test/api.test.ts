@@ -40,7 +40,7 @@ test("publish without session auto-creates one", async () => {
   const sessions = (await (await app.request("/api/sessions")).json()) as any;
   assert.equal(sessions.length, 1);
   assert.equal(sessions[0].agent, "pi");
-  assert.equal(sessions[0].snippetCount, 1);
+  assert.equal(sessions[0].surfaceCount, 1);
 });
 
 test("publish into an existing session groups snippets", async () => {
@@ -110,7 +110,7 @@ test("update bumps version and keeps history; old version renderable", async () 
 
   const full = (await (await app.request(`/api/snippets/${s.id}`)).json()) as any;
   assert.equal(full.history.length, 1);
-  assert.equal(full.history[0].html, "<p>v1</p>");
+  assert.equal(full.history[0].parts[0].html, "<p>v1</p>");
 
   const current = await (await app.request(`/s/${s.id}`)).text();
   assert.ok(current.includes("<p>v2</p>"));
@@ -142,7 +142,7 @@ test("comments attach to snippets and filter by author/after", async () => {
 
   const all = (await (await app.request(`/api/comments?session=${s.sessionId}`)).json()) as any;
   assert.equal(all.comments.length, 2);
-  assert.equal(all.comments[0].snippetTitle, "Sketch");
+  assert.equal(all.comments[0].surfaceTitle, "Sketch");
 
   // explicit after=0: re-read from the start regardless of the agent cursor
   const users = (await (
@@ -450,7 +450,7 @@ test("agent writes piggyback unseen user comments, delivered once", async () => 
     updated.userFeedback.map((f: any) => f.text),
     ["wrong color", "also add a key"],
   );
-  assert.equal(updated.userFeedback[0].snippetTitle, "Doc");
+  assert.equal(updated.userFeedback[0].surfaceTitle, "Doc");
 
   // delivered once — the next write is clean
   const again = (await (

@@ -15,14 +15,19 @@ const HELP = `sideshow — a live visual surface for terminal coding agents
 
 usage:
   sideshow serve [--port N] [--open]      start the surface (API + viewer)
-  sideshow publish <file|-> [options]     publish an HTML fragment as a snippet
-      --title <t>       snippet title
+  sideshow publish <file|-> [options]     publish an HTML surface (one html part)
+      --title <t>       surface title
+      --diff <file|->   add a diff part from a unified/git patch (combine with html)
       --session <id>    target session (default: auto per agent session)
       --session-title <t>  name for a newly created session — name the task,
                         e.g. "Auth refactor" (ignored if the session exists)
       --agent <name>    agent name for new sessions (default: $SIDESHOW_AGENT or "agent")
       --new-session     force a fresh session
-  sideshow update <id> <file|->           revise a snippet (new version, same card)
+  sideshow diff <file|-> [options]        publish a diff surface from a patch
+      --title <t>       surface title
+      --layout <mode>   "unified" (default) or "split"
+      (also: --session, --session-title, --agent, --new-session)
+  sideshow update <id> <file|->           revise a surface (new version, same card)
       --title <t>       replace title
   sideshow wait [options]                 block until the user comments (long-poll)
       --session <id>    session to watch (default: auto)
@@ -30,12 +35,12 @@ usage:
       --after <seq>     re-read comments after this cursor (default: where the
                         agent left off, tracked server-side across CLI/MCP)
   sideshow comment <text> [options]       post a reply comment
-      --snippet <id> | --session <id>     attach point (default: auto session)
+      --surface <id> | --session <id>     attach point (default: auto session)
       --author <name>   defaults to agent name
-  sideshow list [--session <id>|--all]    list snippets
+  sideshow list [--session <id>|--all]    list surfaces
   sideshow sessions                       list sessions
   sideshow demo                           seed two example sessions to explore the viewer
-  sideshow guide                          print the design contract for snippets
+  sideshow guide                          print the design contract for surfaces
   sideshow setup                          print the AGENTS.md integration block
   sideshow mcp                            run the stdio MCP server (for agent configs)
 
@@ -161,7 +166,7 @@ async function resolveSession(flags, { create = false } = {}) {
   if (process.env.SIDESHOW_SESSION) return process.env.SIDESHOW_SESSION;
   const state = readState();
   if (state.session && !flags["new-session"]) {
-    const ok = await fetch(`${BASE}/api/sessions/${state.session}/snippets`, {
+    const ok = await fetch(`${BASE}/api/sessions/${state.session}/surfaces`, {
       headers: TOKEN ? { authorization: `Bearer ${TOKEN}` } : {},
     }).then(
       (r) => r.ok,
@@ -199,6 +204,19 @@ function readContent(arg) {
 
 function out(value) {
   console.log(JSON.stringify(value, null, 2));
+}
+
+async function publishSurface(parts, flags) {
+  const session = await resolveSession(flags, { create: true });
+  return api("/api/surfaces", {
+    method: "POST",
+    body: JSON.stringify({
+      parts,
+      title: flags.title,
+      session,
+      sessionTitle: flags["session-title"],
+    }),
+  });
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -270,24 +288,47 @@ const commands = {
       allowPositionals: true,
       options: {
         title: { type: "string" },
+        diff: { type: "string" },
+        layout: { type: "string" },
         session: { type: "string" },
         "session-title": { type: "string" },
         agent: { type: "string" },
         "new-session": { type: "boolean" },
       },
     });
-    const html = readContent(positionals[0]);
-    const session = await resolveSession(flags, { create: true });
-    const snippet = await api("/api/snippets", {
-      method: "POST",
-      body: JSON.stringify({
-        html,
-        title: flags.title,
-        session,
-        sessionTitle: flags["session-title"],
-      }),
+    const parts = [{ kind: "html", html: readContent(positionals[0]) }];
+    if (flags.diff !== undefined) {
+      parts.push({
+        kind: "diff",
+        patch: readContent(flags.diff || "-"),
+        ...(flags.layout === "split" && { layout: "split" }),
+      });
+    }
+    const surface = await publishSurface(parts, flags);
+    out({ ...surface, url: `${BASE}/s/${surface.id}` });
+  },
+
+  async diff() {
+    const { values: flags, positionals } = parse({
+      allowPositionals: true,
+      options: {
+        title: { type: "string" },
+        layout: { type: "string" },
+        session: { type: "string" },
+        "session-title": { type: "string" },
+        agent: { type: "string" },
+        "new-session": { type: "boolean" },
+      },
     });
-    out({ ...snippet, url: `${BASE}/s/${snippet.id}` });
+    const parts = [
+      {
+        kind: "diff",
+        patch: readContent(positionals[0]),
+        ...(flags.layout === "split" && { layout: "split" }),
+      },
+    ];
+    const surface = await publishSurface(parts, flags);
+    out({ ...surface, url: `${BASE}/s/${surface.id}` });
   },
 
   async update() {
@@ -296,13 +337,13 @@ const commands = {
       options: { title: { type: "string" } },
     });
     const id = positionals[0];
-    if (!id) fail("usage: sideshow update <snippetId> <file|->");
+    if (!id) fail("usage: sideshow update <id> <file|->");
     const html = readContent(positionals[1]);
-    const snippet = await api(`/api/snippets/${id}`, {
+    const surface = await api(`/api/surfaces/${id}`, {
       method: "PUT",
-      body: JSON.stringify({ html, title: flags.title }),
+      body: JSON.stringify({ parts: [{ kind: "html", html }], title: flags.title }),
     });
-    out({ ...snippet, url: `${BASE}/s/${snippet.id}` });
+    out({ ...surface, url: `${BASE}/s/${surface.id}` });
   },
 
   async wait() {
@@ -342,22 +383,24 @@ const commands = {
     const { values: flags, positionals } = parse({
       allowPositionals: true,
       options: {
-        snippet: { type: "string" },
+        surface: { type: "string" },
+        snippet: { type: "string" }, // legacy alias
         session: { type: "string" },
         author: { type: "string" },
         agent: { type: "string" },
       },
     });
     const text = positionals.join(" ").trim();
-    if (!text) fail("usage: sideshow comment <text> [--snippet id]");
-    const session = flags.snippet ? undefined : await resolveSession(flags);
-    if (!flags.snippet && !session) fail("no active session — pass --snippet or --session");
+    if (!text) fail("usage: sideshow comment <text> [--surface id]");
+    const surface = flags.surface ?? flags.snippet;
+    const session = surface ? undefined : await resolveSession(flags);
+    if (!surface && !session) fail("no active session — pass --surface or --session");
     out(
       await api("/api/comments", {
         method: "POST",
         body: JSON.stringify({
           text,
-          snippet: flags.snippet,
+          surface,
           session,
           author: flags.author ?? agentName(flags),
         }),
@@ -373,13 +416,13 @@ const commands = {
       const sessions = await api("/api/sessions");
       const result = [];
       for (const s of sessions) {
-        result.push({ ...s, snippets: await api(`/api/sessions/${s.id}/snippets`) });
+        result.push({ ...s, surfaces: await api(`/api/sessions/${s.id}/surfaces`) });
       }
       return out(result);
     }
     const session = flags.session ?? (await resolveSession(flags));
     if (!session) fail("no active session — pass --session or --all");
-    out(await api(`/api/sessions/${session}/snippets`));
+    out(await api(`/api/sessions/${session}/surfaces`));
   },
 
   async sessions() {

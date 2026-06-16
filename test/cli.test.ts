@@ -17,7 +17,7 @@ function run(...args: string[]) {
 // None of these reach the network: --help and option errors resolve in
 // parsing, before any request (no server needs to be running).
 
-for (const cmd of ["serve", "publish", "update", "wait", "comment", "list"]) {
+for (const cmd of ["serve", "publish", "diff", "update", "wait", "comment", "list"]) {
   test(`${cmd} --help prints usage and exits 0`, async () => {
     const { code, stdout, stderr } = await run(cmd, "--help");
     assert.equal(code, 0);

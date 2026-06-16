@@ -1,12 +1,12 @@
 export type FeedEvent =
   | { type: "session-created" | "session-updated" | "session-deleted"; id: string }
-  | { type: "snippet-created" | "snippet-updated"; id: string; sessionId: string; version: number }
-  | { type: "snippet-deleted"; id: string; sessionId: string }
+  | { type: "surface-created" | "surface-updated"; id: string; sessionId: string; version: number }
+  | { type: "surface-deleted"; id: string; sessionId: string }
   | {
       type: "comment-created";
       id: string;
       sessionId: string;
-      snippetId: string | null;
+      surfaceId: string | null;
       seq: number;
     };
 

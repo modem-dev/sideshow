@@ -1,93 +1,190 @@
 import type { Hono } from "hono";
 import type { CommentWait, Feedback } from "./app.ts";
-import type { Comment, Snippet, Store } from "./types.ts";
+import { type Comment, htmlPart, type Store, type Surface, type SurfacePart } from "./types.ts";
 
 // Stateless MCP over streamable HTTP: every request is self-contained, which
 // is what a serverless deployment needs. Session continuity is explicit —
-// publish_snippet returns a sessionId the agent passes back on later calls.
+// publish_surface returns a sessionId the agent passes back on later calls.
+
+type FlowResult<T> = Promise<
+  { surface: T; userFeedback?: Feedback[] } | { error: string; status: number }
+>;
 
 export interface McpDeps {
   store: Store;
-  publishSnippet(input: {
-    html: string;
+  publishSurface(input: {
+    parts: SurfacePart[];
     title?: string;
     session?: string;
     sessionTitle?: string;
     agent?: string;
-  }): Promise<{ snippet: Snippet; userFeedback?: Feedback[] } | { error: string; status: number }>;
-  reviseSnippet(
-    id: string,
-    patch: { html?: string; title?: string },
-  ): Promise<{ snippet: Snippet; userFeedback?: Feedback[] } | { error: string; status: number }>;
+  }): FlowResult<Surface>;
+  reviseSurface(id: string, patch: { parts?: SurfacePart[]; title?: string }): FlowResult<Surface>;
   createComment(input: {
     text: string;
-    snippet?: string;
+    surface?: string;
     author: string;
   }): Promise<{ comment: Comment; userFeedback?: Feedback[] } | { error: string; status: number }>;
   waitForComments(q: CommentWait): Promise<{ comments: Comment[]; lastSeq: number }>;
   guide: string;
 }
 
+// Coerce loosely-typed tool args into validated SurfacePart[]. Unknown kinds
+// and empty parts are dropped rather than rejected, so a slightly-off call
+// still publishes what it can.
+export function coerceParts(raw: unknown): SurfacePart[] {
+  if (!Array.isArray(raw)) return [];
+  const parts: SurfacePart[] = [];
+  for (const p of raw) {
+    if (!p || typeof p !== "object") continue;
+    const kind = (p as any).kind;
+    if (kind === "html" && typeof (p as any).html === "string") {
+      parts.push(htmlPart((p as any).html));
+    } else if (kind === "diff") {
+      const patch = typeof (p as any).patch === "string" ? (p as any).patch : undefined;
+      const files = Array.isArray((p as any).files)
+        ? (p as any).files
+            .filter((f: any) => f && typeof f.filename === "string")
+            .map((f: any) => ({
+              filename: String(f.filename),
+              before: String(f.before ?? ""),
+              after: String(f.after ?? ""),
+              ...(typeof f.language === "string" && { language: f.language }),
+            }))
+        : undefined;
+      if (!patch && (!files || files.length === 0)) continue;
+      const layout = (p as any).layout === "split" ? "split" : undefined;
+      parts.push({
+        kind: "diff",
+        ...(patch && { patch }),
+        ...(files && { files }),
+        ...(layout && { layout }),
+      });
+    }
+  }
+  return parts;
+}
+
 const INSTRUCTIONS =
-  "sideshow is a live visual surface the user watches in a browser. Publish HTML snippets to illustrate " +
-  "concepts, sketch UI ideas, or visualize data while you work. Call get_design_guide once before your first " +
-  "publish — it defines the HTML contract. Your first publish_snippet creates a session and returns its " +
-  "sessionId: pass it as `session` on every later call so your snippets stay grouped. On that first publish, " +
-  'also pass sessionTitle to name the session after the task at hand (e.g. "Auth refactor") so the user can ' +
-  "tell sessions apart in the sidebar. The user can comment on " +
-  "snippets in their browser; call wait_for_feedback after publishing something you want a reaction to — it " +
-  "resumes where you left off, so comments already delivered are not repeated. Any publish/update/reply " +
-  "result may also carry a " +
-  "userFeedback array — comments the user left since your last call. Treat them as messages from the user; " +
-  "they are delivered once.";
+  "sideshow is a live visual surface the user watches in a browser. Publish surfaces to illustrate concepts, " +
+  "sketch UI ideas, visualize data, or show a code review while you work. A surface is an ordered list of " +
+  "parts: an `html` part is markup you write (a body fragment), a `diff` part is a patch the viewer renders " +
+  "as a syntax-highlighted, split/unified diff. Combine them — e.g. a diagram html part above a diff part — " +
+  "in one card. publish_surface is the general tool; publish_snippet is sugar for a single html part. Call " +
+  "get_design_guide once before your first publish — it defines the contract. Your first publish creates a " +
+  "session and returns its sessionId: pass it as `session` on later calls so your surfaces stay grouped. On " +
+  'that first publish, also pass sessionTitle to name the session after the task (e.g. "Auth refactor"). The ' +
+  "user can comment in their browser; call wait_for_feedback after publishing something you want a reaction " +
+  "to — it resumes where you left off. Any publish/update/reply result may also carry a userFeedback array — " +
+  "comments the user left since your last call, delivered once.";
+
+const PARTS_SCHEMA = {
+  type: "array",
+  description:
+    "Ordered parts. An html part is {kind:'html', html:'<body fragment>'}. A diff part is " +
+    "{kind:'diff', patch:'<unified/git diff>'} (may span multiple files) or " +
+    "{kind:'diff', files:[{filename, before, after}]}, with optional layout 'unified'|'split'. " +
+    "Combine, e.g. [{kind:'html',html:'<svg.../>'},{kind:'diff',patch:'...'}].",
+  items: {
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: ["html", "diff"] },
+      html: { type: "string", description: "html part: body fragment (no doctype/html/head/body)" },
+      patch: { type: "string", description: "diff part: a unified/git diff string" },
+      files: {
+        type: "array",
+        description: "diff part: explicit before/after file pairs (alternative to patch)",
+        items: {
+          type: "object",
+          properties: {
+            filename: { type: "string" },
+            before: { type: "string" },
+            after: { type: "string" },
+            language: { type: "string" },
+          },
+          required: ["filename", "before", "after"],
+        },
+      },
+      layout: { type: "string", enum: ["unified", "split"] },
+    },
+    required: ["kind"],
+  },
+};
 
 const TOOLS = [
   {
-    name: "publish_snippet",
+    name: "publish_surface",
     description:
-      "Publish an HTML snippet to the user's sideshow surface. Send a body fragment only (no " +
-      "doctype/html/head/body). Returns the snippet id, view URL, and sessionId — pass sessionId as `session` " +
-      "on later calls. On your first publish, pass sessionTitle naming the task to label the session in the " +
-      "viewer sidebar (honored only when the publish creates the session). If the result includes " +
-      "userFeedback, those are new comments from the user — read them. Call get_design_guide first if you " +
-      "have not this session.",
+      "Publish a surface to the user's sideshow board. A surface is an ordered list of parts (html and/or " +
+      "diff). Returns the surface id, view URL, and sessionId — pass sessionId as `session` on later calls. " +
+      "On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those " +
+      "are new comments from the user. Call get_design_guide first if you have not this session.",
     inputSchema: {
       type: "object",
       properties: {
-        title: {
-          type: "string",
-          description: "Short human-readable title shown above the snippet",
-        },
-        html: { type: "string", description: "HTML body fragment to render" },
+        title: { type: "string", description: "Short human-readable title shown above the card" },
+        parts: PARTS_SCHEMA,
         session: {
           type: "string",
-          description: "Session id from a previous publish (omit on first publish)",
+          description: "Session id from a previous publish (omit on first)",
         },
         sessionTitle: {
           type: "string",
           description:
-            'Session name shown in the viewer sidebar — name the task, e.g. "Auth refactor", not your ' +
-            "tool. Honored only when this publish creates the session (first publish, no `session`); it " +
-            "never retitles an existing session.",
+            'Session name shown in the sidebar — name the task, e.g. "Auth refactor". Honored only when ' +
+            "this publish creates the session.",
         },
         agent: {
           type: "string",
-          description:
-            'Your agent name for the session label, e.g. "claude-code" (first publish only)',
+          description: "Your agent name for the session label (first publish only)",
         },
+      },
+      required: ["title", "parts"],
+    },
+  },
+  {
+    name: "update_surface",
+    description:
+      "Revise a surface in place (same card, new version). Prefer this over publishing a near-duplicate. " +
+      "Pass the full replacement parts array. If the result includes userFeedback, read it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Surface id returned by publish_surface" },
+        parts: PARTS_SCHEMA,
+        title: { type: "string", description: "Replacement title" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "publish_snippet",
+    description:
+      "Publish an HTML snippet — sugar for a surface with one html part. Send a body fragment only. Returns " +
+      "the id, view URL, and sessionId. Pass sessionTitle on first publish. Prefer publish_surface when you " +
+      "want a diff or multiple parts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short human-readable title" },
+        html: { type: "string", description: "HTML body fragment to render" },
+        session: {
+          type: "string",
+          description: "Session id from a previous publish (omit on first)",
+        },
+        sessionTitle: { type: "string", description: "Session name (first publish only)" },
+        agent: { type: "string", description: "Your agent name (first publish only)" },
       },
       required: ["title", "html"],
     },
   },
   {
     name: "update_snippet",
-    description:
-      "Revise an existing snippet in place (same card, new version). Prefer this over publishing a " +
-      "near-duplicate. If the result includes userFeedback, those are new comments from the user — read them.",
+    description: "Revise an html snippet in place — sugar for update_surface with one html part.",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string", description: "Snippet id returned by publish_snippet" },
+        id: { type: "string", description: "Surface id" },
         html: { type: "string", description: "Replacement HTML body fragment" },
         title: { type: "string", description: "Replacement title" },
       },
@@ -97,22 +194,18 @@ const TOOLS = [
   {
     name: "wait_for_feedback",
     description:
-      "Block until the user comments on this session's snippets in their browser (or the timeout passes). " +
-      "Returns new comments since the agent last received feedback on any channel (including piggyback). " +
-      "Use timeoutSeconds 0 for a non-blocking check.",
+      "Block until the user comments on this session in their browser (or the timeout passes). Returns new " +
+      "comments since the agent last received feedback on any channel. Use timeoutSeconds 0 for a " +
+      "non-blocking check.",
     inputSchema: {
       type: "object",
       properties: {
         session: { type: "string", description: "Session id to watch" },
         afterSeq: {
           type: "number",
-          description:
-            "explicit cursor override — re-reads comments after this seq (default: where the agent left off)",
+          description: "explicit cursor override (default: where the agent left off)",
         },
-        timeoutSeconds: {
-          type: "number",
-          description: "How long to wait, 0-300 (default 60; 0 = check only)",
-        },
+        timeoutSeconds: { type: "number", description: "How long to wait, 0-300 (default 60)" },
       },
       required: ["session"],
     },
@@ -120,21 +213,20 @@ const TOOLS = [
   {
     name: "reply_to_user",
     description:
-      "Post a short reply under a snippet's comment thread in the user's browser. Use to acknowledge feedback " +
-      "or explain a revision.",
+      "Post a short reply under a surface's comment thread. Use to acknowledge feedback or explain a revision.",
     inputSchema: {
       type: "object",
       properties: {
-        snippetId: { type: "string", description: "Snippet whose thread to reply in" },
+        surfaceId: { type: "string", description: "Surface whose thread to reply in" },
         message: { type: "string", description: "Plain-text reply" },
         author: { type: "string", description: 'Your agent name (default "agent")' },
       },
-      required: ["snippetId", "message"],
+      required: ["surfaceId", "message"],
     },
   },
   {
-    name: "list_snippets",
-    description: "List snippets — pass a session id to scope, or omit for all sessions.",
+    name: "list_surfaces",
+    description: "List surfaces — pass a session id to scope, or omit for all sessions.",
     inputSchema: {
       type: "object",
       properties: {
@@ -145,55 +237,58 @@ const TOOLS = [
   {
     name: "get_design_guide",
     description:
-      "Fetch the design contract for snippets: HTML fragment rules, theme CSS variables, CDN allowlist, and " +
-      "interactivity bridge. Call once per session before publishing.",
+      "Fetch the design contract: surface parts, html fragment rules, theme CSS variables, CDN allowlist, " +
+      "and the interactivity bridge. Call once per session before publishing.",
     inputSchema: { type: "object", properties: {} },
   },
 ];
 
 export function registerMcp(app: Hono, deps: McpDeps) {
+  const surfaceResult = (result: { surface: Surface; userFeedback?: Feedback[] }, origin: string) =>
+    JSON.stringify(
+      {
+        id: result.surface.id,
+        sessionId: result.surface.sessionId,
+        version: result.surface.version,
+        url: `${origin}/s/${result.surface.id}`,
+        ...(result.userFeedback && { userFeedback: result.userFeedback }),
+      },
+      null,
+      2,
+    );
+
   async function callTool(name: string, args: any, origin: string): Promise<string> {
     switch (name) {
+      case "publish_surface":
       case "publish_snippet": {
-        const result = await deps.publishSnippet({
-          html: String(args.html ?? ""),
+        const parts =
+          name === "publish_snippet"
+            ? [htmlPart(String(args.html ?? ""))]
+            : coerceParts(args.parts);
+        if (parts.length === 0) throw new Error("a surface needs at least one part");
+        const result = await deps.publishSurface({
+          parts,
           title: typeof args.title === "string" ? args.title : undefined,
           session: typeof args.session === "string" ? args.session : undefined,
           sessionTitle: typeof args.sessionTitle === "string" ? args.sessionTitle : undefined,
           agent: typeof args.agent === "string" ? args.agent : undefined,
         });
         if ("error" in result) throw new Error(result.error);
-        const s = result.snippet;
-        return JSON.stringify(
-          {
-            id: s.id,
-            sessionId: s.sessionId,
-            version: s.version,
-            url: `${origin}/s/${s.id}`,
-            ...(result.userFeedback && { userFeedback: result.userFeedback }),
-          },
-          null,
-          2,
-        );
+        return surfaceResult(result, origin);
       }
+      case "update_surface":
       case "update_snippet": {
-        const result = await deps.reviseSnippet(String(args.id ?? ""), {
-          html: typeof args.html === "string" ? args.html : undefined,
+        const patch: { parts?: SurfacePart[]; title?: string } = {
           title: typeof args.title === "string" ? args.title : undefined,
-        });
+        };
+        if (name === "update_snippet") {
+          if (typeof args.html === "string") patch.parts = [htmlPart(args.html)];
+        } else if (args.parts !== undefined) {
+          patch.parts = coerceParts(args.parts);
+        }
+        const result = await deps.reviseSurface(String(args.id ?? ""), patch);
         if ("error" in result) throw new Error(result.error);
-        const s = result.snippet;
-        return JSON.stringify(
-          {
-            id: s.id,
-            sessionId: s.sessionId,
-            version: s.version,
-            url: `${origin}/s/${s.id}`,
-            ...(result.userFeedback && { userFeedback: result.userFeedback }),
-          },
-          null,
-          2,
-        );
+        return surfaceResult(result, origin);
       }
       case "wait_for_feedback": {
         const result = await deps.waitForComments({
@@ -212,8 +307,8 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         return JSON.stringify(
           {
             comments: result.comments.map((c) => ({
-              snippetId: c.snippetId,
-              snippetTitle: c.snippetTitle,
+              surfaceId: c.surfaceId,
+              surfaceTitle: c.surfaceTitle,
               text: c.text,
               at: c.createdAt,
             })),
@@ -226,7 +321,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       case "reply_to_user": {
         const result = await deps.createComment({
           text: String(args.message ?? ""),
-          snippet: String(args.snippetId ?? ""),
+          surface: String(args.surfaceId ?? ""),
           author: typeof args.author === "string" ? args.author : "agent",
         });
         if ("error" in result) throw new Error(result.error);
@@ -236,15 +331,17 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           2,
         );
       }
+      case "list_surfaces":
       case "list_snippets": {
-        const snippets = await deps.store.listSnippets(
+        const surfaces = await deps.store.listSurfaces(
           typeof args.session === "string" ? args.session : undefined,
         );
         return JSON.stringify(
-          snippets.map((s) => ({
+          surfaces.map((s) => ({
             id: s.id,
             sessionId: s.sessionId,
             title: s.title,
+            kinds: s.parts.map((p) => p.kind),
             version: s.version,
             updatedAt: s.updatedAt,
           })),

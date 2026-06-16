@@ -3,10 +3,17 @@ import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { EventBus } from "./events.ts";
 import { registerMcp } from "./mcpHttp.ts";
-import { renderSnippetPage } from "./snippetPage.ts";
-import type { Comment, Snippet, Store } from "./types.ts";
+import { renderHtmlPage } from "./surfacePage.ts";
+import {
+  type Comment,
+  htmlPart,
+  partsByteLength,
+  type Store,
+  type Surface,
+  type SurfacePart,
+} from "./types.ts";
 
-const MAX_HTML_BYTES = 2 * 1024 * 1024;
+const MAX_SURFACE_BYTES = 2 * 1024 * 1024;
 const MAX_WAIT_SECONDS = 300;
 // Docs and onboarding snippets are written against the local default; serve
 // them with the real origin so a deployed instance shows copy-pasteable URLs.
@@ -72,18 +79,25 @@ async function fetchLatestFromRegistry(): Promise<LatestRelease | null> {
 
 const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 
-const snippetMeta = (s: Snippet) => ({
+// html parts carry arbitrary markup the viewer renders via a sandboxed iframe,
+// so the card list never needs their bodies — strip them to a kind marker.
+// diff parts are structured data the viewer renders inline, so keep them whole.
+const stripParts = (parts: SurfacePart[]): SurfacePart[] =>
+  parts.map((p) => (p.kind === "html" ? { kind: "html", html: "" } : p));
+
+const surfaceMeta = (s: Surface) => ({
   id: s.id,
   sessionId: s.sessionId,
   title: s.title,
   createdAt: s.createdAt,
   updatedAt: s.updatedAt,
   version: s.version,
+  parts: stripParts(s.parts),
 });
 
 export interface CommentWait {
   sessionId?: string;
-  snippetId?: string;
+  surfaceId?: string;
   author?: string;
   afterSeq?: number;
   waitSeconds: number;
@@ -91,8 +105,8 @@ export interface CommentWait {
 
 // Lean comment shape attached to agent-facing responses.
 export const feedbackView = (c: Comment) => ({
-  snippetId: c.snippetId,
-  snippetTitle: c.snippetTitle,
+  surfaceId: c.surfaceId,
+  surfaceTitle: c.surfaceTitle,
   text: c.text,
   at: c.createdAt,
 });
@@ -138,18 +152,21 @@ export function createApp({
     return feedback.length > 0 ? feedback.map(feedbackView) : undefined;
   }
 
-  async function publishSnippet(input: {
-    html: string;
+  async function publishSurface(input: {
+    parts: SurfacePart[];
     title?: string;
     session?: string;
     sessionTitle?: string;
     agent?: string;
     cwd?: string;
   }): Promise<
-    { snippet: Snippet; userFeedback?: Feedback[] } | { error: string; status: 404 | 413 }
+    { surface: Surface; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
   > {
-    if (input.html.length > MAX_HTML_BYTES) {
-      return { error: `html exceeds ${MAX_HTML_BYTES} bytes`, status: 413 };
+    if (input.parts.length === 0) {
+      return { error: "a surface needs at least one part", status: 400 };
+    }
+    if (partsByteLength(input.parts) > MAX_SURFACE_BYTES) {
+      return { error: `surface exceeds ${MAX_SURFACE_BYTES} bytes`, status: 413 };
     }
     let sessionId = input.session;
     if (sessionId && !(await store.getSession(sessionId))) {
@@ -166,54 +183,59 @@ export function createApp({
       bus.broadcast({ type: "session-created", id: session.id });
       sessionId = session.id;
     }
-    const snippet = await store.createSnippet({
+    const surface = await store.createSurface({
       sessionId,
-      html: input.html,
+      parts: input.parts,
       title: input.title,
     });
-    if (!snippet) return { error: "session not found", status: 404 };
-    bus.broadcast({ type: "snippet-created", id: snippet.id, sessionId, version: 1 });
-    return { snippet, userFeedback: await collectFeedback(sessionId) };
+    if (!surface) return { error: "session not found", status: 404 };
+    bus.broadcast({ type: "surface-created", id: surface.id, sessionId, version: 1 });
+    return { surface, userFeedback: await collectFeedback(sessionId) };
   }
 
-  async function reviseSnippet(
+  async function reviseSurface(
     id: string,
-    patch: { html?: string; title?: string },
+    patch: { parts?: SurfacePart[]; title?: string },
   ): Promise<
-    { snippet: Snippet; userFeedback?: Feedback[] } | { error: string; status: 404 | 413 }
+    { surface: Surface; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
   > {
-    if (typeof patch.html === "string" && patch.html.length > MAX_HTML_BYTES) {
-      return { error: `html exceeds ${MAX_HTML_BYTES} bytes`, status: 413 };
+    if (patch.parts) {
+      if (patch.parts.length === 0) {
+        return { error: "a surface needs at least one part", status: 400 };
+      }
+      if (partsByteLength(patch.parts) > MAX_SURFACE_BYTES) {
+        return { error: `surface exceeds ${MAX_SURFACE_BYTES} bytes`, status: 413 };
+      }
     }
-    const snippet = await store.updateSnippet(id, patch);
-    if (!snippet) return { error: "snippet not found", status: 404 };
+    const surface = await store.updateSurface(id, patch);
+    if (!surface) return { error: "surface not found", status: 404 };
     bus.broadcast({
-      type: "snippet-updated",
-      id: snippet.id,
-      sessionId: snippet.sessionId,
-      version: snippet.version,
+      type: "surface-updated",
+      id: surface.id,
+      sessionId: surface.sessionId,
+      version: surface.version,
     });
-    return { snippet, userFeedback: await collectFeedback(snippet.sessionId) };
+    return { surface, userFeedback: await collectFeedback(surface.sessionId) };
   }
 
   async function createComment(input: {
     text: string;
-    snippet?: string;
+    surface?: string;
     session?: string;
     author: string;
   }): Promise<
     { comment: Comment; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 }
   > {
     let sessionId = input.session;
-    if (input.snippet) {
-      const snippet = await store.getSnippet(input.snippet);
-      if (!snippet) return { error: "snippet not found", status: 404 };
-      sessionId = snippet.sessionId;
+    if (input.surface) {
+      const surface = await store.getSurface(input.surface);
+      if (!surface) return { error: "surface not found", status: 404 };
+      sessionId = surface.sessionId;
     }
-    if (!sessionId) return { error: 'provide "snippet" or "session" id', status: 400 };
+    if (!sessionId) return { error: 'provide "surface" or "session" id', status: 400 };
     const comment = await store.createComment({
       sessionId,
-      snippetId: input.snippet,
+      surfaceId: input.surface,
       author: input.author,
       text: input.text.trim(),
     });
@@ -222,7 +244,7 @@ export function createApp({
       type: "comment-created",
       id: comment.id,
       sessionId: comment.sessionId,
-      snippetId: comment.snippetId,
+      surfaceId: comment.surfaceId,
       seq: comment.seq,
     });
     // agent replies are writes too — piggyback pending feedback on them, but
@@ -243,7 +265,7 @@ export function createApp({
     if (afterSeq === undefined && q.author === "user" && q.sessionId) {
       afterSeq = (await store.getSession(q.sessionId))?.agentSeq;
     }
-    const query = { sessionId: q.sessionId, snippetId: q.snippetId, afterSeq };
+    const query = { sessionId: q.sessionId, surfaceId: q.surfaceId, afterSeq };
     const matches = (list: Comment[]) =>
       q.author ? list.filter((cm) => cm.author === q.author) : list;
     const wait = Math.min(Math.max(q.waitSeconds, 0), MAX_WAIT_SECONDS);
@@ -255,7 +277,7 @@ export function createApp({
         const unsubscribe = bus.subscribe((event) => {
           if (event.type !== "comment-created") return;
           if (q.sessionId && event.sessionId !== q.sessionId) return;
-          if (q.snippetId && event.snippetId !== q.snippetId) return;
+          if (q.surfaceId && event.surfaceId !== q.surfaceId) return;
           done();
         });
         function done() {
@@ -314,10 +336,10 @@ export function createApp({
   // --- sessions ---
 
   app.get("/api/sessions", async (c) => {
-    const [sessions, snippets] = await Promise.all([store.listSessions(), store.listSnippets()]);
+    const [sessions, surfaces] = await Promise.all([store.listSessions(), store.listSurfaces()]);
     const counts = new Map<string, number>();
-    for (const s of snippets) counts.set(s.sessionId, (counts.get(s.sessionId) ?? 0) + 1);
-    return c.json(sessions.map((s) => ({ ...s, snippetCount: counts.get(s.id) ?? 0 })));
+    for (const s of surfaces) counts.set(s.sessionId, (counts.get(s.sessionId) ?? 0) + 1);
+    return c.json(sessions.map((s) => ({ ...s, surfaceCount: counts.get(s.id) ?? 0 })));
   });
 
   app.post("/api/sessions", async (c) => {
@@ -349,30 +371,47 @@ export function createApp({
     return c.json({ ok: true });
   });
 
-  app.get("/api/sessions/:id/snippets", async (c) => {
+  const listSessionSurfaces = async (c: any) => {
     const session = await store.getSession(c.req.param("id"));
     if (!session) return c.json({ error: "session not found" }, 404);
-    const snippets = await store.listSnippets(session.id);
-    return c.json(snippets.map(snippetMeta));
-  });
+    const surfaces = await store.listSurfaces(session.id);
+    return c.json(surfaces.map(surfaceMeta));
+  };
+  app.get("/api/sessions/:id/surfaces", listSessionSurfaces);
+  app.get("/api/sessions/:id/snippets", listSessionSurfaces); // legacy alias
 
-  // --- snippets ---
+  // --- surfaces ---
 
-  app.get("/api/snippets/:id", async (c) => {
-    const snippet = await store.getSnippet(c.req.param("id"));
-    if (!snippet) return c.json({ error: "snippet not found" }, 404);
-    return c.json(snippet);
-  });
+  const getSurface = async (c: any) => {
+    const surface = await store.getSurface(c.req.param("id"));
+    if (!surface) return c.json({ error: "surface not found" }, 404);
+    return c.json(surface);
+  };
+  app.get("/api/surfaces/:id", getSurface);
+  app.get("/api/snippets/:id", getSurface); // legacy alias
 
   // Accepts either an existing session id, or agent/cwd fields to
   // auto-create a session — so a bare `curl` one-liner works with no ceremony.
+  app.post("/api/surfaces", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || !Array.isArray(body.parts)) {
+      return c.json({ error: 'body must include a "parts" array' }, 400);
+    }
+    return publish(c, body, body.parts as SurfacePart[]);
+  });
+
+  // Legacy html-only entry — sugar for a single html part.
   app.post("/api/snippets", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body.html !== "string" || !body.html.trim()) {
       return c.json({ error: 'body must include non-empty "html" string' }, 400);
     }
-    const result = await publishSnippet({
-      html: body.html,
+    return publish(c, body, [htmlPart(body.html)]);
+  });
+
+  async function publish(c: any, body: any, parts: SurfacePart[]) {
+    const result = await publishSurface({
+      parts,
       title: typeof body.title === "string" ? body.title : undefined,
       session: typeof body.session === "string" ? body.session : undefined,
       sessionTitle: typeof body.sessionTitle === "string" ? body.sessionTitle : undefined,
@@ -382,34 +421,42 @@ export function createApp({
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json(
       {
-        ...snippetMeta(result.snippet),
+        ...surfaceMeta(result.surface),
         ...(result.userFeedback && { userFeedback: result.userFeedback }),
       },
       201,
     );
-  });
+  }
 
-  app.put("/api/snippets/:id", async (c) => {
+  const revise = async (c: any) => {
     const body = await c.req.json().catch(() => null);
     if (!body) return c.json({ error: "invalid JSON body" }, 400);
-    const result = await reviseSnippet(c.req.param("id"), {
-      html: typeof body.html === "string" ? body.html : undefined,
+    // surfaces: a `parts` array; snippets: an `html` string (single html part).
+    let parts: SurfacePart[] | undefined;
+    if (Array.isArray(body.parts)) parts = body.parts as SurfacePart[];
+    else if (typeof body.html === "string") parts = [htmlPart(body.html)];
+    const result = await reviseSurface(c.req.param("id"), {
+      parts,
       title: typeof body.title === "string" ? body.title : undefined,
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...snippetMeta(result.snippet),
+      ...surfaceMeta(result.surface),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
-  });
+  };
+  app.put("/api/surfaces/:id", revise);
+  app.put("/api/snippets/:id", revise); // legacy alias
 
-  app.delete("/api/snippets/:id", async (c) => {
-    const snippet = await store.getSnippet(c.req.param("id"));
-    if (!snippet) return c.json({ error: "snippet not found" }, 404);
-    await store.removeSnippet(snippet.id);
-    bus.broadcast({ type: "snippet-deleted", id: snippet.id, sessionId: snippet.sessionId });
+  const remove = async (c: any) => {
+    const surface = await store.getSurface(c.req.param("id"));
+    if (!surface) return c.json({ error: "surface not found" }, 404);
+    await store.removeSurface(surface.id);
+    bus.broadcast({ type: "surface-deleted", id: surface.id, sessionId: surface.sessionId });
     return c.json({ ok: true });
-  });
+  };
+  app.delete("/api/surfaces/:id", remove);
+  app.delete("/api/snippets/:id", remove); // legacy alias
 
   // --- comments ---
 
@@ -418,9 +465,10 @@ export function createApp({
     if (!body || typeof body.text !== "string" || !body.text.trim()) {
       return c.json({ error: 'body must include non-empty "text" string' }, 400);
     }
+    const surface = typeof body.surface === "string" ? body.surface : body.snippet;
     const result = await createComment({
       text: body.text,
-      snippet: typeof body.snippet === "string" ? body.snippet : undefined,
+      surface: typeof surface === "string" ? surface : undefined,
       session: typeof body.session === "string" ? body.session : undefined,
       author: typeof body.author === "string" ? body.author : "user",
     });
@@ -450,7 +498,7 @@ export function createApp({
   app.get("/api/comments", async (c) => {
     const result = await waitForComments({
       sessionId: c.req.query("session"),
-      snippetId: c.req.query("snippet"),
+      surfaceId: c.req.query("surface") ?? c.req.query("snippet"),
       author: c.req.query("author"),
       afterSeq: c.req.query("after") ? Number(c.req.query("after")) : undefined,
       waitSeconds: Number(c.req.query("wait") ?? 0) || 0,
@@ -460,18 +508,26 @@ export function createApp({
 
   // --- rendering ---
 
+  // Serves one html part of a surface as a themed, sandboxed document. The
+  // viewer points an iframe here per html part; diff parts render natively in
+  // the viewer (they are data, not arbitrary markup) and never reach here.
   app.get("/s/:id", async (c) => {
-    const snippet = await store.getSnippet(c.req.param("id"));
-    if (!snippet) return c.text("Snippet not found", 404);
+    const surface = await store.getSurface(c.req.param("id"));
+    if (!surface) return c.text("Surface not found", 404);
     const ver = c.req.query("ver");
-    let doc = snippet;
-    if (ver && Number(ver) !== snippet.version) {
-      const old = snippet.history.find((h) => h.version === Number(ver));
+    let title = surface.title;
+    let parts = surface.parts;
+    if (ver && Number(ver) !== surface.version) {
+      const old = surface.history.find((h) => h.version === Number(ver));
       if (!old) return c.text(`Version ${ver} not available`, 404);
-      doc = { ...snippet, title: old.title, html: old.html };
+      title = old.title;
+      parts = old.parts;
     }
+    const idx = Number(c.req.query("part") ?? 0);
+    const part = parts[idx];
+    if (!part || part.kind !== "html") return c.text("No html part at that index", 404);
     c.header("X-Content-Type-Options", "nosniff");
-    return c.html(renderSnippetPage(doc));
+    return c.html(renderHtmlPage({ title, html: part.html }));
   });
 
   // --- live feed ---
@@ -513,8 +569,8 @@ export function createApp({
 
   registerMcp(app, {
     store,
-    publishSnippet,
-    reviseSnippet,
+    publishSurface,
+    reviseSurface,
     createComment,
     waitForComments,
     guide: guideMarkdown,

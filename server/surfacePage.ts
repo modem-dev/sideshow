@@ -1,6 +1,4 @@
-import type { Snippet } from "./types.ts";
-
-// Origins snippets may load external resources from. Mirrors the allowlist
+// Origins html parts may load external resources from. Mirrors the allowlist
 // agents already know from Claude's inline widget surface.
 export const CDN_ALLOWLIST = [
   "https://cdnjs.cloudflare.com",
@@ -210,19 +208,20 @@ if (window.ResizeObserver) {
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-export function renderSnippetPage(snippet: Snippet): string {
+// Wrap one html part in the themed, sandboxed document the iframe loads.
+export function renderHtmlPage(doc: { title: string; html: string }): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${CSP}">
-<title>${escapeHtml(snippet.title)}</title>
+<title>${escapeHtml(doc.title)}</title>
 <style>${TOKENS_CSS}${KIT_CSS}</style>
 </head>
 <body>
 ${SVG_DEFS}
-${snippet.html}
+${doc.html}
 <script>${BRIDGE_JS}</script>
 </body>
 </html>`;

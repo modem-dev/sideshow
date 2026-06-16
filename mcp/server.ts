@@ -51,18 +51,85 @@ async function ensureSession(title?: string): Promise<string> {
   return sessionId;
 }
 
+const diffFileSchema = z.object({
+  filename: z.string(),
+  before: z.string(),
+  after: z.string(),
+  language: z.string().optional(),
+});
+
+const partSchema = z
+  .object({
+    kind: z.enum(["html", "diff"]),
+    html: z.string().optional().describe("html part: body fragment (no doctype/html/head/body)"),
+    patch: z.string().optional().describe("diff part: a unified/git diff string"),
+    files: z.array(diffFileSchema).optional().describe("diff part: explicit before/after pairs"),
+    layout: z.enum(["unified", "split"]).optional(),
+  })
+  .describe("A surface part: {kind:'html', html} or {kind:'diff', patch} / {kind:'diff', files}");
+
 const server = new McpServer(
   { name: "sideshow", version: "0.1.0" },
   {
     instructions:
-      "sideshow is a live visual surface the user watches in a browser. Publish HTML snippets to illustrate " +
-      "concepts, sketch UI ideas, or visualize data while you work. Call get_design_guide once before your first " +
-      "publish — it defines the HTML contract. Your snippets are grouped into one session for this conversation. " +
-      'On your first publish, pass sessionTitle to name the session after the task at hand (e.g. "Auth refactor") ' +
-      "so the user can tell sessions apart in the sidebar. " +
-      "The user can comment on snippets in their browser; check with wait_for_feedback after publishing something " +
-      "you want a reaction to. Any publish/update/reply result may also carry a userFeedback array — comments " +
-      "the user left since your last call. Treat them as messages from the user; they are delivered once.",
+      "sideshow is a live visual surface the user watches in a browser. Publish surfaces to illustrate " +
+      "concepts, sketch UI ideas, visualize data, or show a code review while you work. A surface is an " +
+      "ordered list of parts: an `html` part is markup you write, a `diff` part is a patch the viewer renders " +
+      "as a syntax-highlighted split/unified diff. Combine them in one card. publish_surface is the general " +
+      "tool; publish_snippet is sugar for a single html part. Call get_design_guide once before your first " +
+      "publish. Your surfaces are grouped into one session for this conversation; on your first publish pass " +
+      'sessionTitle to name the session after the task (e.g. "Auth refactor"). The user can comment in their ' +
+      "browser; check with wait_for_feedback after publishing something you want a reaction to. Any " +
+      "publish/update/reply result may carry a userFeedback array — comments the user left since your last " +
+      "call, delivered once.",
+  },
+);
+
+server.registerTool(
+  "publish_surface",
+  {
+    description:
+      "Publish a surface (an ordered list of html and/or diff parts) to the user's sideshow board. Returns " +
+      "the id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes " +
+      "userFeedback, read it. Call get_design_guide first if you have not this session.",
+    inputSchema: {
+      title: z.string().describe("Short human-readable title shown above the card"),
+      parts: z.array(partSchema).describe("Ordered parts; combine html and diff freely"),
+      sessionTitle: z
+        .string()
+        .optional()
+        .describe('Session name (first publish only), e.g. "Auth refactor"'),
+    },
+  },
+  async ({ title, parts, sessionTitle }) => {
+    const session = await ensureSession(sessionTitle);
+    const created = JSON.parse(
+      await api("/api/surfaces", {
+        method: "POST",
+        body: JSON.stringify({ title, parts, session }),
+      }),
+    );
+    return text({ ...created, url: `${API}/s/${created.id}` });
+  },
+);
+
+server.registerTool(
+  "update_surface",
+  {
+    description:
+      "Revise a surface in place (same card, new version). Prefer this over a near-duplicate. Pass the full " +
+      "replacement parts array. If the result includes userFeedback, read it.",
+    inputSchema: {
+      id: z.string().describe("Surface id returned by publish_surface"),
+      parts: z.array(partSchema).optional().describe("Replacement parts array"),
+      title: z.string().optional().describe("Replacement title"),
+    },
+  },
+  async ({ id, parts, title }) => {
+    const updated = JSON.parse(
+      await api(`/api/surfaces/${id}`, { method: "PUT", body: JSON.stringify({ parts, title }) }),
+    );
+    return text({ ...updated, url: `${API}/s/${updated.id}` });
   },
 );
 
@@ -70,30 +137,20 @@ server.registerTool(
   "publish_snippet",
   {
     description:
-      "Publish an HTML snippet to the user's sideshow surface. Send a body fragment only (no " +
-      "doctype/html/head/body). Returns the snippet id and view URL. On your first publish, pass " +
-      "sessionTitle naming the task to label this conversation's session in the viewer sidebar (honored " +
-      "only when the session is created). If the result includes userFeedback, those are new comments " +
-      "from the user — read them. Call get_design_guide first if you have not this session.",
+      "Publish an HTML snippet — sugar for a surface with one html part. Send a body fragment only. Returns " +
+      "the id and view URL. Prefer publish_surface when you want a diff or multiple parts.",
     inputSchema: {
       title: z.string().describe("Short human-readable title shown above the snippet"),
       html: z.string().describe("HTML body fragment to render"),
-      sessionTitle: z
-        .string()
-        .optional()
-        .describe(
-          'Session name shown in the viewer sidebar — name the task, e.g. "Auth refactor", not your ' +
-            "tool. Used only on the first publish, when the session is created; it never retitles an " +
-            "existing session.",
-        ),
+      sessionTitle: z.string().optional().describe("Session name (first publish only)"),
     },
   },
   async ({ title, html, sessionTitle }) => {
     const session = await ensureSession(sessionTitle);
     const created = JSON.parse(
-      await api("/api/snippets", {
+      await api("/api/surfaces", {
         method: "POST",
-        body: JSON.stringify({ title, html, session }),
+        body: JSON.stringify({ title, parts: [{ kind: "html", html }], session }),
       }),
     );
     return text({ ...created, url: `${API}/s/${created.id}` });
@@ -103,18 +160,17 @@ server.registerTool(
 server.registerTool(
   "update_snippet",
   {
-    description:
-      "Revise an existing snippet in place (same card, new version). Prefer this over publishing a " +
-      "near-duplicate. If the result includes userFeedback, those are new comments from the user — read them.",
+    description: "Revise an html snippet in place — sugar for update_surface with one html part.",
     inputSchema: {
-      id: z.string().describe("Snippet id returned by publish_snippet"),
+      id: z.string().describe("Surface id"),
       html: z.string().optional().describe("Replacement HTML body fragment"),
       title: z.string().optional().describe("Replacement title"),
     },
   },
   async ({ id, html, title }) => {
+    const parts = html === undefined ? undefined : [{ kind: "html", html }];
     const updated = JSON.parse(
-      await api(`/api/snippets/${id}`, { method: "PUT", body: JSON.stringify({ html, title }) }),
+      await api(`/api/surfaces/${id}`, { method: "PUT", body: JSON.stringify({ parts, title }) }),
     );
     return text({ ...updated, url: `${API}/s/${updated.id}` });
   },
@@ -124,9 +180,8 @@ server.registerTool(
   "wait_for_feedback",
   {
     description:
-      "Block until the user comments on this session's snippets in their browser (or the timeout passes). " +
-      "Returns new comments since the last call. Use after publishing something that needs the user's reaction; " +
-      "use timeoutSeconds=0 for a non-blocking check.",
+      "Block until the user comments on this session in their browser (or the timeout passes). Returns new " +
+      "comments since the last call. Use timeoutSeconds=0 for a non-blocking check.",
     inputSchema: {
       timeoutSeconds: z
         .number()
@@ -149,8 +204,8 @@ server.registerTool(
     }
     return text({
       comments: result.comments.map((c: any) => ({
-        snippetId: c.snippetId,
-        snippetTitle: c.snippetTitle,
+        surfaceId: c.surfaceId,
+        surfaceTitle: c.surfaceTitle,
         text: c.text,
         at: c.createdAt,
       })),
@@ -162,18 +217,18 @@ server.registerTool(
   "reply_to_user",
   {
     description:
-      "Post a short reply under a snippet's comment thread in the user's browser. Use to acknowledge feedback " +
+      "Post a short reply under a surface's comment thread in the user's browser. Use to acknowledge feedback " +
       "or explain a revision without making the user switch to the terminal.",
     inputSchema: {
-      snippetId: z.string().describe("Snippet whose thread to reply in"),
+      surfaceId: z.string().describe("Surface whose thread to reply in"),
       message: z.string().describe("Plain-text reply"),
     },
   },
-  async ({ snippetId, message }) => {
+  async ({ surfaceId, message }) => {
     const created = JSON.parse(
       await api("/api/comments", {
         method: "POST",
-        body: JSON.stringify({ snippet: snippetId, text: message, author: AGENT }),
+        body: JSON.stringify({ surface: surfaceId, text: message, author: AGENT }),
       }),
     );
     return text(created);
@@ -181,11 +236,11 @@ server.registerTool(
 );
 
 server.registerTool(
-  "list_snippets",
-  { description: "List snippets in this conversation's session.", inputSchema: {} },
+  "list_surfaces",
+  { description: "List surfaces in this conversation's session.", inputSchema: {} },
   async () => {
     if (!sessionId) return text([]);
-    return text(JSON.parse(await api(`/api/sessions/${sessionId}/snippets`)));
+    return text(JSON.parse(await api(`/api/sessions/${sessionId}/surfaces`)));
   },
 );
 
@@ -193,8 +248,8 @@ server.registerTool(
   "get_design_guide",
   {
     description:
-      "Fetch the design contract for snippets: HTML fragment rules, theme CSS variables, CDN allowlist, and " +
-      "interactivity bridge. Call once per session before publishing.",
+      "Fetch the design contract: surface parts, html fragment rules, theme CSS variables, CDN allowlist, and " +
+      "the interactivity bridge. Call once per session before publishing.",
     inputSchema: {},
   },
   async () => text(await api("/guide")),

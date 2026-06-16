@@ -5,27 +5,83 @@ import {
   type CommentQuery,
   type CreateCommentInput,
   type CreateSessionInput,
-  type CreateSnippetInput,
+  type CreateSurfaceInput,
   HISTORY_LIMIT,
+  htmlPart,
   newId,
   type Session,
-  type Snippet,
   type Store,
-  type UpdateSnippetInput,
+  type Surface,
+  type UpdateSurfaceInput,
 } from "./types.ts";
 
 export type * from "./types.ts";
 
 interface FileShape {
   sessions: Session[];
-  snippets: Snippet[];
+  surfaces: Surface[];
   comments: Comment[];
   lastSeq: number;
 }
 
+// Pre-0.5.0 boards stored `snippets` (a single `html` field) and comments
+// keyed by `snippetId`. Read those shapes and lift them into the parts model.
+interface LegacySnippetVersion {
+  version: number;
+  title: string;
+  html: string;
+  at: string;
+}
+interface LegacySnippet {
+  id: string;
+  sessionId: string;
+  title: string;
+  html: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+  history: LegacySnippetVersion[];
+}
+interface LegacyShape extends Partial<FileShape> {
+  snippets?: LegacySnippet[];
+}
+
+function liftSnippet(s: LegacySnippet): Surface {
+  return {
+    id: s.id,
+    sessionId: s.sessionId,
+    title: s.title,
+    parts: [htmlPart(s.html)],
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+    version: s.version,
+    history: (s.history ?? []).map((h) => ({
+      version: h.version,
+      title: h.title,
+      parts: [htmlPart(h.html)],
+      at: h.at,
+    })),
+  };
+}
+
+type LegacyComment = Comment & { snippetId?: string | null; snippetTitle?: string | null };
+
+function liftComment(c: LegacyComment): Comment {
+  return {
+    id: c.id,
+    seq: c.seq,
+    sessionId: c.sessionId,
+    surfaceId: c.surfaceId ?? c.snippetId ?? null,
+    surfaceTitle: c.surfaceTitle ?? c.snippetTitle ?? null,
+    author: c.author,
+    text: c.text,
+    createdAt: c.createdAt,
+  };
+}
+
 export class JsonFileStore implements Store {
   private sessions = new Map<string, Session>();
-  private snippets = new Map<string, Snippet>();
+  private surfaces = new Map<string, Surface>();
   private comments: Comment[] = [];
   private lastSeq = 0;
   private loaded = false;
@@ -41,13 +97,18 @@ export class JsonFileStore implements Store {
     this.loaded = true;
     try {
       const raw = await readFile(this.filePath, "utf8");
-      const data = JSON.parse(raw) as FileShape;
+      const data = JSON.parse(raw) as LegacyShape;
       // agentSeq arrived after 0.2.0 — default it for data files written before
       for (const s of data.sessions ?? []) {
         this.sessions.set(s.id, { ...s, agentSeq: s.agentSeq ?? 0 });
       }
-      for (const s of data.snippets ?? []) this.snippets.set(s.id, s);
-      this.comments = data.comments ?? [];
+      // Prefer the surfaces array; fall back to lifting legacy snippets.
+      if (data.surfaces) {
+        for (const s of data.surfaces) this.surfaces.set(s.id, s);
+      } else if (data.snippets) {
+        for (const s of data.snippets) this.surfaces.set(s.id, liftSnippet(s));
+      }
+      this.comments = (data.comments ?? []).map(liftComment);
       this.lastSeq = data.lastSeq ?? 0;
     } catch (err: any) {
       if (err?.code !== "ENOENT") throw err;
@@ -58,7 +119,7 @@ export class JsonFileStore implements Store {
     const data = JSON.stringify(
       {
         sessions: [...this.sessions.values()],
-        snippets: [...this.snippets.values()],
+        surfaces: [...this.surfaces.values()],
         comments: this.comments,
         lastSeq: this.lastSeq,
       } satisfies FileShape,
@@ -115,8 +176,8 @@ export class JsonFileStore implements Store {
   async removeSession(id: string) {
     await this.load();
     if (!this.sessions.delete(id)) return false;
-    for (const [sid, snippet] of this.snippets) {
-      if (snippet.sessionId === id) this.snippets.delete(sid);
+    for (const [sid, surface] of this.surfaces) {
+      if (surface.sessionId === id) this.surfaces.delete(sid);
     }
     this.comments = this.comments.filter((c) => c.sessionId !== id);
     await this.persist();
@@ -136,67 +197,67 @@ export class JsonFileStore implements Store {
     await this.persist();
   }
 
-  // --- snippets ---
+  // --- surfaces ---
 
-  async listSnippets(sessionId?: string) {
+  async listSurfaces(sessionId?: string) {
     await this.load();
-    const all = [...this.snippets.values()].filter(
+    const all = [...this.surfaces.values()].filter(
       (s) => sessionId === undefined || s.sessionId === sessionId,
     );
     return all.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  async getSnippet(id: string) {
+  async getSurface(id: string) {
     await this.load();
-    return this.snippets.get(id) ?? null;
+    return this.surfaces.get(id) ?? null;
   }
 
-  async createSnippet(input: CreateSnippetInput) {
+  async createSurface(input: CreateSurfaceInput) {
     await this.load();
     if (!this.sessions.has(input.sessionId)) return null;
     const now = new Date().toISOString();
-    const snippet: Snippet = {
+    const surface: Surface = {
       id: newId(),
       sessionId: input.sessionId,
       title: input.title?.trim() || "Untitled",
-      html: input.html,
+      parts: input.parts,
       createdAt: now,
       updatedAt: now,
       version: 1,
       history: [],
     };
-    this.snippets.set(snippet.id, snippet);
+    this.surfaces.set(surface.id, surface);
     this.touch(input.sessionId);
     await this.persist();
-    return snippet;
+    return surface;
   }
 
-  async updateSnippet(id: string, patch: UpdateSnippetInput) {
+  async updateSurface(id: string, patch: UpdateSurfaceInput) {
     await this.load();
-    const snippet = this.snippets.get(id);
-    if (!snippet) return null;
-    snippet.history.push({
-      version: snippet.version,
-      title: snippet.title,
-      html: snippet.html,
-      at: snippet.updatedAt,
+    const surface = this.surfaces.get(id);
+    if (!surface) return null;
+    surface.history.push({
+      version: surface.version,
+      title: surface.title,
+      parts: surface.parts,
+      at: surface.updatedAt,
     });
-    if (snippet.history.length > HISTORY_LIMIT) snippet.history.shift();
-    if (patch.title !== undefined) snippet.title = patch.title.trim() || snippet.title;
-    if (patch.html !== undefined) snippet.html = patch.html;
-    snippet.version += 1;
-    snippet.updatedAt = new Date().toISOString();
-    this.touch(snippet.sessionId);
+    if (surface.history.length > HISTORY_LIMIT) surface.history.shift();
+    if (patch.title !== undefined) surface.title = patch.title.trim() || surface.title;
+    if (patch.parts !== undefined) surface.parts = patch.parts;
+    surface.version += 1;
+    surface.updatedAt = new Date().toISOString();
+    this.touch(surface.sessionId);
     await this.persist();
-    return snippet;
+    return surface;
   }
 
-  async removeSnippet(id: string) {
+  async removeSurface(id: string) {
     await this.load();
-    const snippet = this.snippets.get(id);
-    if (!snippet) return false;
-    this.snippets.delete(id);
-    this.comments = this.comments.filter((c) => c.snippetId !== id);
+    const surface = this.surfaces.get(id);
+    if (!surface) return false;
+    this.surfaces.delete(id);
+    this.comments = this.comments.filter((c) => c.surfaceId !== id);
     await this.persist();
     return true;
   }
@@ -208,7 +269,7 @@ export class JsonFileStore implements Store {
     return this.comments.filter(
       (c) =>
         (query.sessionId === undefined || c.sessionId === query.sessionId) &&
-        (query.snippetId === undefined || c.snippetId === query.snippetId) &&
+        (query.surfaceId === undefined || c.surfaceId === query.surfaceId) &&
         (query.afterSeq === undefined || c.seq > query.afterSeq),
     );
   }
@@ -216,13 +277,13 @@ export class JsonFileStore implements Store {
   async createComment(input: CreateCommentInput) {
     await this.load();
     if (!this.sessions.has(input.sessionId)) return null;
-    const snippet = input.snippetId ? this.snippets.get(input.snippetId) : null;
+    const surface = input.surfaceId ? this.surfaces.get(input.surfaceId) : null;
     const comment: Comment = {
       id: newId(),
       seq: ++this.lastSeq,
       sessionId: input.sessionId,
-      snippetId: snippet?.id ?? null,
-      snippetTitle: snippet?.title ?? null,
+      surfaceId: surface?.id ?? null,
+      surfaceTitle: surface?.title ?? null,
       author: input.author.trim() || "user",
       text: input.text,
       createdAt: new Date().toISOString(),
