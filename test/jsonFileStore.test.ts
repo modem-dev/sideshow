@@ -11,6 +11,22 @@ const freshPath = () => join(mkdtempSync(join(tmpdir(), "sideshow-store-")), "da
 
 runStoreContract("JsonFileStore", () => new JsonFileStore(freshPath()));
 
+test("JsonFileStore: concurrent first calls share one disk load", async () => {
+  const path = freshPath();
+  const seed = new JsonFileStore(path);
+  const persisted = await seed.createSession({ agent: "old", title: "Persisted" });
+
+  const cold = new JsonFileStore(path);
+  const [, created] = await Promise.all([
+    cold.listSessions(),
+    cold.createSession({ agent: "new", title: "Concurrent" }),
+  ]);
+
+  const reloaded = new JsonFileStore(path);
+  const sessions = await reloaded.listSessions();
+  assert.deepEqual(new Set(sessions.map((s) => s.id)), new Set([persisted.id, created.id]));
+});
+
 test("JsonFileStore: data survives a reload from disk", async () => {
   const path = freshPath();
   const store = new JsonFileStore(path);

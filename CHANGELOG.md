@@ -45,6 +45,8 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Fixed
 
+- Local JSON storage now shares a single cold-load promise across concurrent
+  first requests, preventing a race that could overwrite persisted board data.
 - The viewer no longer renders a part whose kind it doesn't recognize as a
   broken diff ("Couldn't render diff — No diff content"). An unknown kind —
   what a long-open browser tab sees after a new part type ships — now shows a
