@@ -1,4 +1,4 @@
-import { expect, publish, publishParts, test, update } from "./fixtures.ts";
+import { expect, publish, test, update } from "./fixtures.ts";
 
 test("snippet published over HTTP appears live via SSE, no reload", async ({ page, server }) => {
   await page.goto(server.url);
@@ -16,15 +16,24 @@ test("a part kind this viewer doesn't know shows a refresh hint, not a broken di
   page,
   server,
 }) => {
-  await page.goto(server.url);
-
-  // A future/unknown part kind — what a long-open tab sees after a new part
-  // type ships. It must degrade to a neutral hint, never the diff fallback.
-  await publishParts(server.url, {
-    title: "Future part",
-    agent: "e2e",
-    parts: [{ kind: "futurething", blob: "x" }],
+  // Simulate a long-open tab that predates a newly shipped part type: the
+  // server returns a valid surface, but rewrite the part kind to one THIS
+  // viewer build has no Match for. It must degrade to a neutral hint, never
+  // the diff fallback.
+  await page.route(/\/api\/surfaces\/[^/?]+(\?|$)/, async (route) => {
+    const res = await route.fetch();
+    const surface = await res.json();
+    if (Array.isArray(surface.parts)) {
+      surface.parts = surface.parts.map(() => ({ kind: "futurething" }));
+    }
+    await route.fulfill({ response: res, json: surface });
   });
+
+  await page.goto(server.url);
+  // wait until the page is loaded and its SSE is connected, so the publish
+  // below reliably streams in (mirrors the other live-update tests)
+  await expect(page.locator("#onboard")).toBeVisible();
+  await publish(server.url, { html: "<p>x</p>", title: "Future part", agent: "e2e" });
 
   const card = page.locator(".card:not(#sessionThread):not(#whatsNew)").first();
   await expect(card.locator(".part-unsupported")).toBeVisible();
