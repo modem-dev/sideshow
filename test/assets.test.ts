@@ -8,6 +8,7 @@ import {
   selectEvictions,
   type SurfacePart,
 } from "../server/types.ts";
+import { validateSurfaceParts } from "../server/surfaceParts.ts";
 
 // --- selectEvictions ---
 
@@ -75,7 +76,39 @@ test("partsByteLength counts image/trace parts without throwing", () => {
   assert.ok(n > 0);
 });
 
-// --- coerceParts (image/trace) ---
+// --- SurfacePart validation/coercion ---
+
+test("validateSurfaceParts accepts all supported part kinds", () => {
+  const result = validateSurfaceParts([
+    { kind: "html", html: "<p>x</p>" },
+    { kind: "diff", patch: "@@ -1 +1 @@\n-a\n+b", layout: "unified" },
+    { kind: "diff", files: [{ filename: "a.ts", before: "a", after: "b" }] },
+    { kind: "image", assetId: "img", alt: "shot", caption: "cap" },
+    { kind: "trace", steps: [{ label: "read", kind: "tool" }], title: "Trace" },
+    { kind: "trace", assetId: "trace-file" },
+  ]);
+  assert.equal(result.ok, true);
+  if (result.ok)
+    assert.deepEqual(
+      result.parts.map((p) => p.kind),
+      ["html", "diff", "diff", "image", "trace", "trace"],
+    );
+});
+
+test("validateSurfaceParts rejects malformed parts", () => {
+  for (const parts of [
+    [{ kind: "html", html: 1 }],
+    [{ kind: "diff" }],
+    [{ kind: "diff", files: [{ filename: "x", before: "a" }] }],
+    [{ kind: "diff", patch: "x", layout: "sideways" }],
+    [{ kind: "image" }],
+    [{ kind: "trace", steps: [{ detail: "missing label" }] }],
+    [{ kind: "unknown" }],
+  ]) {
+    const result = validateSurfaceParts(parts);
+    assert.equal(result.ok, false, JSON.stringify(parts));
+  }
+});
 
 test("coerceParts keeps valid image parts and drops ones without an assetId", () => {
   const parts = coerceParts([

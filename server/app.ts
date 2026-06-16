@@ -15,6 +15,7 @@ import {
   type Surface,
   type SurfacePart,
 } from "./types.ts";
+import { validateSurfaceParts } from "./surfaceParts.ts";
 
 const MAX_SURFACE_BYTES = 2 * 1024 * 1024;
 const MAX_WAIT_SECONDS = 300;
@@ -495,7 +496,9 @@ export function createApp({
     if (!body || !Array.isArray(body.parts)) {
       return c.json({ error: 'body must include a "parts" array' }, 400);
     }
-    return publish(c, body, body.parts as SurfacePart[]);
+    const parsed = validateSurfaceParts(body.parts);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    return publish(c, body, parsed.parts);
   });
 
   // Legacy html-only entry — sugar for a single html part.
@@ -531,8 +534,12 @@ export function createApp({
     if (!body) return c.json({ error: "invalid JSON body" }, 400);
     // surfaces: a `parts` array; snippets: an `html` string (single html part).
     let parts: SurfacePart[] | undefined;
-    if (Array.isArray(body.parts)) parts = body.parts as SurfacePart[];
-    else if (typeof body.html === "string") parts = [htmlPart(body.html)];
+    if (body.parts !== undefined) {
+      if (!Array.isArray(body.parts)) return c.json({ error: '"parts" must be an array' }, 400);
+      const parsed = validateSurfaceParts(body.parts);
+      if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+      parts = parsed.parts;
+    } else if (typeof body.html === "string") parts = [htmlPart(body.html)];
     const result = await reviseSurface(c.req.param("id"), {
       parts,
       title: typeof body.title === "string" ? body.title : undefined,

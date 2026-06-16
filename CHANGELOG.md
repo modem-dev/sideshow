@@ -44,6 +44,8 @@ All notable user-visible changes to this project are documented in this file.
   what a long-open browser tab sees after a new part type ships — now shows a
   neutral "refresh sideshow to update the viewer" hint, and `diff` is dispatched
   explicitly rather than as the catch-all.
+- Malformed `POST`/`PUT /api/surfaces` part payloads are now rejected before
+  they reach storage, instead of being saved and failing later in the viewer.
 - `sideshow-term` can now be packaged and installed standalone: its server
   runtime dependencies are declared, it reuses the `sideshow` package's server
   core, and published installs run built JavaScript instead of TypeScript from

@@ -8,8 +8,8 @@ import {
   type Store,
   type Surface,
   type SurfacePart,
-  type TraceStep,
 } from "./types.ts";
+import { coerceSurfaceParts } from "./surfaceParts.ts";
 
 // Stateless MCP over streamable HTTP: every request is self-contained, which
 // is what a serverless deployment needs. Session continuity is explicit —
@@ -56,66 +56,7 @@ function decodeBase64(b64: string): Uint8Array {
 // Coerce loosely-typed tool args into validated SurfacePart[]. Unknown kinds
 // and empty parts are dropped rather than rejected, so a slightly-off call
 // still publishes what it can.
-export function coerceParts(raw: unknown): SurfacePart[] {
-  if (!Array.isArray(raw)) return [];
-  const parts: SurfacePart[] = [];
-  for (const p of raw) {
-    if (!p || typeof p !== "object") continue;
-    const kind = (p as any).kind;
-    if (kind === "html" && typeof (p as any).html === "string") {
-      parts.push(htmlPart((p as any).html));
-    } else if (kind === "diff") {
-      const patch = typeof (p as any).patch === "string" ? (p as any).patch : undefined;
-      const files = Array.isArray((p as any).files)
-        ? (p as any).files
-            .filter((f: any) => f && typeof f.filename === "string")
-            .map((f: any) => ({
-              filename: String(f.filename),
-              before: String(f.before ?? ""),
-              after: String(f.after ?? ""),
-              ...(typeof f.language === "string" && { language: f.language }),
-            }))
-        : undefined;
-      if (!patch && (!files || files.length === 0)) continue;
-      const layout = (p as any).layout === "split" ? "split" : undefined;
-      parts.push({
-        kind: "diff",
-        ...(patch && { patch }),
-        ...(files && { files }),
-        ...(layout && { layout }),
-      });
-    } else if (kind === "image" && typeof (p as any).assetId === "string") {
-      parts.push({
-        kind: "image",
-        assetId: (p as any).assetId,
-        ...(typeof (p as any).alt === "string" && { alt: (p as any).alt }),
-        ...(typeof (p as any).caption === "string" && { caption: (p as any).caption }),
-      });
-    } else if (kind === "trace") {
-      const steps = Array.isArray((p as any).steps)
-        ? (p as any).steps
-            .filter((s: any) => s && typeof s.label === "string")
-            .map(
-              (s: any): TraceStep => ({
-                label: String(s.label),
-                ...(typeof s.kind === "string" && { kind: s.kind }),
-                ...(typeof s.detail === "string" && { detail: s.detail }),
-                ...(typeof s.ts === "string" && { ts: s.ts }),
-              }),
-            )
-        : undefined;
-      const assetId = typeof (p as any).assetId === "string" ? (p as any).assetId : undefined;
-      if ((!steps || steps.length === 0) && !assetId) continue;
-      parts.push({
-        kind: "trace",
-        ...(steps && steps.length > 0 && { steps }),
-        ...(assetId && { assetId }),
-        ...(typeof (p as any).title === "string" && { title: (p as any).title }),
-      });
-    }
-  }
-  return parts;
-}
+export const coerceParts = coerceSurfaceParts;
 
 const INSTRUCTIONS =
   "sideshow is a live visual surface the user watches in a browser. Publish surfaces to illustrate concepts, " +
