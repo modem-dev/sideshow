@@ -96,6 +96,59 @@ test("publish into unknown session 404s instead of silently creating", async () 
   assert.equal(res.status, 404);
 });
 
+test("publishes a combined html+diff surface; /s renders the html part only", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/surfaces",
+    json({
+      title: "Review",
+      parts: [
+        { kind: "html", html: "<p>diagram</p>" },
+        { kind: "diff", patch: "@@ -1 +1 @@\n-a\n+b", layout: "split" },
+      ],
+    }),
+  );
+  assert.equal(res.status, 201);
+  const surface = (await res.json()) as any;
+  assert.equal(surface.parts.length, 2);
+  assert.equal(surface.parts[0].kind, "html");
+  // the list strips html bodies but keeps diff data
+  assert.equal(surface.parts[0].html, "");
+  assert.equal(surface.parts[1].patch, "@@ -1 +1 @@\n-a\n+b");
+
+  // the full record keeps the html
+  const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
+  assert.equal(full.parts[0].html, "<p>diagram</p>");
+
+  // /s renders the requested html part; a diff part has no html doc
+  const part0 = await app.request(`/s/${surface.id}?part=0`);
+  assert.ok((await part0.text()).includes("<p>diagram</p>"));
+  assert.equal((await app.request(`/s/${surface.id}?part=1`)).status, 404);
+});
+
+test("publish_surface MCP tool round-trips a diff part", async () => {
+  const app = makeApp();
+  const list = (await (await app.request("/mcp", mcpCall(1, "tools/list"))).json()) as any;
+  const names = list.result.tools.map((t: any) => t.name);
+  assert.ok(names.includes("publish_surface"));
+  assert.ok(names.includes("publish_snippet")); // alias still advertised
+
+  const published = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "publish_surface",
+        arguments: { title: "Diff", parts: [{ kind: "diff", patch: "@@ -1 +1 @@\n-x\n+y" }] },
+      }),
+    )
+  ).json()) as any;
+  const payload = JSON.parse(published.result.content[0].text);
+  assert.ok(payload.id && payload.sessionId);
+  const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
+  assert.equal(full.parts[0].kind, "diff");
+  assert.equal(full.parts[0].patch, "@@ -1 +1 @@\n-x\n+y");
+});
+
 test("update bumps version and keeps history; old version renderable", async () => {
   const app = makeApp();
   const s = (await (

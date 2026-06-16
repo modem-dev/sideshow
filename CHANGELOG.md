@@ -2,6 +2,27 @@
 
 All notable user-visible changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Surfaces: a published card is now an ordered list of parts, not a single
+  HTML blob. A `diff` part renders a unified/git patch as a syntax-highlighted
+  split/unified code review (via @pierre/diffs) directly in the viewer; an
+  `html` part is the sandboxed markup snippets always were. Combine them — e.g.
+  a diagram html part above its diff — in one versioned, commentable card.
+- Generic publishing across all tiers: `publish_surface`/`update_surface` (MCP),
+  `POST /api/surfaces`, and `sideshow diff <patch>` / `sideshow publish --diff`.
+  Diff parts are rendered from patch data by the viewer, so agents send a patch,
+  never markup, and the sandbox is untouched.
+
+### Changed
+
+- Snippets are now "surfaces" throughout the API: `/api/surfaces`, `surface-*`
+  SSE events, and comments keyed by `surfaceId`. The old snippet endpoints and
+  the `publish_snippet`/`update_snippet` tools remain as back-compat aliases, so
+  existing agent configs keep working. Stored boards migrate in place on load.
+
 ## [0.4.0] - 2026-06-15
 
 ### Added

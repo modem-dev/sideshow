@@ -352,6 +352,16 @@ iframe {
   border-top: 0.5px solid var(--border);
   background: transparent;
 }
+.diffpart {
+  border-top: 0.5px solid var(--border);
+  overflow: auto;
+  font-size: 12.5px;
+}
+.diff-error {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--faint);
+}
 .thread {
   border-top: 0.5px solid var(--border);
   padding: 6px 14px 10px;

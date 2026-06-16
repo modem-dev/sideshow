@@ -1,11 +1,18 @@
 // Thin client over the REST API, typed against the server's data model.
-import type { Comment, Session, Snippet } from "../../server/types.ts";
+import type {
+  Comment,
+  DiffPart,
+  HtmlPart,
+  Session,
+  Surface,
+  SurfacePart,
+} from "../../server/types.ts";
 
-export type { Comment, Session, Snippet };
+export type { Comment, DiffPart, HtmlPart, Session, Surface, SurfacePart };
 
-// GET /api/sessions decorates each session with its snippet count.
+// GET /api/sessions decorates each session with its surface count.
 export interface SessionRow extends Session {
-  snippetCount: number;
+  surfaceCount: number;
 }
 
 // GET /api/version — upgradeCommand and notes are set only when an update

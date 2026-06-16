@@ -1,14 +1,27 @@
 ---
 name: sideshow
-description: Draw live HTML previews to the user's sideshow surface — diagrams, UI sketches, data visualizations, interactive explainers — and receive their comments back. Use when the user asks you to illustrate, visualize, sketch, or draw something, mentions sideshow, or when a visual would explain your work better than text.
+description: Draw live previews to the user's sideshow surface — diagrams, UI sketches, data visualizations, interactive explainers, code reviews — and receive their comments back. Use when the user asks you to illustrate, visualize, sketch, draw, or review a diff, mentions sideshow, or when a visual would explain your work better than text.
 ---
 
 # sideshow
 
-The user keeps a sideshow surface open in their browser. You publish HTML
-snippets to it; they appear instantly. The user can comment on any snippet
+The user keeps a sideshow surface open in their browser. You publish surfaces
+to it; they appear instantly as cards. The user can comment on any surface
 and you can pick up those comments from the terminal — it is a two-way
 surface, not a fire-and-forget renderer.
+
+## Surfaces and parts
+
+A surface is a card built from ordered **parts**, each with a `kind`:
+
+- **`html`** — markup you write, rendered in a sandboxed iframe. Reach for it to
+  draw: diagrams, UI sketches, data viz, explainers.
+- **`diff`** — a patch you send as _data_, rendered natively by the trusted
+  viewer as a syntax-highlighted code review. Reach for it to show a changeset.
+
+A surface can combine parts — `[html, diff]` is a diagram with its code review
+in one card. html parts are sandboxed (you author the markup); diff parts are
+rendered from patch data — send a patch, not markup.
 
 ## Before your first publish
 
@@ -26,16 +39,20 @@ is not running, start it: `sideshow serve` (or `npx sideshow serve`). If the
 
 ## Publishing
 
-Prefer MCP tools if the sideshow MCP server is connected
-(`publish_snippet`, `update_snippet`, `wait_for_feedback`, `reply_to_user`).
+Prefer MCP tools if the sideshow MCP server is connected: `publish_surface`
+`{title, parts, sessionTitle?}`, `update_surface` `{id, title?, parts?}`,
+`wait_for_feedback`, `reply_to_user` `{surfaceId, message}`, `list_surfaces`.
+(`publish_snippet` / `update_snippet` remain as html-only sugar aliases.)
 Otherwise use the CLI — session grouping is automatic:
 
 ```sh
 sideshow publish sketch.html --title "Cache layout" --agent your-name --session-title "Cache redesign"
 echo '<p>...</p>' | sideshow publish - --title "Quick note"
+sideshow diff change.patch --title "Add retry" --layout split   # standalone diff surface
+sideshow publish sketch.html --diff change.patch --title "Retry flow"   # combined [html, diff]
 ```
 
-Save the returned `sessionId` and snippet `id`; all feedback handling depends
+Save the returned `sessionId` and surface `id`; all feedback handling depends
 on watching the exact session you published to.
 
 Rules of thumb:
@@ -44,13 +61,13 @@ Rules of thumb:
   refactor"), not the tool — `--session-title` on the CLI, `sessionTitle` on
   the MCP tool. It applies only when the session is created; never try to
   retitle later (the user may have renamed it in the viewer).
-- One concept per snippet, with a clear title. A series of small snippets
+- One concept per surface, with a clear title. A series of small surfaces
   beats one giant page.
 - **Iterate with `sideshow update <id>`** (same card, new version) instead of
   publishing near-duplicates. Versions are kept; the user can flip between them.
-- Use the built-in kit from the guide (pre-styled form elements, SVG utility
-  classes) before writing CSS; for anything else use the theme CSS variables
-  so snippets work in dark mode.
+- For html parts, use the built-in kit from the guide (pre-styled form elements,
+  SVG utility classes) before writing CSS; for anything else use the theme CSS
+  variables so surfaces work in dark mode.
 
 ## The feedback loop
 
@@ -92,9 +109,10 @@ Feedback reaches you four ways — prefer them in this order:
    continuing: `sideshow wait --session <sessionId> --timeout 120` in the
    foreground.
 
+Comments attach to a surface (`surfaceId`); behavior is otherwise unchanged.
 When comments arrive, acknowledge briefly with
-`sideshow comment "..." --snippet <id>` when useful; do substantial changes as
-snippet updates, then re-arm the watcher or continue checkpoint-draining.
+`sideshow comment "..." --surface <id>` when useful; do substantial changes as
+surface updates, then re-arm the watcher or continue checkpoint-draining.
 
 ## Remote surfaces
 

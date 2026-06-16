@@ -30,11 +30,15 @@ consciously, not as a side effect):
 - `server/app.ts` — runtime-agnostic Hono app: all routes, SSE `/api/events`,
   long-poll `/api/comments`, renderer `/s/:id`, and the shared flow functions
   both REST and MCP call.
-- `server/types.ts` — data model + `Store` interface; no runtime imports.
+- `server/types.ts` — data model + `Store` interface; no runtime imports. A
+  surface is an ordered list of parts (`html` | `diff`); a snippet is sugar for
+  a single html part. `firstHtml`/`htmlPart` bridge the legacy snippet shape.
 - `server/storage.ts` — `JsonFileStore` (local Node). `workers/sqlStore.ts` —
-  `SqlStore` (Durable Object SQLite). Both must pass `test/storeContract.ts`.
-- `server/snippetPage.ts` — sandboxed snippet document: CSP allowlist and the
-  postMessage bridge (resize, sendPrompt, openLink).
+  `SqlStore` (Durable Object SQLite). Both must pass `test/storeContract.ts`,
+  and both migrate legacy `snippets`/`snippetId` data to surfaces on load.
+- `server/surfacePage.ts` — sandboxed document for one html part: CSP allowlist
+  and the postMessage bridge (resize, sendPrompt, openLink). Diff parts never
+  reach here — the viewer renders them natively (they are data, not markup).
 - `server/mcpHttp.ts` — stateless MCP at `/mcp`. `mcp/server.ts` — stdio MCP,
   a thin client over the HTTP API (passes response fields through untouched).
 - `viewer/` — the viewer: Solid + TypeScript in `viewer/src/`, built by Vite
@@ -49,7 +53,7 @@ consciously, not as a side effect):
 
 ## Architecture invariants
 
-- `server/{app,events,mcpHttp,snippetPage,types}.ts` stay runtime-agnostic
+- `server/{app,events,mcpHttp,surfacePage,types}.ts` stay runtime-agnostic
   (no `node:` imports); `tsconfig.workers.json` typechecks them against
   workers types. Node wiring belongs in `server/index.ts` / `server/storage.ts`.
 - Server/CLI TypeScript runs directly on Node ≥22.18 via type stripping:

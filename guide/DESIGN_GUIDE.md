@@ -1,33 +1,98 @@
 # sideshow — design guide for agents
 
 You are drawing to a persistent visual surface the user keeps open in a browser.
-Your snippets appear instantly as cards, grouped into a session for this
+Your surfaces appear instantly as cards, grouped into a session for this
 conversation. Read this once before your first publish.
+
+## Surfaces and parts
+
+A **surface** is a card built from an ordered list of **parts**. Each part has
+a `kind`:
+
+- **`html`** — arbitrary markup you write, rendered in a sandboxed iframe (the
+  rest of this guide is the contract for it). Reach for it for diagrams, UI
+  sketches, data viz — anything you draw.
+- **`diff`** — a patch you hand over as _data_; the trusted viewer renders it
+  natively as a syntax-highlighted code review (split or unified). Reach for it
+  to show a changeset or review code, not to draw.
+
+A surface can combine parts, e.g. `[html, diff]` is a diagram with its code
+review in one card. Trust differs: html parts are sandboxed because you author
+the markup; diff parts are rendered by the viewer from patch data — send a
+patch, never markup.
+
+A **`SurfacePart`** is one of:
+
+```
+{ "kind": "html", "html": "<p>...</p>" }
+{ "kind": "diff", "patch": "<unified or git diff text>" }
+{ "kind": "diff", "files": [{ "filename": "a.ts", "before": "...", "after": "...", "language": "ts" }] }
+```
+
+A diff part takes an optional `"layout": "unified" | "split"`.
 
 ## Publishing
 
-Via MCP tools (preferred): `publish_snippet`, `update_snippet`,
-`wait_for_feedback`, `reply_to_user`, `list_snippets`. Via CLI:
-`sideshow publish file.html --title "..."`, `sideshow wait`. Via raw HTTP:
+Via MCP tools (preferred): `publish_surface`, `update_surface`,
+`wait_for_feedback`, `reply_to_user`, `list_surfaces`. (`publish_snippet` /
+`update_snippet` remain as html-only sugar aliases.) Via CLI:
+`sideshow publish file.html --title "..."`, `sideshow diff change.patch
+--title "..."`, `sideshow wait`. Via raw HTTP:
 
 ```
-POST /api/snippets        { "title": "...", "html": "...", "session": "<id>", "agent": "your-name" }
-PUT  /api/snippets/:id    { "html": "..." }     # revise — same card, new version
+POST /api/surfaces        { "title": "...", "parts": [...], "session": "<id>", "agent": "your-name" }
+PUT  /api/surfaces/:id     { "parts": [...] }    # revise — same card, new version
+GET  /api/sessions/:id/surfaces                  # list a session's surfaces
 GET  /api/comments?session=<id>&author=user&wait=60   # user feedback (long-poll, resumes where you left off)
 ```
 
+The legacy `POST /api/snippets { "html": "..." }` endpoints still work as
+html-only back-compat aliases.
+
+### Examples
+
+An html surface:
+
+```
+POST /api/surfaces  { "title": "Cache layout", "parts": [{ "kind": "html", "html": "<svg ...>" }] }
+```
+
+A standalone diff surface (a unified patch):
+
+```
+POST /api/surfaces  { "title": "Add retry", "parts": [{ "kind": "diff", "patch": "--- a/x.ts\n+++ b/x.ts\n@@ ..." }] }
+```
+
+A combined `[html, diff]` surface — a diagram above its code review:
+
+```
+POST /api/surfaces  { "title": "Retry flow", "parts": [
+  { "kind": "html", "html": "<svg ...>" },
+  { "kind": "diff", "patch": "--- a/x.ts\n+++ b/x.ts\n@@ ..." }
+]}
+```
+
+CLI equivalents:
+
+```
+sideshow publish sketch.html --title "Cache layout"                 # html surface
+sideshow diff change.patch --title "Add retry" --layout split       # standalone diff surface
+sideshow publish sketch.html --diff change.patch --title "Retry flow"   # combined [html, diff]
+```
+
 Omit `session` on your first publish and the response's `sessionId` is yours —
-reuse it so your snippets stay grouped. On that first publish, also set a
+reuse it so your surfaces stay grouped. On that first publish, also set a
 session title naming the task ("Auth refactor"), not your tool — `sessionTitle`
 (MCP and HTTP) or `--session-title` (CLI). It applies only when the session is
-created; never retitle it later. When refining an illustration you
+created; never retitle it later. When refining a surface you
 already published, UPDATE it rather than publishing a near-duplicate; versions
 are kept and the user can flip between them.
 
 ## The feedback loop
 
-The user can type comments under any snippet, or in the session thread at the
-bottom of the stream. Feedback reaches you three ways:
+The user can type comments under any surface, or in the session thread at the
+bottom of the stream. Comments attach to a surface (`surfaceId`); behavior is
+otherwise unchanged. Feedback reaches you three ways:
 
 - **Piggyback (automatic).** Every publish/update/reply response may include a
   `userFeedback` array — comments the user left since your last call. Treat
@@ -42,9 +107,12 @@ bottom of the stream. Feedback reaches you three ways:
   it on the session you actually published to.
 
 You can answer in the thread with `reply_to_user` / `sideshow comment` — keep
-replies short; do substantial revisions as snippet updates instead.
+replies short; do substantial revisions as surface updates instead.
 
 ## HTML contract
+
+This contract governs `html` parts (diff parts are rendered from patch data,
+not markup).
 
 - Send a **body fragment only** — no `<!doctype>`, `<html>`, `<head>`, or `<body>`.
   The server wraps your fragment in a themed, sandboxed document.
@@ -61,7 +129,7 @@ Bare `button`, `input`, `select`, and `textarea` are pre-styled to match the
 viewer, hover/focus included — write the plain element, don't restyle it.
 Checkboxes, radios, ranges, and progress bars are themed via `accent-color`.
 
-SVG utility classes, available in every snippet:
+SVG utility classes, available in every html part:
 
 | class                                                            | effect                                                                                                               |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -72,7 +140,7 @@ SVG utility classes, available in every snippet:
 | `node`                                                           | pointer cursor + hover dim, for clickable shapes                                                                     |
 | `c-blue` `c-teal` `c-amber` `c-coral` `c-green` `c-red` `c-gray` | color ramp: fill+stroke on shapes (or a whole `<g>`); child `<text>` auto-switches to readable ink in light and dark |
 
-A `<marker id="arrow">` is injected into every snippet doc — end any line with
+A `<marker id="arrow">` is injected into every html part — end any line with
 `marker-end="url(#arrow)"` and the arrowhead inherits the line's stroke color.
 
 ```html
@@ -113,9 +181,9 @@ A CSP allows loading ONLY from these origins (anything else silently fails):
 
 ## Interactivity
 
-Two globals are injected into every snippet:
+Two globals are injected into every html part:
 
-- `sendPrompt(text)` — posts the text as a user comment on this snippet, which
+- `sendPrompt(text)` — posts the text as a user comment on this surface, which
   reaches you through the feedback loop. Use for "explore X" affordances.
 - `openLink(url)` — asks the user to confirm opening an external link.
   Plain `<a href>` clicks are routed through this automatically.
@@ -127,5 +195,5 @@ Two globals are injected into every snippet:
 - Two font weights only: 400 and 500.
 - SVG works great — for diagrams use `<svg width="100%" viewBox="0 0 680 H">`
   with the kit classes above.
-- Keep it focused: one concept per snippet. Publish a series of small snippets
+- Keep it focused: one concept per surface. Publish a series of small surfaces
   with distinct titles rather than one giant page.

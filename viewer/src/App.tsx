@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { api, relTime, sessionLabel, type SessionRow } from "./api.ts";
-import { Card, cardEls, SessionThread } from "./Card.tsx";
+import { Card, cardEls, frameForSource, SessionThread } from "./Card.tsx";
 import { renderNotes } from "./notes.ts";
 import {
   checkVersion,
@@ -19,8 +19,8 @@ import {
   setNavOpen,
   setPillTarget,
   setUnread,
-  snippets,
   streamLoading,
+  surfaces,
   toast,
   toastShow,
   toastText,
@@ -132,7 +132,7 @@ export default function App() {
           setPillTarget(null);
         }}
       >
-        new snippet ↓
+        new surface ↓
       </button>
     </>
   );
@@ -196,7 +196,7 @@ function WhatsNewCard() {
   );
 }
 
-// Messages from sandboxed snippet iframes (see server/snippetPage.ts bridge).
+// Messages from sandboxed surface iframes (see server/surfacePage.ts bridge).
 async function onBridgeMessage(ev: MessageEvent) {
   const d = ev.data as {
     __sideshow?: boolean;
@@ -207,27 +207,21 @@ async function onBridgeMessage(ev: MessageEvent) {
     key?: string;
   } | null;
   if (!d || !d.__sideshow) return;
-  // A snippet iframe forwarded the session-switch shortcut because focus was
-  // inside it (see server/snippetPage.ts). Mirror the parent keydown handler.
+  // A surface iframe forwarded the session-switch shortcut because focus was
+  // inside it (see server/surfacePage.ts). Mirror the parent keydown handler.
   if (d.type === "switch-session") {
     void selectAdjacent(d.key === "ArrowUp" ? -1 : 1);
     return;
   }
-  let sourceId: string | null = null;
-  let sourceFrame: HTMLIFrameElement | null = null;
-  for (const [id, { iframe }] of cardEls) {
-    if (iframe.contentWindow === ev.source) {
-      sourceId = id;
-      sourceFrame = iframe;
-      break;
-    }
-  }
-  if (d.type === "resize" && sourceFrame) {
-    sourceFrame.style.height = Math.min(Math.max(Number(d.height), 48), 2200) + "px";
-  } else if (d.type === "send-prompt" && sourceId) {
+  // Resolve the source surface + iframe by contentWindow — a surface may own
+  // several html-part iframes, so resize must target the exact one.
+  const src = frameForSource(ev.source);
+  if (d.type === "resize" && src) {
+    src.iframe.style.height = Math.min(Math.max(Number(d.height), 48), 2200) + "px";
+  } else if (d.type === "send-prompt" && src) {
     await api("/api/comments", {
       method: "POST",
-      body: JSON.stringify({ snippet: sourceId, text: String(d.text), author: "user" }),
+      body: JSON.stringify({ surface: src.id, text: String(d.text), author: "user" }),
     });
     toast("Sent to agent: " + d.text);
   } else if (d.type === "open-link") {
@@ -258,8 +252,8 @@ function SessionItem(props: { session: SessionRow }) {
     >
       <div class="sess-title">{label()}</div>
       <div class="sess-meta">
-        {props.session.agent} · {props.session.snippetCount} snippet
-        {props.session.snippetCount === 1 ? "" : "s"} · {relTime(props.session.lastActiveAt)}
+        {props.session.agent} · {props.session.surfaceCount} surface
+        {props.session.surfaceCount === 1 ? "" : "s"} · {relTime(props.session.lastActiveAt)}
       </div>
       <span class="dot"></span>
       <button
@@ -268,7 +262,7 @@ function SessionItem(props: { session: SessionRow }) {
         aria-label={`Delete session "${label()}"`}
         onClick={async (e) => {
           e.stopPropagation();
-          if (!confirm(`Delete "${label()}" and its snippets?`)) return;
+          if (!confirm(`Delete "${label()}" and its surfaces?`)) return;
           await api(`/api/sessions/${props.session.id}`, { method: "DELETE" });
         }}
       >
@@ -290,12 +284,12 @@ function SessionView() {
       </div>
       <div id="stream">
         <WhatsNewCard />
-        <Show when={!streamLoading() && snippets.length === 0}>
+        <Show when={!streamLoading() && surfaces.length === 0}>
           <div class="empty" id="streamEmpty">
-            No snippets in this session yet.
+            No surfaces in this session yet.
           </div>
         </Show>
-        <For each={snippets}>{(s) => <Card snippet={s} />}</For>
+        <For each={surfaces}>{(s) => <Card surface={s} />}</For>
         <SessionThread />
       </div>
     </div>

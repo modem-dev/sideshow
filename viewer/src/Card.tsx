@@ -1,5 +1,6 @@
-import { For, onCleanup, onMount, Show } from "solid-js";
-import { api, relTime, type Snippet } from "./api.ts";
+import { For, Index, onCleanup, onMount, Show } from "solid-js";
+import { api, relTime, type DiffPart as DiffPartData, type Surface } from "./api.ts";
+import { DiffPart } from "./DiffPart.tsx";
 import {
   comments,
   scrollTarget,
@@ -10,18 +11,33 @@ import {
   type ViewComment,
 } from "./state.ts";
 
-// Card registry keyed by snippet id: the postMessage bridge in App finds the
-// source iframe here, and the "new snippet" pill scrolls to the card element.
-export const cardEls = new Map<string, { card: HTMLDivElement; iframe: HTMLIFrameElement }>();
+// Card registry keyed by surface id: the "new surface" pill scrolls to the
+// card element, and each card tracks its html-part iframes so the postMessage
+// bridge in App can resolve the source surface + iframe by contentWindow (a
+// surface may have more than one html part, so a card may own several frames).
+export const cardEls = new Map<string, { card: HTMLDivElement; iframes: Set<HTMLIFrameElement> }>();
 
-export function Card(props: { snippet: Snippet }) {
+// Resolve which surface + iframe a postMessage came from, by contentWindow.
+export function frameForSource(source: unknown): { id: string; iframe: HTMLIFrameElement } | null {
+  for (const [id, { iframes }] of cardEls) {
+    for (const iframe of iframes) {
+      if (iframe.contentWindow === source) return { id, iframe };
+    }
+  }
+  return null;
+}
+
+export function Card(props: { surface: Surface }) {
   let card!: HTMLDivElement;
-  let iframe!: HTMLIFrameElement;
+  const iframes = new Set<HTMLIFrameElement>();
+  // Absolute part index -> its iframe, for html parts only. Lets the version
+  // dropdown rebuild each `/s/:id?part=N` src across every html part.
+  const htmlFrames = new Map<number, HTMLIFrameElement>();
 
   onMount(() => {
-    cardEls.set(props.snippet.id, { card, iframe });
-    onCleanup(() => cardEls.delete(props.snippet.id));
-    if (scrollTarget() === props.snippet.id) {
+    cardEls.set(props.surface.id, { card, iframes });
+    onCleanup(() => cardEls.delete(props.surface.id));
+    if (scrollTarget() === props.surface.id) {
       setScrollTarget(null);
       card.scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -29,19 +45,19 @@ export function Card(props: { snippet: Snippet }) {
 
   const versionRange = (latest: number) => {
     const out = [];
-    for (let v = latest; v >= Math.max(1, latest - props.snippet.history.length); v--) out.push(v);
+    for (let v = latest; v >= Math.max(1, latest - props.surface.history.length); v--) out.push(v);
     return out;
   };
 
   return (
     <div class="card" ref={(el) => (card = el)}>
       <div class="card-head">
-        <span class="card-title">{props.snippet.title}</span>
+        <span class="card-title">{props.surface.title}</span>
         <span class="vslot">
           {/* keyed on version: a new version rebuilds the select, resetting
               the selection to the latest like the live iframe src does */}
           <Show
-            when={props.snippet.version > 1 && props.snippet.version}
+            when={props.surface.version > 1 && props.surface.version}
             keyed
             fallback={<span class="vbadge">v1</span>}
           >
@@ -49,7 +65,11 @@ export function Card(props: { snippet: Snippet }) {
               <select
                 class="vbadge"
                 onChange={(e) => {
-                  iframe.src = `/s/${props.snippet.id}?ver=${e.currentTarget.value}&cb=${Date.now()}`;
+                  const ver = e.currentTarget.value;
+                  const cb = Date.now();
+                  for (const [part, frame] of htmlFrames) {
+                    frame.src = `/s/${props.surface.id}?part=${part}&ver=${ver}&cb=${cb}`;
+                  }
                 }}
               >
                 <For each={versionRange(latest)}>{(v) => <option value={v}>v{v}</option>}</For>
@@ -57,53 +77,72 @@ export function Card(props: { snippet: Snippet }) {
             )}
           </Show>
         </span>
-        <span class="card-meta">{relTime(props.snippet.updatedAt)}</span>
+        <span class="card-meta">{relTime(props.surface.updatedAt)}</span>
         <span class="sp"></span>
-        <a class="act open" target="_blank" href={`/s/${props.snippet.id}`}>
+        <a class="act open" target="_blank" href={`/s/${props.surface.id}`}>
           open ↗
         </a>
         <button
           class="act del"
           onClick={async () => {
-            if (confirm(`Delete "${props.snippet.title}"?`)) {
-              await api(`/api/snippets/${props.snippet.id}`, { method: "DELETE" });
+            if (confirm(`Delete "${props.surface.title}"?`)) {
+              await api(`/api/surfaces/${props.surface.id}`, { method: "DELETE" });
             }
           }}
         >
           delete
         </button>
       </div>
-      {/* src changes only when the version does, so unrelated refetches never
-          reload the sandboxed document */}
-      <iframe
-        ref={(el) => (iframe = el)}
-        sandbox="allow-scripts"
-        title={props.snippet.title}
-        src={`/s/${props.snippet.id}?cb=${props.snippet.version}`}
-      ></iframe>
+      {/* Parts render in order. An html part is the existing sandboxed iframe
+          (one per part); a diff part renders natively via DiffPart. An iframe
+          src changes only when the version does, so unrelated refetches never
+          reload the sandboxed document. */}
+      <Index each={props.surface.parts}>
+        {(part, i) => (
+          <Show when={part().kind === "html"} fallback={<DiffPart part={part() as DiffPartData} />}>
+            <iframe
+              ref={(el) => {
+                htmlFrames.set(i, el);
+                iframes.add(el);
+                onCleanup(() => {
+                  htmlFrames.delete(i);
+                  iframes.delete(el);
+                });
+              }}
+              sandbox="allow-scripts"
+              title={
+                props.surface.parts.length > 1
+                  ? `${props.surface.title} (part ${i + 1})`
+                  : props.surface.title
+              }
+              src={`/s/${props.surface.id}?part=${i}&ver=${props.surface.version}&cb=${props.surface.version}`}
+            ></iframe>
+          </Show>
+        )}
+      </Index>
       <Thread
-        snippetId={props.snippet.id}
+        surfaceId={props.surface.id}
         placeholder="Reply to the agent…"
         send={(text) =>
-          sendComment({ snippet: props.snippet.id, text, author: "user" }, props.snippet.id, text)
+          sendComment({ surface: props.surface.id, text, author: "user" }, props.surface.id, text)
         }
       />
     </div>
   );
 }
 
-// Comments without a snippet (e.g. `sideshow comment` with no --snippet)
+// Comments without a surface (e.g. `sideshow comment` with no --surface)
 // live in a session-level thread at the bottom of the stream, which also
-// lets the user message the agent without picking a snippet.
+// lets the user message the agent without picking a surface.
 export function SessionThread() {
   return (
     <div class="card" id="sessionThread">
       <div class="card-head">
         <span class="card-title">Session thread</span>
-        <span class="card-meta">not tied to a snippet</span>
+        <span class="card-meta">not tied to a surface</span>
       </div>
       <Thread
-        snippetId={null}
+        surfaceId={null}
         placeholder="Message the agent…"
         send={(text) => sendComment({ session: selected(), text, author: "user" }, null, text)}
       />
@@ -112,11 +151,11 @@ export function SessionThread() {
 }
 
 function Thread(props: {
-  snippetId: string | null;
+  surfaceId: string | null;
   placeholder: string;
   send: (text: string) => Promise<string | null>;
 }) {
-  const list = () => comments().filter((c) => c.snippetId === props.snippetId);
+  const list = () => comments().filter((c) => c.surfaceId === props.surfaceId);
   return (
     <div class="thread">
       <div class="cmts">
