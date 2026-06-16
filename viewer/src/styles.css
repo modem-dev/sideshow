@@ -346,12 +346,15 @@ select.vbadge {
   color: var(--text);
   background: var(--hover);
 }
-/* Icon-only actions (open/delete): square hit area, centered glyph. */
+/* Icon-only actions (open/delete): square hit area, centered glyph. Unlike the
+   text actions, these stay visible at all times — they're subtle enough not to
+   need the hover reveal. */
 .card-head .act.icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 4px;
+  opacity: 1;
 }
 .card-head .act.icon svg {
   width: 15px;
