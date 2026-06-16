@@ -8,7 +8,8 @@ All notable user-visible changes to this project are documented in this file.
 
 - `markdown` parts: agents can publish prose (explanations, plans, tradeoff
   write-ups) the viewer renders with consistent typography — headings, lists,
-  tables, code blocks, links. Available on all three tiers: a `markdown` part
+  tables, links, and syntax-highlighted fenced code blocks (shiki, the same
+  highlighter the diff parts use). Available on all three tiers: a `markdown` part
   over MCP and `POST /api/surfaces`, plus the CLI (`sideshow markdown`, and
   `--md` on `sideshow publish`). Rendered as data, not sandboxed markup: raw
   HTML in the source is escaped, so reach for an `html` part for live markup.

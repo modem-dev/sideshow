@@ -457,6 +457,15 @@ iframe {
   padding: 0;
   font-size: 12.5px;
 }
+/* shiki dual-theme: light values render inline; this flips to the dark theme's
+   --shiki-dark / --shiki-dark-bg under a dark color scheme (matches DiffPart). */
+@media (prefers-color-scheme: dark) {
+  .mdpart .shiki,
+  .mdpart .shiki span {
+    color: var(--shiki-dark) !important;
+    background-color: var(--shiki-dark-bg) !important;
+  }
+}
 .mdpart blockquote {
   margin-left: 0;
   padding-left: 12px;

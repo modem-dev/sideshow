@@ -13,7 +13,8 @@ a `kind`:
   rest of this guide is the contract for it). Reach for it for diagrams, UI
   sketches, data viz — anything you draw.
 - **`markdown`** — prose you hand over as _text_; the viewer renders it with
-  consistent typography (headings, lists, tables, code blocks, links). Reach for
+  consistent typography (headings, lists, tables, links, and syntax-highlighted
+  fenced code blocks — tag the fence with a language, e.g. ` ```ts `). Reach for
   it for explanations, plans, and tradeoff write-ups — anything you'd otherwise
   hand-format in html. Raw HTML in the source is escaped, not rendered, so use an
   `html` part when you actually need live markup.
