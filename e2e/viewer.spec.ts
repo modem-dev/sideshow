@@ -75,8 +75,8 @@ test("session thread shows snippet-less comments and messages the agent", async 
       const res = await fetch(
         `${server.url}/api/comments?session=${snippet.sessionId}&author=user`,
       );
-      const data = (await res.json()) as { comments: { snippetId: string | null; text: string }[] };
-      return data.comments.filter((c) => !c.snippetId).map((c) => c.text);
+      const data = (await res.json()) as { comments: { surfaceId: string | null; text: string }[] };
+      return data.comments.filter((c) => !c.surfaceId).map((c) => c.text);
     })
     .toContain("user note");
 
