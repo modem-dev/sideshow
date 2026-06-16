@@ -39,6 +39,8 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Fixed
 
+- Malformed `POST`/`PUT /api/surfaces` part payloads are now rejected before
+  they reach storage, instead of being saved and failing later in the viewer.
 - `sideshow-term` can now be packaged and installed standalone: its server
   runtime dependencies are declared, it reuses the `sideshow` package's server
   core, and published installs run built JavaScript instead of TypeScript from

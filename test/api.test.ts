@@ -126,6 +126,29 @@ test("publishes a combined html+diff surface; /s renders the html part only", as
   assert.equal((await app.request(`/s/${surface.id}?part=1`)).status, 404);
 });
 
+test("REST surface routes reject malformed parts before storage", async () => {
+  const app = makeApp();
+
+  const badCreate = await app.request("/api/surfaces", json({ parts: [{ kind: "image" }] }));
+  assert.equal(badCreate.status, 400);
+  assert.match(((await badCreate.json()) as any).error, /assetId/);
+  assert.deepEqual(await (await app.request("/api/sessions")).json(), []);
+
+  const good = (await (
+    await app.request("/api/surfaces", json({ parts: [{ kind: "html", html: "<p>x</p>" }] }))
+  ).json()) as any;
+  const badUpdate = await app.request(`/api/surfaces/${good.id}`, {
+    ...json({ parts: [{ kind: "diff", files: [{ filename: "x", before: "a" }] }] }),
+    method: "PUT",
+  });
+  assert.equal(badUpdate.status, 400);
+  assert.match(((await badUpdate.json()) as any).error, /before.*after/);
+
+  const unchanged = (await (await app.request(`/api/surfaces/${good.id}`)).json()) as any;
+  assert.equal(unchanged.version, 1);
+  assert.deepEqual(unchanged.parts, [{ kind: "html", html: "<p>x</p>" }]);
+});
+
 test("publish_surface MCP tool round-trips a diff part", async () => {
   const app = makeApp();
   const list = (await (await app.request("/mcp", mcpCall(1, "tools/list"))).json()) as any;
