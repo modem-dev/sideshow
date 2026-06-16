@@ -48,8 +48,9 @@ export interface Asset {
   contentType: string;        // e.g. "image/png", "application/json"
   byteLength: number;         // decoded size (what limits check against)
   filename: string | null;    // original name, for downloads
-  data: string;               // base64 of the raw bytes (see "Storage" below)
+  data: Uint8Array;           // raw bytes (see "Storage" — BLOB / on-disk base64)
   createdAt: string;
+  lastAccessedAt: string;     // bumped on serve; drives LRU eviction
 }
 
 export interface CreateAssetInput {
@@ -57,18 +58,25 @@ export interface CreateAssetInput {
   kind?: AssetKind;           // inferred from contentType when omitted
   contentType: string;
   filename?: string;
-  data: string;               // base64
+  data: Uint8Array;           // raw bytes
 }
 ```
 
-`Store` gains (added to `test/storeContract.ts` so both stores prove identical
-behavior):
+The `Store` interface speaks **bytes** (`Uint8Array`), not base64. base64 is an
+edge-only encoding (HTTP base64-JSON body, MCP tool args) decoded before it
+reaches the store, and an on-disk detail of `JsonFileStore` (JSON can't hold
+binary). `Uint8Array` is a standard-lib type, so `types.ts` stays
+runtime-agnostic. `Store` gains (added to `test/storeContract.ts` so both stores
+prove identical behavior):
 
 ```ts
-putAsset(input: CreateAssetInput): Promise<Asset | null>;  // null if session missing
+putAsset(input: CreateAssetInput): Promise<Asset | null>;  // null if session missing; evicts to fit
 getAsset(id: string): Promise<Asset | null>;
+touchAsset(id: string): Promise<void>;                     // bump lastAccessedAt (called on serve)
 listAssets(sessionId: string): Promise<Asset[]>;           // for the viewer/debug
 removeAsset(id: string): Promise<boolean>;
+boardAssetBytes(): Promise<number>;                        // total, for the budget check
+referencedAssetIds(): Promise<Set<string>>;                // image/trace assetIds across live surfaces + history
 ```
 
 Cascade: `removeSession` deletes its assets. Assets are session-scoped, not
@@ -111,20 +119,24 @@ like `diff`.
 
 ## Storage
 
-Both stores keep their everything-as-JSON shape; `data` is base64 text.
+Asset bytes live in the store (no R2): the one Durable Object's SQLite on
+Cloudflare, the JSON file locally. The bytes are held as native binary —
+`Uint8Array` in memory and across the `Store` interface — and only get
+base64-encoded at the two text boundaries (HTTP base64-JSON bodies, MCP args,
+and `JsonFileStore`'s on-disk JSON).
 
-- **`JsonFileStore`**: a new `assets: Asset[]` array in the file shape, persisted
-  like the rest. Base64 in the JSON file is fine for local single-user use.
-- **`SqlStore`**: a new table. Start with base64 `TEXT` to mirror the JSON store
-  exactly and keep the contract simple; a `BLOB` column is a possible later
-  optimization (the `node:sqlite` contract shim and DO SQLite both support
-  blobs, but TEXT avoids shim/typing friction now).
+- **`SqlStore`**: a new table with a `BLOB` `data` column — 33% smaller than
+  base64 TEXT and no decode-on-serve, which directly helps the shared ~10 GB DO
+  ceiling. DO SQLite stores blobs natively; the `node:sqlite` contract shim must
+  be extended to bind `Uint8Array` (today `sqlStorageShim.ts` only binds
+  `string | number | bigint | null`) — a one-line type widening, since
+  `node:sqlite` already round-trips blobs.
 
   ```sql
   CREATE TABLE IF NOT EXISTS assets (
     id TEXT PRIMARY KEY, sessionId TEXT NOT NULL, kind TEXT NOT NULL,
     contentType TEXT NOT NULL, byteLength INTEGER NOT NULL, filename TEXT,
-    data TEXT NOT NULL, createdAt TEXT NOT NULL
+    data BLOB NOT NULL, createdAt TEXT NOT NULL, lastAccessedAt TEXT NOT NULL
   );
   ```
 
@@ -132,9 +144,41 @@ Both stores keep their everything-as-JSON shape; `data` is base64 text.
   existing rows, so the "deployed DOs can't be reset" rule is satisfied by the
   `CREATE TABLE IF NOT EXISTS` alone.
 
-Limits: a separate `MAX_ASSET_BYTES` (proposed 5 MB). Per-session and/or
-per-board ceilings are a possible follow-up to bound a Durable Object's total
-size; out of scope for v1.
+- **`JsonFileStore`**: a new `assets[]` entry in the file shape. `Uint8Array`
+  can't live in JSON, so persist/load convert `data` to/from base64 explicitly
+  (the rest of the record is plain JSON). In memory the store still hands back
+  live `Uint8Array`s.
+
+### Limits and eviction (resolved)
+
+- **Per-asset cap `MAX_ASSET_BYTES` = 5 MB** (decoded). Uploads over it → 413.
+- **Per-board budget `MAX_BOARD_ASSET_BYTES` ≈ 2 GB**, well under the DO's ~10 GB
+  ceiling with headroom for surfaces/comments. There is a single DO for the whole
+  deployment (`idFromName("default")`), so this budget is board-wide.
+- **Reference-aware LRU eviction.** When a new upload would exceed the board
+  budget, `putAsset` evicts existing assets oldest-`lastAccessedAt`-first to make
+  room — but partitioned so **unreferenced** assets go first and an asset still
+  referenced by a live surface part is only evicted as a true last resort (when
+  unreferenced candidates are exhausted). `referencedAssetIds()` collects every
+  `image`/`trace` `assetId` across current surfaces *and* their history versions.
+
+  This honors the chosen "auto-evict oldest" behavior while containing its blast
+  radius. Two safeguards keep eviction from being an *invisible* break (the
+  codebase's "feedback/▢ never silently lost" ethos):
+  - **`lastAccessedAt` is bumped on every `GET /a/:id`**, so any asset whose
+    surface is actually being viewed stays "warm" and sorts last for eviction —
+    this also protects raw-URL `<img>` embeds that `referencedAssetIds()` can't
+    see (an html part's markup isn't parsed for asset URLs).
+  - The viewer renders a clear **"asset evicted to reclaim space"** placeholder
+    for any `image`/`trace` part whose `assetId` 404s, rather than a broken
+    image. (Caching note: `/a/:id` uses short/revalidating cache rather than
+    `immutable`, so the touch-on-serve actually fires; asset ids are unique so
+    correctness doesn't depend on long caching.)
+
+  Residual gap: a raw-URL embed in an html part whose surface is *never* viewed
+  for a long time could still be evicted under sustained pressure. For
+  guaranteed-retention embeds, prefer an `image` part (tracked) over a raw
+  `<img src>` — documented in the design guide.
 
 ## HTTP API
 
@@ -147,10 +191,31 @@ POST /api/assets
   -> 413 if byteLength > MAX_ASSET_BYTES
   -> 404 if an explicit session id is unknown
 GET /a/:id
-  -> 200 with Content-Type, Content-Disposition (inline; filename),
-         X-Content-Type-Options: nosniff, long-lived immutable cache
-  -> 404 if missing
+  -> 200 bytes, X-Content-Type-Options: nosniff, short revalidating cache,
+         Content-Type + Content-Disposition per the policy below; bumps
+         lastAccessedAt (LRU)
+  -> 404 if missing (viewer shows the "evicted" placeholder)
 ```
+
+### Content-type serving policy (resolved)
+
+`/a/:id` must never be coercible into a live, same-origin, script-executing
+document. Policy:
+
+- **Inline allowlist (raster images only):** `image/png`, `image/jpeg`,
+  `image/gif`, `image/webp`, `image/avif` are served with their real
+  `Content-Type` and `Content-Disposition: inline`.
+- **Everything else** — `image/svg+xml`, `application/json`, `text/plain`,
+  `text/csv`, and the `application/octet-stream` catch-all — is served with
+  `Content-Disposition: attachment; filename="<name>"`. Unknown or dangerous
+  types (`text/html`, anything not on a small known list) are normalized to
+  `application/octet-stream`.
+- `X-Content-Type-Options: nosniff` always.
+
+This loses nothing in practice: `<img src>` and `fetch()` both ignore
+`Content-Disposition`, so SVGs still embed via `<img>` and trace JSON still
+renders inline in the viewer — but a top-level navigation to `/a/:id` can never
+execute an uploaded SVG/HTML as a same-origin script; it downloads instead.
 
 Session handling mirrors `publishSurface`: an explicit `session` is validated;
 otherwise (raw `curl` ergonomics) one is auto-created so an upload can precede
@@ -245,33 +310,50 @@ three tiers" stance.
 
 ## Tests
 
-- `test/storeContract.ts`: put/get/list/remove assets; session cascade; both
-  stores run it.
-- API tests: upload (raw + base64), size-limit 413, serve content-type +
-  disposition + nosniff, unknown id 404, auto-session, auth required.
+- `test/storeContract.ts`: put/get/list/remove assets; session cascade;
+  `touchAsset` bumps `lastAccessedAt`; `boardAssetBytes`/`referencedAssetIds`;
+  reference-aware eviction (unreferenced evicted before referenced, oldest-first;
+  a referenced asset survives while unreferenced candidates exist). Both stores
+  run it, so BLOB (SqlStore via the widened shim) and base64-on-disk
+  (JsonFileStore) round-trip identical bytes.
+- API tests: upload (raw + base64), per-asset 413, the content-type serving
+  policy (raster inline; svg/json/html → attachment + octet-stream + nosniff),
+  unknown id 404, auto-session, auth required.
 - `coerceParts` unit coverage for `image`/`trace` (including dropping malformed
   parts, per existing lenient behavior).
 - e2e: publish a surface with an image part (assert `<img>` renders) and a trace
   part (assert timeline rows + download link); embed-by-URL inside an html part
   renders under the widened CSP on both chromium and webkit.
 
-## Risks / open questions
+## Resolved decisions
 
-- **DO storage growth.** Base64 assets live in the Durable Object's SQLite. With
-  no per-board ceiling a board could grow unbounded. v1 relies on
-  `MAX_ASSET_BYTES` per asset; a per-session/board quota + an eviction story is a
-  recommended fast follow.
-- **`TEXT` vs `BLOB`.** Base64 in TEXT is ~33% larger and costs an
-  encode/decode. Chosen for store/shim symmetry now; revisit if asset volume
-  matters.
-- **Asset lifetime.** Session-scoped feels right (matches surface/comment
-  cascade), but an asset embedded in an html part by *raw URL* (not an image
-  part) has no referential link the store can see — deleting a surface won't
-  orphan-collect it, and that's intended (assets outlive any single surface).
-  Document that assets are cleaned up with the session, not the surface.
-- **Content-type trust.** `/a/:id` serves the stored content-type with `nosniff`;
-  we should constrain/normalize it (allow an image/* + a small text/JSON set,
-  fall back to `application/octet-stream` + `Content-Disposition: attachment`)
-  so an uploaded `text/html` asset can't be served as a live same-origin
-  document. Worth nailing down before implementation.
-```
+These were the doc's open questions; each is now settled (see the sections above
+for the mechanics).
+
+1. **Blob backend → in-DO SQLite (`BLOB`), no R2.** Keeps the "both stores pass
+   one contract, zero-config local" invariant; bytes ride as `Uint8Array`
+   through the core, base64 only at the text edges. Cost: extend the
+   `node:sqlite` shim to bind `Uint8Array`. Ceiling: the single deployment DO's
+   ~10 GB, mitigated by the board budget + eviction below. R2 stays the
+   documented escape hatch if asset volume ever outgrows one DO.
+2. **Storage budget → auto-evict oldest, made reference-aware.** Per-asset cap
+   5 MB; per-board budget ~2 GB; `putAsset` evicts oldest-`lastAccessedAt`-first
+   to fit, unreferenced assets before referenced ones. `lastAccessedAt` bumps on
+   serve so visible assets (incl. raw-URL embeds) stay warm, and the viewer shows
+   an explicit "evicted" placeholder for any dead `assetId` — so eviction never
+   silently breaks a card. Residual gap (long-unviewed raw-URL embeds under
+   sustained pressure) is documented; prefer an `image` part for guaranteed
+   retention.
+3. **Asset lifetime → session-scoped.** Cleaned up with the session (matches the
+   surface/comment cascade), never with an individual surface — one upload may be
+   embedded by several surfaces/revisions, and raw-URL embeds have no
+   store-visible back-reference. Documented in the design guide.
+4. **Content-type trust → inline raster-image allowlist; everything else
+   `attachment` + `nosniff`.** `text/html` and unknowns normalize to
+   `application/octet-stream`. `<img>`/`fetch` ignore `Content-Disposition`, so
+   embedding (incl. SVG) and inline trace rendering keep working while a
+   top-level open of `/a/:id` can never execute an uploaded document.
+
+Remaining (genuinely v2, not blockers): an R2 backend if one DO is outgrown; a
+per-session quota in addition to the board budget; and richer trace formats
+(e.g. streaming/append) beyond the upload-once model.
