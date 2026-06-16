@@ -1,4 +1,4 @@
-import { expect, publish, test, update } from "./fixtures.ts";
+import { expect, publish, publishParts, test, update } from "./fixtures.ts";
 
 test("snippet published over HTTP appears live via SSE, no reload", async ({ page, server }) => {
   await page.goto(server.url);
@@ -10,6 +10,25 @@ test("snippet published over HTTP appears live via SSE, no reload", async ({ pag
   await expect(page.locator(".card:not(#sessionThread) .card-title")).toHaveText("Live test");
   await expect(page.locator("#onboard")).toBeHidden();
   await expect(page.locator(".sess-title")).toContainText("e2e session");
+});
+
+test("a part kind this viewer doesn't know shows a refresh hint, not a broken diff", async ({
+  page,
+  server,
+}) => {
+  await page.goto(server.url);
+
+  // A future/unknown part kind — what a long-open tab sees after a new part
+  // type ships. It must degrade to a neutral hint, never the diff fallback.
+  await publishParts(server.url, {
+    title: "Future part",
+    agent: "e2e",
+    parts: [{ kind: "futurething", blob: "x" }],
+  });
+
+  const card = page.locator(".card:not(#sessionThread):not(#whatsNew)").first();
+  await expect(card.locator(".part-unsupported")).toBeVisible();
+  await expect(card.locator(".diff-error")).toHaveCount(0);
 });
 
 test("resize bridge grows the iframe beyond its 120px default", async ({ page, server }) => {

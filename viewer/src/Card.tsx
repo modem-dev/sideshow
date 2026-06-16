@@ -102,13 +102,21 @@ export function Card(props: { surface: Surface }) {
           delete
         </button>
       </div>
-      {/* Parts render in order. An html part is the existing sandboxed iframe
-          (one per part); a diff part renders natively via DiffPart. An iframe
-          src changes only when the version does, so unrelated refetches never
-          reload the sandboxed document. */}
+      {/* Parts render in order, dispatched by kind. Each kind is an explicit
+          Match; the fallback is reserved for a kind this viewer build doesn't
+          know — which happens when a long-open tab predates a newly added part
+          type. It must NOT assume diff (an unknown part is not a broken diff),
+          so it shows a neutral refresh hint instead. An html iframe src changes
+          only when the version does, so unrelated refetches never reload it. */}
       <Index each={props.surface.parts}>
         {(part, i) => (
-          <Switch fallback={<DiffPart part={part() as DiffPartData} />}>
+          <Switch
+            fallback={
+              <div class="part-unsupported">
+                Can&rsquo;t show this part — refresh sideshow to update the viewer.
+              </div>
+            }
+          >
             <Match when={part().kind === "html"}>
               <iframe
                 ref={(el) => {
@@ -127,6 +135,9 @@ export function Card(props: { surface: Surface }) {
                 }
                 src={`/s/${props.surface.id}?part=${i}&ver=${props.surface.version}&cb=${props.surface.version}`}
               ></iframe>
+            </Match>
+            <Match when={part().kind === "diff"}>
+              <DiffPart part={part() as DiffPartData} />
             </Match>
             <Match when={part().kind === "image"}>
               <ImagePart part={part() as ImagePartData} />
