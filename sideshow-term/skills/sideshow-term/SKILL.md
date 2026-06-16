@@ -38,6 +38,10 @@ Save the returned `sessionId` and snippet `id`. Iterate with
 publishing near-duplicates — versions are kept. Preview without the viewer:
 `sideshow-term render sketch.stml`.
 
+To remove stale visuals before replacing a board, run `sideshow-term clear` for
+the current session or `sideshow-term clear --all` for every session on the
+surface.
+
 Rules of thumb:
 
 - On your first publish, set a session title that names the task ("Auth

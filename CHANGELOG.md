@@ -22,6 +22,8 @@ All notable user-visible changes to this project are documented in this file.
   and bare `sideshow-term` opens the watcher. Terminal servers default to port
   4243, with `--port` for choosing another local port. The watcher supports
   mouse input for clicking sidebar snippets and wheel-scrolling content.
+  Agents can run `sideshow-term clear` to remove stale visualizations from the
+  current session, or `sideshow-term clear --all` to clear the whole surface.
   `sideshow-term serve` remains for explicit server-only use.
 - Snippets are now "surfaces" throughout the API: `/api/surfaces`, `surface-*`
   SSE events, and comments keyed by `surfaceId`. The old snippet endpoints and

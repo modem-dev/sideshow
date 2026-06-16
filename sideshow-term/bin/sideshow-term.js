@@ -43,6 +43,8 @@ usage:
   sideshow-term update <id> <file|->      revise a snippet (new version)
       --title <t>            replace title
   sideshow-term list [--session <id>|--all]   list snippets
+  sideshow-term clear [--session <id>|--all] [--sessions]
+                                      clear existing visualizations
   sideshow-term sessions                  list sessions
   sideshow-term comment <text> [opts]     post a comment
       --snippet <id> | --session <id>
@@ -373,6 +375,37 @@ const commands = {
     const session = flags.session ?? (await resolveSession(flags));
     if (!session) fail("no active session — pass --session or --all");
     out(await api(`/api/sessions/${session}/snippets`));
+  },
+
+  async clear() {
+    const { values: flags } = parse({
+      options: {
+        session: { type: "string" },
+        all: { type: "boolean" },
+        sessions: { type: "boolean" },
+      },
+    });
+    if (flags.all && flags.session) fail("pass either --session or --all, not both");
+    const sessionIds = flags.all
+      ? (await api("/api/sessions")).map((session) => session.id)
+      : [flags.session ?? (await resolveSession(flags))].filter(Boolean);
+    if (sessionIds.length === 0) fail("no active session — pass --session or --all");
+
+    let visualizations = 0;
+    let deletedSessions = 0;
+    for (const session of sessionIds) {
+      const snippets = await api(`/api/sessions/${session}/snippets`);
+      for (const snippet of snippets) {
+        await api(`/api/snippets/${snippet.id}`, { method: "DELETE" });
+        visualizations += 1;
+      }
+      if (flags.sessions) {
+        await api(`/api/sessions/${session}`, { method: "DELETE" });
+        deletedSessions += 1;
+      }
+    }
+
+    out({ ok: true, sessions: sessionIds.length, visualizations, deletedSessions });
   },
 
   async sessions() {

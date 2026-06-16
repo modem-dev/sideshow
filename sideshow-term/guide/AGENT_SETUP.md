@@ -17,6 +17,10 @@ sideshow-term update <id> revised.stml
 
 # Preview in your own shell, no viewer needed:
 sideshow-term render sketch.stml
+
+# Clear stale visuals before replacing a board:
+sideshow-term clear           # current session
+sideshow-term clear --all     # every session on this surface
 ```
 
 If `sideshow-term` is not on PATH but you are in this repo, use

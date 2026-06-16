@@ -67,6 +67,7 @@ sideshow-term render <file|-> [--width N]   preview STML to plain text (Bun)
 sideshow-term publish <file|-> [--title …]  publish an STML snippet
 sideshow-term update <id> <file|->          revise a snippet (new version)
 sideshow-term list / sessions               inspect what's published
+sideshow-term clear [--session id|--all]    clear existing visualizations
 sideshow-term demo                          seed an example session
 sideshow-term guide / setup                 print the agent contract
 ```
