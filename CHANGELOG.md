@@ -31,6 +31,8 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Changed
 
+- A surface card's open and delete actions are now minimal Lucide icons
+  (external-link and trash) instead of text labels; delete turns red on hover.
 - `sideshow-term watch` now starts a local server in the background when needed,
   and bare `sideshow-term` opens the watcher. Terminal servers default to port
   4243, with `--port` for choosing another local port. The watcher supports

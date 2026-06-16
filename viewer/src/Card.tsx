@@ -8,6 +8,7 @@ import {
   type TracePart as TracePartData,
 } from "./api.ts";
 import { DiffPart } from "./DiffPart.tsx";
+import { OpenIcon, TrashIcon } from "./icons.tsx";
 import { ImagePart } from "./ImagePart.tsx";
 import { TracePart } from "./TracePart.tsx";
 import {
@@ -88,18 +89,26 @@ export function Card(props: { surface: Surface }) {
         </span>
         <span class="card-meta">{relTime(props.surface.updatedAt)}</span>
         <span class="sp"></span>
-        <a class="act open" target="_blank" href={`/s/${props.surface.id}`}>
-          open ↗
+        <a
+          class="act icon open"
+          target="_blank"
+          href={`/s/${props.surface.id}`}
+          title="Open in a new tab"
+          aria-label="Open in a new tab"
+        >
+          <OpenIcon />
         </a>
         <button
-          class="act del"
+          class="act icon del"
+          title="Delete surface"
+          aria-label={`Delete "${props.surface.title}"`}
           onClick={async () => {
             if (confirm(`Delete "${props.surface.title}"?`)) {
               await api(`/api/surfaces/${props.surface.id}`, { method: "DELETE" });
             }
           }}
         >
-          delete
+          <TrashIcon />
         </button>
       </div>
       {/* Parts render in order, dispatched by kind. Each kind is an explicit
