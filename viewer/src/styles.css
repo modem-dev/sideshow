@@ -390,6 +390,102 @@ iframe {
   font-size: 12px;
   color: var(--faint);
 }
+.mdpart {
+  border-top: 0.5px solid var(--border);
+  padding: 4px 16px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.mdpart h1,
+.mdpart h2,
+.mdpart h3,
+.mdpart h4 {
+  line-height: 1.3;
+  margin: 1.2em 0 0.5em;
+  font-weight: 600;
+}
+.mdpart h1 {
+  font-size: 1.5em;
+}
+.mdpart h2 {
+  font-size: 1.25em;
+}
+.mdpart h3 {
+  font-size: 1.1em;
+}
+.mdpart > :first-child {
+  margin-top: 0.4em;
+}
+.mdpart p,
+.mdpart ul,
+.mdpart ol,
+.mdpart blockquote,
+.mdpart table {
+  margin: 0.5em 0;
+}
+.mdpart ul,
+.mdpart ol {
+  padding-left: 1.5em;
+}
+.mdpart li {
+  margin: 0.2em 0;
+}
+.mdpart a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.mdpart a:hover {
+  text-decoration: underline;
+}
+.mdpart code {
+  font: 0.875em var(--font-mono, ui-monospace, monospace);
+  background: var(--hover);
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+}
+.mdpart pre {
+  background: var(--panel);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow: auto;
+}
+.mdpart pre code {
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+}
+.mdpart blockquote {
+  margin-left: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--border-2);
+  color: var(--muted);
+}
+.mdpart table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.mdpart th,
+.mdpart td {
+  border: 0.5px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+}
+.mdpart th {
+  background: var(--hover);
+}
+.mdpart img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+.mdpart hr {
+  border: none;
+  border-top: 0.5px solid var(--border);
+  margin: 1em 0;
+}
 .tracepart {
   border-top: 0.5px solid var(--border);
   padding: 10px 14px 12px;

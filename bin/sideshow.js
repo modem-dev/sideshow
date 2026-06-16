@@ -17,6 +17,7 @@ usage:
   sideshow serve [--port N] [--open]      start the surface (API + viewer)
   sideshow publish <file|-> [options]     publish an HTML surface (one html part)
       --title <t>       surface title
+      --md <file|->     add a markdown part (prose) — combine with html
       --diff <file|->   add a diff part from a unified/git patch (combine with html)
       --image <file>    upload an image and append it as an image part
       --session <id>    target session (default: auto per agent session)
@@ -38,6 +39,9 @@ usage:
   sideshow diff <file|-> [options]        publish a diff surface from a patch
       --title <t>       surface title
       --layout <mode>   "unified" (default) or "split"
+      (also: --session, --session-title, --agent, --new-session)
+  sideshow markdown <file|-> [options]    publish a markdown surface (prose)
+      --title <t>       surface title
       (also: --session, --session-title, --agent, --new-session)
   sideshow update <id> <file|->           revise a surface (new version, same card)
       --title <t>       replace title
@@ -356,6 +360,7 @@ const commands = {
       allowPositionals: true,
       options: {
         title: { type: "string" },
+        md: { type: "string" },
         diff: { type: "string" },
         image: { type: "string" },
         layout: { type: "string" },
@@ -366,6 +371,9 @@ const commands = {
       },
     });
     const parts = [{ kind: "html", html: readContent(positionals[0]) }];
+    if (flags.md !== undefined) {
+      parts.push({ kind: "markdown", markdown: readContent(flags.md || "-") });
+    }
     if (flags.diff !== undefined) {
       parts.push({
         kind: "diff",
@@ -472,6 +480,22 @@ const commands = {
       },
     ];
     outSurface(await publishSurface(parts, flags));
+  },
+
+  async markdown() {
+    const { values: flags, positionals } = parse({
+      allowPositionals: true,
+      options: {
+        title: { type: "string" },
+        session: { type: "string" },
+        "session-title": { type: "string" },
+        agent: { type: "string" },
+        "new-session": { type: "boolean" },
+      },
+    });
+    const parts = [{ kind: "markdown", markdown: readContent(positionals[0]) }];
+    const surface = await publishSurface(parts, flags);
+    out({ ...surface, url: `${BASE}/s/${surface.id}` });
   },
 
   async update() {

@@ -4,11 +4,13 @@ import {
   relTime,
   type DiffPart as DiffPartData,
   type ImagePart as ImagePartData,
+  type MarkdownPart as MarkdownPartData,
   type Surface,
   type TracePart as TracePartData,
 } from "./api.ts";
 import { DiffPart } from "./DiffPart.tsx";
 import { ImagePart } from "./ImagePart.tsx";
+import { MarkdownPart } from "./MarkdownPart.tsx";
 import { TracePart } from "./TracePart.tsx";
 import {
   comments,
@@ -135,6 +137,9 @@ export function Card(props: { surface: Surface }) {
                 }
                 src={`/s/${props.surface.id}?part=${i}&ver=${props.surface.version}&cb=${props.surface.version}`}
               ></iframe>
+            </Match>
+            <Match when={part().kind === "markdown"}>
+              <MarkdownPart part={part() as MarkdownPartData} />
             </Match>
             <Match when={part().kind === "diff"}>
               <DiffPart part={part() as DiffPartData} />

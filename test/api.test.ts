@@ -172,6 +172,47 @@ test("publish_surface MCP tool round-trips a diff part", async () => {
   assert.equal(full.parts[0].patch, "@@ -1 +1 @@\n-x\n+y");
 });
 
+test("publishes a markdown part; /s has no html doc for it", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/surfaces",
+    json({ title: "Plan", parts: [{ kind: "markdown", markdown: "## Plan\n\n- step one" }] }),
+  );
+  assert.equal(res.status, 201);
+  const surface = (await res.json()) as any;
+  assert.deepEqual(surface.kinds, ["markdown"]);
+
+  const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
+  assert.equal(full.parts[0].kind, "markdown");
+  assert.equal(full.parts[0].markdown, "## Plan\n\n- step one");
+  // markdown is viewer-rendered data, not a sandboxed html doc
+  assert.equal((await app.request(`/s/${surface.id}?part=0`)).status, 404);
+});
+
+test("publish_surface MCP tool keeps markdown parts and drops empty ones", async () => {
+  const app = makeApp();
+  const published = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "publish_surface",
+        arguments: {
+          title: "Notes",
+          parts: [
+            { kind: "markdown", markdown: "  " },
+            { kind: "markdown", markdown: "real prose" },
+          ],
+        },
+      }),
+    )
+  ).json()) as any;
+  const payload = JSON.parse(published.result.content[0].text);
+  const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
+  assert.equal(full.parts.length, 1);
+  assert.equal(full.parts[0].kind, "markdown");
+  assert.equal(full.parts[0].markdown, "real prose");
+});
+
 test("update bumps version and keeps history; old version renderable", async () => {
   const app = makeApp();
   const s = (await (

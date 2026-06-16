@@ -14,14 +14,25 @@ export interface Session {
 
 // A surface is an ordered list of parts. Each part declares its own kind;
 // the surface itself is kind-agnostic. An `html` part is arbitrary agent
-// markup (rendered sandboxed in an iframe); `diff`, `image`, and `trace` parts
-// are structured data rendered by the trusted viewer. A snippet is just a
-// surface with one html part; a diagram-with-its-diff is `[html, diff]`.
-export type SurfacePartKind = "html" | "diff" | "image" | "trace";
+// markup (rendered sandboxed in an iframe); `diff`, `image`, `trace`, and
+// `markdown` parts are structured data rendered by the trusted viewer. A
+// snippet is just a surface with one html part; a diagram-with-its-diff is
+// `[html, diff]`.
+export type SurfacePartKind = "html" | "diff" | "image" | "trace" | "markdown";
 
 export interface HtmlPart {
   kind: "html";
   html: string;
+}
+
+// A markdown part is prose the trusted viewer renders — explanations, plans,
+// tradeoff write-ups. Unlike an html part it is NOT sandboxed: the viewer
+// renders it to HTML in its own origin, so raw HTML embedded in the source is
+// escaped, not executed (see MarkdownPart.tsx). Agents wanting live markup use
+// an html part instead.
+export interface MarkdownPart {
+  kind: "markdown";
+  markdown: string;
 }
 
 export interface DiffFile {
@@ -71,7 +82,7 @@ export interface TracePart {
   title?: string;
 }
 
-export type SurfacePart = HtmlPart | DiffPart | ImagePart | TracePart;
+export type SurfacePart = HtmlPart | DiffPart | ImagePart | TracePart | MarkdownPart;
 
 export interface SurfaceVersion {
   version: number;
@@ -230,6 +241,8 @@ export function partsByteLength(parts: SurfacePart[]): number {
       for (const f of p.files ?? []) n += f.before.length + f.after.length;
     } else if (p.kind === "image") {
       n += p.assetId.length + (p.alt?.length ?? 0) + (p.caption?.length ?? 0);
+    } else if (p.kind === "markdown") {
+      n += p.markdown.length;
     } else {
       n += (p.assetId?.length ?? 0) + (p.title?.length ?? 0);
       for (const s of p.steps ?? []) {

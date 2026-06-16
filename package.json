@@ -60,8 +60,10 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260611.1",
     "@playwright/test": "^1.60.0",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^25.9.3",
     "lint-staged": "^17.0.7",
+    "markdown-it": "^14.2.0",
     "oxfmt": "^0.54.0",
     "oxlint": "^1.69.0",
     "simple-git-hooks": "^2.13.1",

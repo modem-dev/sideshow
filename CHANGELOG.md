@@ -6,6 +6,12 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Added
 
+- `markdown` parts: agents can publish prose (explanations, plans, tradeoff
+  write-ups) the viewer renders with consistent typography — headings, lists,
+  tables, code blocks, links. Available on all three tiers: a `markdown` part
+  over MCP and `POST /api/surfaces`, plus the CLI (`sideshow markdown`, and
+  `--md` on `sideshow publish`). Rendered as data, not sandboxed markup: raw
+  HTML in the source is escaped, so reach for an `html` part for live markup.
 - Surfaces: a published card is now an ordered list of parts, not a single
   HTML blob. A `diff` part renders a unified/git patch as a syntax-highlighted
   split/unified code review (via @pierre/diffs) directly in the viewer; an

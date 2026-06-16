@@ -72,6 +72,17 @@ const filteredArray = <T>(schema: z.ZodType<T>) =>
 const strictHtmlPart = z.object({ kind: z.literal("html"), html: requiredString("html") });
 const looseHtmlPart = strictHtmlPart;
 
+const strictMarkdownPart = z.object({
+  kind: z.literal("markdown"),
+  markdown: requiredString("markdown"),
+});
+// Loose mode drops a blank markdown part rather than publishing an empty card.
+const looseMarkdownPart = z
+  .object({ kind: z.literal("markdown"), markdown: z.string() })
+  .refine((p) => p.markdown.trim().length > 0, {
+    message: 'markdown part requires non-empty "markdown"',
+  });
+
 const strictDiffPart = z
   .object({
     kind: z.literal("diff"),
@@ -127,10 +138,16 @@ const looseTracePart = z
     message: 'trace part requires "assetId" or non-empty "steps"',
   });
 
-const looseSurfacePart = z.union([looseHtmlPart, looseDiffPart, looseImagePart, looseTracePart]);
+const looseSurfacePart = z.union([
+  looseHtmlPart,
+  looseMarkdownPart,
+  looseDiffPart,
+  looseImagePart,
+  looseTracePart,
+]);
 
 export const surfacePartsSchema = z.array(
-  z.union([strictHtmlPart, strictDiffPart, strictImagePart, strictTracePart]),
+  z.union([strictHtmlPart, strictMarkdownPart, strictDiffPart, strictImagePart, strictTracePart]),
 );
 
 // Runtime SurfacePart parser shared by REST and MCP. REST uses strict mode to
@@ -189,6 +206,8 @@ function schemaForKind(kind: unknown): z.ZodType<SurfacePart> | null {
   switch (kind) {
     case "html":
       return strictHtmlPart;
+    case "markdown":
+      return strictMarkdownPart;
     case "diff":
       return strictDiffPart;
     case "image":
