@@ -110,15 +110,15 @@ test("publishes a combined html+diff surface; /s renders the html part only", as
   );
   assert.equal(res.status, 201);
   const surface = (await res.json()) as any;
-  assert.equal(surface.parts.length, 2);
-  assert.equal(surface.parts[0].kind, "html");
-  // the list strips html bodies but keeps diff data
-  assert.equal(surface.parts[0].html, "");
-  assert.equal(surface.parts[1].patch, "@@ -1 +1 @@\n-a\n+b");
+  // the write response is lean — kinds, no part bodies echoed back
+  assert.deepEqual(surface.kinds, ["html", "diff"]);
+  assert.equal(surface.parts, undefined);
 
-  // the full record keeps the html
+  // the full record keeps the html and the diff patch
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
+  assert.equal(full.parts.length, 2);
   assert.equal(full.parts[0].html, "<p>diagram</p>");
+  assert.equal(full.parts[1].patch, "@@ -1 +1 @@\n-a\n+b");
 
   // /s renders the requested html part; a diff part has no html doc
   const part0 = await app.request(`/s/${surface.id}?part=0`);

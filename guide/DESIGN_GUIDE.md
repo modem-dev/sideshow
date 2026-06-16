@@ -25,11 +25,13 @@ A **`SurfacePart`** is one of:
 
 ```
 { "kind": "html", "html": "<p>...</p>" }
-{ "kind": "diff", "patch": "<unified or git diff text>" }
-{ "kind": "diff", "files": [{ "filename": "a.ts", "before": "...", "after": "...", "language": "ts" }] }
+{ "kind": "diff", "patch": "<unified or git diff text>" }                          # preferred — compact
+{ "kind": "diff", "files": [{ "filename": "a.ts", "before": "...", "after": "...", "language": "ts" }] }  # fallback
 ```
 
-A diff part takes an optional `"layout": "unified" | "split"`.
+For a diff, send a `patch` — it carries only the changed lines, so it is the
+compact, preferred form. Use `files` (full before/after contents) only when you
+don't have a patch. A diff part takes an optional `"layout": "unified" | "split"`.
 
 ## Publishing
 

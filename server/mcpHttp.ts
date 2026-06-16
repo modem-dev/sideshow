@@ -81,19 +81,24 @@ const INSTRUCTIONS =
 const PARTS_SCHEMA = {
   type: "array",
   description:
-    "Ordered parts. An html part is {kind:'html', html:'<body fragment>'}. A diff part is " +
-    "{kind:'diff', patch:'<unified/git diff>'} (may span multiple files) or " +
-    "{kind:'diff', files:[{filename, before, after}]}, with optional layout 'unified'|'split'. " +
+    "Ordered parts. An html part is {kind:'html', html:'<body fragment>'}. A diff part is normally " +
+    "{kind:'diff', patch:'<unified/git diff>'} (may span multiple files) — send the patch, it is the " +
+    "compact, preferred form. {kind:'diff', files:[{filename, before, after}]} also works but sends whole " +
+    "file contents, so reach for it only when you lack a patch. Optional layout 'unified'|'split'. " +
     "Combine, e.g. [{kind:'html',html:'<svg.../>'},{kind:'diff',patch:'...'}].",
   items: {
     type: "object",
     properties: {
       kind: { type: "string", enum: ["html", "diff"] },
       html: { type: "string", description: "html part: body fragment (no doctype/html/head/body)" },
-      patch: { type: "string", description: "diff part: a unified/git diff string" },
+      patch: {
+        type: "string",
+        description: "diff part: a unified/git diff string — the preferred, compact form",
+      },
       files: {
         type: "array",
-        description: "diff part: explicit before/after file pairs (alternative to patch)",
+        description:
+          "diff part: explicit before/after pairs — heavier (full file contents); prefer patch",
         items: {
           type: "object",
           properties: {

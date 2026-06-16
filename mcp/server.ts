@@ -62,11 +62,19 @@ const partSchema = z
   .object({
     kind: z.enum(["html", "diff"]),
     html: z.string().optional().describe("html part: body fragment (no doctype/html/head/body)"),
-    patch: z.string().optional().describe("diff part: a unified/git diff string"),
-    files: z.array(diffFileSchema).optional().describe("diff part: explicit before/after pairs"),
+    patch: z
+      .string()
+      .optional()
+      .describe("diff part: a unified/git diff string (preferred, compact)"),
+    files: z
+      .array(diffFileSchema)
+      .optional()
+      .describe("diff part: before/after pairs — heavier (full contents); prefer patch"),
     layout: z.enum(["unified", "split"]).optional(),
   })
-  .describe("A surface part: {kind:'html', html} or {kind:'diff', patch} / {kind:'diff', files}");
+  .describe(
+    "A surface part: {kind:'html', html} or {kind:'diff', patch} (preferred) / {kind:'diff', files}",
+  );
 
 const server = new McpServer(
   { name: "sideshow", version: "0.1.0" },

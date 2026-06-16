@@ -95,6 +95,19 @@ const surfaceMeta = (s: Surface) => ({
   parts: stripParts(s.parts),
 });
 
+// Response to an agent's own write: it already holds the parts it just sent,
+// so echo only the identifiers (a diff patch can be large — never send it
+// back). Reads (`surfaceMeta`, GET /api/surfaces/:id) still carry parts.
+const writeResult = (s: Surface) => ({
+  id: s.id,
+  sessionId: s.sessionId,
+  title: s.title,
+  createdAt: s.createdAt,
+  updatedAt: s.updatedAt,
+  version: s.version,
+  kinds: s.parts.map((p) => p.kind),
+});
+
 export interface CommentWait {
   sessionId?: string;
   surfaceId?: string;
@@ -421,7 +434,7 @@ export function createApp({
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json(
       {
-        ...surfaceMeta(result.surface),
+        ...writeResult(result.surface),
         ...(result.userFeedback && { userFeedback: result.userFeedback }),
       },
       201,
@@ -441,7 +454,7 @@ export function createApp({
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...surfaceMeta(result.surface),
+      ...writeResult(result.surface),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   };
