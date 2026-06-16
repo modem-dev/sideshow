@@ -357,8 +357,8 @@ select.vbadge {
   opacity: 1;
 }
 .card-head .act.icon svg {
-  width: 15px;
-  height: 15px;
+  width: 13px;
+  height: 13px;
   display: block;
 }
 .card-head .act.icon.del:hover {
