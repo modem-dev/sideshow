@@ -112,6 +112,18 @@ export function coerceParts(raw: unknown): SurfacePart[] {
         ...(assetId && { assetId }),
         ...(typeof (p as any).title === "string" && { title: (p as any).title }),
       });
+    } else if (kind === "screen" && typeof (p as any).streamId === "string") {
+      const cols = Number((p as any).cols);
+      const rows = Number((p as any).rows);
+      parts.push({
+        kind: "screen",
+        streamId: (p as any).streamId,
+        ...(Number.isFinite(cols) && cols > 0 && { cols: Math.floor(cols) }),
+        ...(Number.isFinite(rows) && rows > 0 && { rows: Math.floor(rows) }),
+        ...(typeof (p as any).title === "string" && { title: (p as any).title }),
+        ...(typeof (p as any).snapshot === "string" && { snapshot: (p as any).snapshot }),
+        ...((p as any).ended === true && { ended: true }),
+      });
     }
   }
   return parts;
@@ -138,12 +150,14 @@ const PARTS_SCHEMA = {
     "after}]} (heavier). image: {kind:'image', assetId:'<from upload_asset>', alt?, caption?} — " +
     "renders an uploaded image; you can also embed the asset URL in an html part instead. trace: " +
     "{kind:'trace', steps:[{label, kind?, detail?, ts?}]} renders a step timeline, and/or " +
-    "{kind:'trace', assetId} for an uploaded trace file (downloadable). Optional diff layout " +
-    "'unified'|'split'. Combine freely, e.g. [{kind:'html',...},{kind:'image',assetId},{kind:'trace',steps}].",
+    "{kind:'trace', assetId} for an uploaded trace file (downloadable). screen: {kind:'screen', " +
+    "streamId} is a live terminal panel fed by a relay stream (usually created by `sideshow screen` " +
+    "on the CLI, which owns the PTY) — emulated by wterm, so cursor-addressing TUIs render as a grid. " +
+    "Optional diff layout 'unified'|'split'. Combine freely, e.g. [{kind:'html',...},{kind:'image',assetId}].",
   items: {
     type: "object",
     properties: {
-      kind: { type: "string", enum: ["html", "diff", "image", "trace"] },
+      kind: { type: "string", enum: ["html", "diff", "image", "trace", "screen"] },
       html: { type: "string", description: "html part: body fragment (no doctype/html/head/body)" },
       patch: {
         type: "string",
@@ -171,7 +185,13 @@ const PARTS_SCHEMA = {
       },
       alt: { type: "string", description: "image part: alt text" },
       caption: { type: "string", description: "image part: caption shown under the image" },
-      title: { type: "string", description: "trace part: heading shown above the timeline" },
+      title: { type: "string", description: "trace/screen part: heading or window label" },
+      streamId: {
+        type: "string",
+        description: "screen part: relay stream id (from POST /api/streams)",
+      },
+      cols: { type: "number", description: "screen part: terminal width in columns" },
+      rows: { type: "number", description: "screen part: terminal height in rows" },
       steps: {
         type: "array",
         description: "trace part: ordered steps rendered as a timeline",

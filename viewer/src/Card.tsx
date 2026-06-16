@@ -4,11 +4,13 @@ import {
   relTime,
   type DiffPart as DiffPartData,
   type ImagePart as ImagePartData,
+  type ScreenPart as ScreenPartData,
   type Surface,
   type TracePart as TracePartData,
 } from "./api.ts";
 import { DiffPart } from "./DiffPart.tsx";
 import { ImagePart } from "./ImagePart.tsx";
+import { ScreenPart } from "./ScreenPart.tsx";
 import { TracePart } from "./TracePart.tsx";
 import {
   comments,
@@ -133,6 +135,9 @@ export function Card(props: { surface: Surface }) {
             </Match>
             <Match when={part().kind === "trace"}>
               <TracePart part={part() as TracePartData} />
+            </Match>
+            <Match when={part().kind === "screen"}>
+              <ScreenPart part={part() as ScreenPartData} />
             </Match>
           </Switch>
         )}

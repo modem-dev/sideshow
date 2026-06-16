@@ -149,6 +149,64 @@ test("publish_surface MCP tool round-trips a diff part", async () => {
   assert.equal(full.parts[0].patch, "@@ -1 +1 @@\n-x\n+y");
 });
 
+test("stream relay: create, append, read back, end, reject-after-end", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request("/api/streams", json({ cols: 80, rows: 24 }))
+  ).json()) as {
+    id: string;
+  };
+  assert.ok(created.id);
+
+  const chunk = "hi\x1b[31m!"; // arbitrary bytes incl. an escape
+  const b64 = Buffer.from(chunk, "latin1").toString("base64");
+  assert.equal((await app.request(`/api/streams/${created.id}`, json({ b64 }))).status, 204);
+
+  const state = (await (await app.request(`/api/streams/${created.id}`)).json()) as {
+    b64: string;
+    ended: boolean;
+    cols: number;
+  };
+  assert.equal(Buffer.from(state.b64, "base64").toString("latin1"), chunk);
+  assert.equal(state.ended, false);
+  assert.equal(state.cols, 80);
+
+  assert.equal(
+    (await app.request(`/api/streams/${created.id}/end`, { method: "POST" })).status,
+    204,
+  );
+  const ended = (await (await app.request(`/api/streams/${created.id}`)).json()) as {
+    ended: boolean;
+  };
+  assert.equal(ended.ended, true);
+  // appends after end (or to an unknown stream) are refused
+  assert.equal((await app.request(`/api/streams/${created.id}`, json({ b64 }))).status, 409);
+  assert.equal((await app.request("/api/streams/nope")).status, 404);
+});
+
+test("publish_surface MCP tool round-trips a screen part", async () => {
+  const app = makeApp();
+  const published = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "publish_surface",
+        arguments: {
+          title: "Live",
+          parts: [{ kind: "screen", streamId: "abc123", cols: 80, rows: 24, title: "sh" }],
+        },
+      }),
+    )
+  ).json()) as any;
+  const payload = JSON.parse(published.result.content[0].text);
+  const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
+  assert.equal(full.parts[0].kind, "screen");
+  assert.equal(full.parts[0].streamId, "abc123");
+  assert.equal(full.parts[0].cols, 80);
+  // a screen part has no html doc, so /s 404s like diff/image/trace
+  assert.equal((await app.request(`/s/${payload.id}?part=0`)).status, 404);
+});
+
 test("update bumps version and keeps history; old version renderable", async () => {
   const app = makeApp();
   const s = (await (

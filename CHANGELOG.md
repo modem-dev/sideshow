@@ -6,6 +6,14 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Added
 
+- A `screen` part renders a live terminal panel in the viewer: `sideshow screen
+-- <command>` runs the command in a PTY (via the system `script`, no native
+  deps) and streams its output to a real VT emulator (wterm, WASM) in the
+  browser, so cursor-addressing TUIs render as a grid — not the flat ANSI a
+  `terminal` part shows. The output streams over a per-stream SSE channel
+  (`/api/streams/:id`); when the command exits, the final bytes are saved into
+  the part so the card replays afterward. Read-only for now (Linux/macOS).
+
 - Surfaces: a published card is now an ordered list of parts, not a single
   HTML blob. A `diff` part renders a unified/git patch as a syntax-highlighted
   split/unified code review (via @pierre/diffs) directly in the viewer; an

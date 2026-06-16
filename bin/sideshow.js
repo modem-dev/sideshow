@@ -38,6 +38,12 @@ usage:
       --title <t>       surface title
       --layout <mode>   "unified" (default) or "split"
       (also: --session, --session-title, --agent, --new-session)
+  sideshow screen [options] -- <command>  run <command> in a PTY and stream it
+                                          live to a terminal panel (TUIs welcome)
+      --title <t>       window title
+      --cols <n>        terminal width  (default 80)
+      --rows <n>        terminal height (default 24)
+      (also: --session, --session-title, --agent, --new-session)
   sideshow update <id> <file|->           revise a surface (new version, same card)
       --title <t>       replace title
   sideshow wait [options]                 block until the user comments (long-poll)
@@ -458,6 +464,94 @@ const commands = {
     ];
     const surface = await publishSurface(parts, flags);
     out({ ...surface, url: `${BASE}/s/${surface.id}` });
+  },
+
+  async screen() {
+    const { values: flags, positionals } = parse({
+      allowPositionals: true,
+      options: {
+        title: { type: "string" },
+        cols: { type: "string" },
+        rows: { type: "string" },
+        session: { type: "string" },
+        "session-title": { type: "string" },
+        agent: { type: "string" },
+        "new-session": { type: "boolean" },
+      },
+    });
+    const command = positionals.join(" ").trim();
+    if (!command) fail("usage: sideshow screen [--cols N] [--rows N] -- <command>");
+    if (process.platform === "win32") {
+      fail("sideshow screen needs a PTY via `script`, which is unavailable on Windows");
+    }
+    const cols = Math.max(1, Number(flags.cols) || 80);
+    const rows = Math.max(1, Number(flags.rows) || 24);
+
+    // 1) allocate a relay stream, 2) publish the screen part that points at it,
+    // 3) run the command under a PTY and relay its bytes to the stream.
+    const { id: streamId } = await api("/api/streams", {
+      method: "POST",
+      body: JSON.stringify({ cols, rows }),
+    });
+    const part = {
+      kind: "screen",
+      streamId,
+      cols,
+      rows,
+      ...(flags.title && { title: flags.title }),
+    };
+    const surface = await publishSurface([part], flags);
+    const url = `${BASE}/s/${surface.id}`;
+    process.stderr.write(`▸ streaming live to ${url}\n  ${command}\n`);
+
+    // `script` gives the child a real PTY so TUIs emit full escape sequences.
+    // util-linux takes `-c <cmd>`; macOS/BSD runs the command via `sh -c`.
+    const args =
+      process.platform === "darwin"
+        ? ["-q", "/dev/null", "sh", "-c", command]
+        : ["-qec", command, "/dev/null"];
+    const child = spawn("script", args, {
+      // inherit stdin/stderr so the local terminal stays interactive; pipe
+      // stdout so we can both mirror it locally and relay it to the browser.
+      stdio: ["inherit", "pipe", "inherit"],
+      env: {
+        ...process.env,
+        COLUMNS: String(cols),
+        LINES: String(rows),
+        TERM: process.env.TERM || "xterm-256color",
+      },
+    });
+
+    const MAX_SNAPSHOT = 900_000; // keep base64 under the 2 MB surface cap
+    let snapshot = "";
+    let posting = Promise.resolve();
+    child.stdout.on("data", (buf) => {
+      process.stdout.write(buf); // mirror locally — still a normal terminal
+      snapshot += buf.toString("latin1");
+      if (snapshot.length > MAX_SNAPSHOT) snapshot = snapshot.slice(snapshot.length - MAX_SNAPSHOT);
+      const b64 = buf.toString("base64");
+      // chain the POSTs so bytes arrive in order
+      posting = posting.then(() =>
+        api(`/api/streams/${streamId}`, { method: "POST", body: JSON.stringify({ b64 }) }).catch(
+          () => {},
+        ),
+      );
+    });
+
+    await new Promise((resolve) => child.on("close", resolve));
+    await posting;
+    await api(`/api/streams/${streamId}/end`, { method: "POST" }).catch(() => {});
+    // Persist the final bytes into the part so the card replays after the
+    // stream is forgotten (server restart, viewer opened later).
+    await api(`/api/surfaces/${surface.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        parts: [
+          { ...part, snapshot: Buffer.from(snapshot, "latin1").toString("base64"), ended: true },
+        ],
+      }),
+    }).catch(() => {});
+    process.stderr.write(`\n▸ stream ended — replay saved at ${url}\n`);
   },
 
   async update() {

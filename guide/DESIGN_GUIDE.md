@@ -21,11 +21,15 @@ a `kind`:
 - **`trace`** — an agent trace rendered as a step timeline beside the surface.
   Steps can travel inline, or live in an uploaded file you reference and offer
   for download.
+- **`screen`** — a live (or recorded) terminal panel: a real VT emulator in the
+  viewer replays a byte stream, so a cursor-addressing TUI renders as a grid.
+  Almost always produced by `sideshow screen -- <command>` on the CLI (it owns
+  the PTY and relays the bytes); the part just references the stream by id.
 
 A surface can combine parts, e.g. `[html, diff]` is a diagram with its code
 review in one card, and `[html, image]` is a sketch above a screenshot. Trust
 differs: html parts are sandboxed because you author the markup; diff/image/
-trace parts are rendered by the viewer from data — send data, never markup.
+trace/screen parts are rendered by the viewer from data — send data, never markup.
 
 A **`SurfacePart`** is one of:
 
@@ -36,7 +40,13 @@ A **`SurfacePart`** is one of:
 { "kind": "image", "assetId": "<id from an upload>", "alt": "...", "caption": "..." }
 { "kind": "trace", "steps": [{ "label": "...", "kind": "tool", "detail": "...", "ts": "..." }] }
 { "kind": "trace", "assetId": "<id of an uploaded JSON/JSONL trace>", "title": "..." }
+{ "kind": "screen", "streamId": "<from POST /api/streams>", "cols": 80, "rows": 24, "title": "..." }
 ```
+
+A `screen` part is a live terminal: run `sideshow screen --title "build" -- npm test`
+and the command runs in a PTY while its output streams to the panel; the card
+keeps replaying after it ends. Reach for it to show a TUI or a long-running
+command, not to paste static output (use an `html` `<pre>` for that).
 
 For a diff, send a `patch` — it carries only the changed lines, so it is the
 compact, preferred form. Use `files` (full before/after contents) only when you

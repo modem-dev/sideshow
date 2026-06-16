@@ -124,14 +124,18 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.equal(await store.getSurface("missing"), null);
   });
 
-  contract("supports multi-part surfaces (html + diff)", async (store) => {
+  contract("supports multi-part surfaces (html + diff + screen)", async (store) => {
     const session = await store.createSession({ agent: "pi" });
     const surface = await store.createSurface({
       sessionId: session.id,
-      parts: [htmlPart("<svg/>"), { kind: "diff", patch: "@@ -1 +1 @@", layout: "split" }],
+      parts: [
+        htmlPart("<svg/>"),
+        { kind: "diff", patch: "@@ -1 +1 @@", layout: "split" },
+        { kind: "screen", streamId: "s1", cols: 80, rows: 24, title: "sh", ended: true },
+      ],
     });
     assert.ok(surface);
-    assert.equal(surface.parts.length, 2);
+    assert.equal(surface.parts.length, 3);
     assert.deepEqual(await store.getSurface(surface.id), surface);
   });
 

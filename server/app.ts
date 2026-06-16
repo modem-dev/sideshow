@@ -3,6 +3,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { EventBus } from "./events.ts";
 import { registerMcp } from "./mcpHttp.ts";
+import { StreamHub, type StreamEvent } from "./streamHub.ts";
 import { renderHtmlPage } from "./surfacePage.ts";
 import {
   type Asset,
@@ -10,6 +11,7 @@ import {
   type Comment,
   htmlPart,
   MAX_ASSET_BYTES,
+  newId,
   partsByteLength,
   type Store,
   type Surface,
@@ -187,6 +189,7 @@ export function createApp({
 }: AppOptions) {
   const app = new Hono();
   const bus = new EventBus();
+  const streams = new StreamHub();
 
   // Cached, fail-silent update lookup: being offline or rate-limited must
   // cost nothing but the absence of the notice. Failures are cached too, so
@@ -687,6 +690,98 @@ export function createApp({
     c.header("Cache-Control", "private, max-age=60");
     return c.body(asset.data as unknown as ArrayBuffer);
   });
+
+  // --- live terminal streams ---
+  // The producer (CLI) owns the PTY and relays bytes here; the StreamHub fans
+  // them out to the screen part's wterm panel. Bytes ride as base64 in JSON so
+  // arbitrary control sequences survive the JSON/SSE hops intact.
+
+  app.post("/api/streams", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { cols?: number; rows?: number };
+    const id = newId();
+    const cols = Number(body.cols);
+    const rows = Number(body.rows);
+    streams.create(id, {
+      ...(Number.isFinite(cols) && cols > 0 && { cols: Math.floor(cols) }),
+      ...(Number.isFinite(rows) && rows > 0 && { rows: Math.floor(rows) }),
+    });
+    return c.json({ id }, 201);
+  });
+
+  app.post("/api/streams/:id", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { b64?: string } | null;
+    if (!body || typeof body.b64 !== "string") {
+      return c.json({ error: 'body must include "b64" string' }, 400);
+    }
+    let chunk: string;
+    try {
+      chunk = atob(body.b64);
+    } catch {
+      return c.json({ error: "b64 is not valid base64" }, 400);
+    }
+    if (!streams.append(c.req.param("id"), chunk)) {
+      return c.json({ error: "stream not found or already ended" }, 409);
+    }
+    return c.body(null, 204);
+  });
+
+  app.post("/api/streams/:id/end", (c) => {
+    streams.end(c.req.param("id"));
+    return c.body(null, 204);
+  });
+
+  app.get("/api/streams/:id", (c) => {
+    const state = streams.state(c.req.param("id"));
+    if (!state) return c.json({ error: "stream not found" }, 404);
+    return c.json({
+      b64: btoa(state.buffer),
+      ended: state.ended,
+      cols: state.cols,
+      rows: state.rows,
+    });
+  });
+
+  app.get("/api/streams/:id/events", (c) =>
+    streamSSE(c, async (stream) => {
+      const id = c.req.param("id");
+      const state = streams.state(id);
+      const queue: StreamEvent[] = [];
+      let wake: (() => void) | null = null;
+      // Replay the buffer so far, then live deltas — a late joiner catches up.
+      if (state && state.buffer) queue.push({ type: "data", chunk: state.buffer });
+      const unsubscribe = streams.subscribe(id, (e) => {
+        queue.push(e);
+        wake?.();
+      });
+      let open = true;
+      // Unknown or already-ended streams: tell the client and stop.
+      if (!state) queue.push({ type: "end" });
+      stream.onAbort(() => {
+        open = false;
+        unsubscribe();
+        wake?.();
+      });
+      await stream.writeSSE({ event: "hello", data: "{}" });
+      while (open) {
+        while (queue.length > 0) {
+          const e = queue.shift() as StreamEvent;
+          const data =
+            e.type === "data"
+              ? JSON.stringify({ type: "data", b64: btoa(e.chunk) })
+              : '{"type":"end"}';
+          await stream.writeSSE({ data });
+        }
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            wake = resolve;
+          }),
+          stream.sleep(15000),
+        ]);
+        wake = null;
+        if (open && queue.length === 0) await stream.writeSSE({ event: "ping", data: "{}" });
+      }
+    }),
+  );
 
   // --- live feed ---
 

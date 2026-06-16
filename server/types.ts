@@ -71,7 +71,24 @@ export interface TracePart {
   title?: string;
 }
 
-export type SurfacePart = HtmlPart | DiffPart | ImagePart | TracePart;
+// A screen part is a live (or recorded) terminal panel: a real VT emulator in
+// the trusted viewer (wterm) replays the byte stream `streamId` carries,
+// resolving cursor moves / clears / frame diffs into a grid — the thing an SGR
+// `terminal` part can't do. While the stream is live the viewer subscribes to
+// `/api/streams/:id/events`; once it ends the producer PUTs the final bytes as
+// `snapshot` (base64) so the card replays statically forever after. `cols`/
+// `rows` size the grid; `title` labels the window.
+export interface ScreenPart {
+  kind: "screen";
+  streamId: string;
+  cols?: number;
+  rows?: number;
+  title?: string;
+  snapshot?: string;
+  ended?: boolean;
+}
+
+export type SurfacePart = HtmlPart | DiffPart | ImagePart | TracePart | ScreenPart;
 
 export interface SurfaceVersion {
   version: number;
@@ -215,6 +232,8 @@ export function partsByteLength(parts: SurfacePart[]): number {
       for (const f of p.files ?? []) n += f.before.length + f.after.length;
     } else if (p.kind === "image") {
       n += p.assetId.length + (p.alt?.length ?? 0) + (p.caption?.length ?? 0);
+    } else if (p.kind === "screen") {
+      n += p.streamId.length + (p.snapshot?.length ?? 0) + (p.title?.length ?? 0);
     } else {
       n += (p.assetId?.length ?? 0) + (p.title?.length ?? 0);
       for (const s of p.steps ?? []) {

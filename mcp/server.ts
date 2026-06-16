@@ -67,7 +67,7 @@ const traceStepSchema = z.object({
 
 const partSchema = z
   .object({
-    kind: z.enum(["html", "diff", "image", "trace"]),
+    kind: z.enum(["html", "diff", "image", "trace", "screen"]),
     html: z.string().optional().describe("html part: body fragment (no doctype/html/head/body)"),
     patch: z
       .string()
@@ -81,12 +81,16 @@ const partSchema = z
     assetId: z.string().optional().describe("image/trace part: id from upload_asset"),
     alt: z.string().optional().describe("image part: alt text"),
     caption: z.string().optional().describe("image part: caption shown under the image"),
-    title: z.string().optional().describe("trace part: heading above the timeline"),
+    title: z.string().optional().describe("trace/screen part: heading or window label"),
     steps: z.array(traceStepSchema).optional().describe("trace part: ordered timeline steps"),
+    streamId: z.string().optional().describe("screen part: relay stream id (POST /api/streams)"),
+    cols: z.number().optional().describe("screen part: terminal width in columns"),
+    rows: z.number().optional().describe("screen part: terminal height in rows"),
   })
   .describe(
     "A surface part: html {kind:'html',html}; diff {kind:'diff',patch}; image {kind:'image',assetId} " +
-      "(from upload_asset); trace {kind:'trace',steps} and/or {kind:'trace',assetId}",
+      "(from upload_asset); trace {kind:'trace',steps} and/or {kind:'trace',assetId}; " +
+      "screen {kind:'screen',streamId} (live terminal panel, usually via `sideshow screen`)",
   );
 
 const server = new McpServer(
