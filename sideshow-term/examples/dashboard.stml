@@ -1,0 +1,24 @@
+<col gap="1">
+  <bigtext font="tiny" color="accent">METRICS</bigtext>
+  <row gap="2">
+    <box border padding="1" width="24">
+      <text fg="muted">requests / min</text>
+      <heading fg="success">12,408</heading>
+    </box>
+    <box border padding="1" width="24">
+      <text fg="muted">p99 latency</text>
+      <heading fg="warning">214 ms</heading>
+    </box>
+    <box border padding="1" width="24">
+      <text fg="muted">error rate</text>
+      <heading fg="danger">0.42%</heading>
+    </box>
+  </row>
+  <hr/>
+  <h2>Top endpoints</h2>
+  <list>
+    <item><b>POST /charges</b> <dim>— 4.1k/min</dim></item>
+    <item><b>GET /balance</b> <dim>— 3.7k/min</dim></item>
+    <item><b>POST /refunds</b> <dim>— 0.3k/min</dim></item>
+  </list>
+</col>

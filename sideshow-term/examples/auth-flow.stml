@@ -1,0 +1,16 @@
+<card title="Auth flow">
+  <h1>JWT refresh</h1>
+  <text>The <b>client</b> sends a <color fg="accent">refresh token</color>; the
+        API verifies it and replies with a new <kbd>access</kbd> token plus a
+        rotated refresh token.</text>
+  <hr/>
+  <row gap="2">
+    <box border bg="#0f2a1a" padding="1"><text fg="success">200 OK</text></box>
+    <box border padding="1"><text fg="danger">401 expired</text></box>
+  </row>
+  <list>
+    <item>Validate signature</item>
+    <item>Check expiry and revocation list</item>
+    <item>Issue a new access + refresh pair</item>
+  </list>
+</card>

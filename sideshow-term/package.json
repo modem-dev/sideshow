@@ -1,0 +1,23 @@
+{
+  "name": "sideshow-term",
+  "version": "0.1.0",
+  "description": "A live terminal visual surface for coding agents — agents draw opentui markup, you watch it render in a TUI.",
+  "license": "MIT",
+  "bin": {
+    "sideshow-term": "bin/sideshow-term.js"
+  },
+  "type": "module",
+  "scripts": {
+    "serve": "node server.ts",
+    "watch": "bun src/watch.ts",
+    "render": "bun src/previewCli.ts",
+    "test": "node --test 'test/**/*.test.ts'",
+    "test:render": "bun test/render.smoke.ts"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.4.1"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
