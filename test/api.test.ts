@@ -213,6 +213,33 @@ test("publish_surface MCP tool keeps markdown parts and drops empty ones", async
   assert.equal(full.parts[0].markdown, "real prose");
 });
 
+test("publish_surface MCP tool round-trips a terminal part", async () => {
+  const app = makeApp();
+  const published = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "publish_surface",
+        arguments: {
+          title: "Terminal",
+          parts: [
+            { kind: "terminal", text: "$ echo hi\n\x1b[32mhi\x1b[0m", cols: 80, title: "sh" },
+          ],
+        },
+      }),
+    )
+  ).json()) as any;
+  const payload = JSON.parse(published.result.content[0].text);
+  assert.ok(payload.id && payload.sessionId);
+  const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
+  assert.equal(full.parts[0].kind, "terminal");
+  assert.equal(full.parts[0].text, "$ echo hi\n\x1b[32mhi\x1b[0m");
+  assert.equal(full.parts[0].cols, 80);
+  assert.equal(full.parts[0].title, "sh");
+  // a terminal part has no html doc, so /s 404s like diff/image/trace
+  assert.equal((await app.request(`/s/${payload.id}?part=0`)).status, 404);
+});
+
 test("update bumps version and keeps history; old version renderable", async () => {
   const app = makeApp();
   const s = (await (

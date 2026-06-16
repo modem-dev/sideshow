@@ -19,6 +19,10 @@ const looseLayout = z.preprocess(
   (v) => (v === "unified" || v === "split" ? v : undefined),
   z.enum(["unified", "split"]).optional(),
 );
+const optionalLooseNumber = z.preprocess(
+  (v) => (typeof v === "number" && Number.isFinite(v) ? v : undefined),
+  z.number().optional(),
+);
 
 const strictDiffFile = z.object({
   filename: requiredString("filename"),
@@ -138,16 +142,37 @@ const looseTracePart = z
     message: 'trace part requires "assetId" or non-empty "steps"',
   });
 
+const strictTerminalPart = z.object({
+  kind: z.literal("terminal"),
+  text: requiredString("text"),
+  cols: z.number().optional(),
+  title: z.string().optional(),
+});
+const looseTerminalPart = z.object({
+  kind: z.literal("terminal"),
+  text: z.string(),
+  cols: optionalLooseNumber,
+  title: optionalLooseString,
+});
+
 const looseSurfacePart = z.union([
   looseHtmlPart,
   looseMarkdownPart,
   looseDiffPart,
   looseImagePart,
   looseTracePart,
+  looseTerminalPart,
 ]);
 
 export const surfacePartsSchema = z.array(
-  z.union([strictHtmlPart, strictMarkdownPart, strictDiffPart, strictImagePart, strictTracePart]),
+  z.union([
+    strictHtmlPart,
+    strictMarkdownPart,
+    strictDiffPart,
+    strictImagePart,
+    strictTracePart,
+    strictTerminalPart,
+  ]),
 );
 
 // Runtime SurfacePart parser shared by REST and MCP. REST uses strict mode to
@@ -214,6 +239,8 @@ function schemaForKind(kind: unknown): z.ZodType<SurfacePart> | null {
       return strictImagePart;
     case "trace":
       return strictTracePart;
+    case "terminal":
+      return strictTerminalPart;
     default:
       return null;
   }

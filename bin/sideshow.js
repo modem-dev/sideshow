@@ -19,6 +19,7 @@ usage:
       --title <t>       surface title
       --md <file|->     add a markdown part (prose) — combine with html
       --diff <file|->   add a diff part from a unified/git patch (combine with html)
+      --terminal <file|->  add a terminal part from monospace/ANSI output
       --image <file>    upload an image and append it as an image part
       --session <id>    target session (default: auto per agent session)
       --session-title <t>  name for a newly created session — name the task,
@@ -42,6 +43,10 @@ usage:
       (also: --session, --session-title, --agent, --new-session)
   sideshow markdown <file|-> [options]    publish a markdown surface (prose)
       --title <t>       surface title
+  sideshow terminal <file|-> [options]    publish terminal output (monospace + ANSI)
+      --title <t>       surface title
+      --term-title <t>  label shown in the terminal window chrome
+      --cols <n>        render width hint, in columns
       (also: --session, --session-title, --agent, --new-session)
   sideshow update <id> <file|->           revise a surface (new version, same card)
       --title <t>       replace title
@@ -363,6 +368,7 @@ const commands = {
         md: { type: "string" },
         diff: { type: "string" },
         image: { type: "string" },
+        terminal: { type: "string" },
         layout: { type: "string" },
         session: { type: "string" },
         "session-title": { type: "string" },
@@ -380,6 +386,9 @@ const commands = {
         patch: readContent(flags.diff || "-"),
         ...(flags.layout === "split" && { layout: "split" }),
       });
+    }
+    if (flags.terminal !== undefined) {
+      parts.push({ kind: "terminal", text: readContent(flags.terminal || "-") });
     }
     // Resolve the session first so the image upload and the surface share it.
     const session = await resolveSession(flags, { create: true });
@@ -494,6 +503,32 @@ const commands = {
       },
     });
     const parts = [{ kind: "markdown", markdown: readContent(positionals[0]) }];
+    const surface = await publishSurface(parts, flags);
+    out({ ...surface, url: `${BASE}/s/${surface.id}` });
+  },
+
+  async terminal() {
+    const { values: flags, positionals } = parse({
+      allowPositionals: true,
+      options: {
+        title: { type: "string" },
+        "term-title": { type: "string" },
+        cols: { type: "string" },
+        session: { type: "string" },
+        "session-title": { type: "string" },
+        agent: { type: "string" },
+        "new-session": { type: "boolean" },
+      },
+    });
+    const cols = Number(flags.cols);
+    const parts = [
+      {
+        kind: "terminal",
+        text: readContent(positionals[0]),
+        ...(Number.isFinite(cols) && cols > 0 && { cols: Math.floor(cols) }),
+        ...(flags["term-title"] && { title: flags["term-title"] }),
+      },
+    ];
     const surface = await publishSurface(parts, flags);
     out({ ...surface, url: `${BASE}/s/${surface.id}` });
   },

@@ -16,6 +16,15 @@ All notable user-visible changes to this project are documented in this file.
 - The npm package now exposes a stable `sideshow/server` entrypoint for
   integrations such as `sideshow-term` to reuse `createApp` and `JsonFileStore`
   without importing private `dist/server/*` internals.
+- A `terminal` part renders monospace terminal output as a styled terminal
+  window directly in the viewer. The text travels inline and may carry ANSI SGR
+  escapes (colors, bold, italic, underline), which the viewer renders while
+  HTML-escaping the rest. Carriage returns are resolved (each line collapses to
+  its last redraw) so progress bars and spinners show their final state, not
+  every frame. Publish it across all tiers: a `terminal` part in
+  `publish_surface` (MCP), `POST /api/surfaces`, and `sideshow terminal <file>`
+  / `sideshow publish --terminal`. (SGR colors are rendered; cursor-addressing
+  TUIs are not resolved.)
 - Surfaces: a published card is now an ordered list of parts, not a single
   HTML blob. A `diff` part renders a unified/git patch as a syntax-highlighted
   split/unified code review (via @pierre/diffs) directly in the viewer; an

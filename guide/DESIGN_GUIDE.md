@@ -27,12 +27,17 @@ a `kind`:
 - **`trace`** — an agent trace rendered as a step timeline beside the surface.
   Steps can travel inline, or live in an uploaded file you reference and offer
   for download.
+- **`terminal`** — monospace terminal output, rendered natively as a terminal
+  window. The `text` travels inline and may carry ANSI SGR escapes (colors,
+  bold, italic, underline); the viewer renders those and HTML-escapes the rest.
+  Reach for it to share shell output, build logs, or example commands. (Colors
+  yes; cursor-addressing TUIs are not resolved — share a captured frame.)
 
 A surface can combine parts, e.g. `[html, diff]` is a diagram with its code
 review in one card, and `[markdown, diff]` is a written rationale above its
 changeset. Trust differs: html parts are sandboxed because you author the
-markup; markdown/diff/image/trace parts are rendered by the viewer from
-data — send data, never markup.
+markup; markdown/diff/image/trace/terminal parts are rendered by the viewer
+from data — send data, never markup.
 
 A **`SurfacePart`** is one of:
 
@@ -44,6 +49,7 @@ A **`SurfacePart`** is one of:
 { "kind": "image", "assetId": "<id from an upload>", "alt": "...", "caption": "..." }
 { "kind": "trace", "steps": [{ "label": "...", "kind": "tool", "detail": "...", "ts": "..." }] }
 { "kind": "trace", "assetId": "<id of an uploaded JSON/JSONL trace>", "title": "..." }
+{ "kind": "terminal", "text": "<output, may include ANSI SGR escapes>", "cols": 80, "title": "..." }
 ```
 
 For a diff, send a `patch` — it carries only the changed lines, so it is the

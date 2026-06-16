@@ -14,11 +14,11 @@ export interface Session {
 
 // A surface is an ordered list of parts. Each part declares its own kind;
 // the surface itself is kind-agnostic. An `html` part is arbitrary agent
-// markup (rendered sandboxed in an iframe); `diff`, `image`, `trace`, and
-// `markdown` parts are structured data rendered by the trusted viewer. A
-// snippet is just a surface with one html part; a diagram-with-its-diff is
-// `[html, diff]`.
-export type SurfacePartKind = "html" | "diff" | "image" | "trace" | "markdown";
+// markup (rendered sandboxed in an iframe); `diff`, `image`, `trace`,
+// `markdown`, and `terminal` parts are structured data rendered by the trusted
+// viewer. A snippet is just a surface with one html part; a
+// diagram-with-its-diff is `[html, diff]`.
+export type SurfacePartKind = "html" | "diff" | "image" | "trace" | "markdown" | "terminal";
 
 export interface HtmlPart {
   kind: "html";
@@ -82,7 +82,21 @@ export interface TracePart {
   title?: string;
 }
 
-export type SurfacePart = HtmlPart | DiffPart | ImagePart | TracePart | MarkdownPart;
+// A terminal part renders monospace terminal output the viewer styles as a
+// terminal window. `text` travels inline (like html) — raw output that may
+// carry ANSI SGR escapes (colors/bold/italic); the viewer converts those to
+// styled spans and HTML-escapes everything else. `cols` is an optional render
+// width hint; `title` labels the window chrome. The renderer is intentionally
+// SGR-only for now (cursor-addressing TUIs aren't resolved) — the wire shape
+// is renderer-agnostic so a full VT emulator can replace it later.
+export interface TerminalPart {
+  kind: "terminal";
+  text: string;
+  cols?: number;
+  title?: string;
+}
+
+export type SurfacePart = HtmlPart | DiffPart | ImagePart | TracePart | MarkdownPart | TerminalPart;
 
 export interface SurfaceVersion {
   version: number;
@@ -243,6 +257,8 @@ export function partsByteLength(parts: SurfacePart[]): number {
       n += p.assetId.length + (p.alt?.length ?? 0) + (p.caption?.length ?? 0);
     } else if (p.kind === "markdown") {
       n += p.markdown.length;
+    } else if (p.kind === "terminal") {
+      n += p.text.length + (p.title?.length ?? 0);
     } else {
       n += (p.assetId?.length ?? 0) + (p.title?.length ?? 0);
       for (const s of p.steps ?? []) {

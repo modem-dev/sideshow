@@ -6,12 +6,14 @@ import {
   type ImagePart as ImagePartData,
   type MarkdownPart as MarkdownPartData,
   type Surface,
+  type TerminalPart as TerminalPartData,
   type TracePart as TracePartData,
 } from "./api.ts";
 import { DiffPart } from "./DiffPart.tsx";
 import { OpenIcon, TrashIcon } from "./icons.tsx";
 import { ImagePart } from "./ImagePart.tsx";
 import { MarkdownPart } from "./MarkdownPart.tsx";
+import { TerminalPart } from "./TerminalPart.tsx";
 import { TracePart } from "./TracePart.tsx";
 import {
   comments,
@@ -158,6 +160,9 @@ export function Card(props: { surface: Surface }) {
             </Match>
             <Match when={part().kind === "trace"}>
               <TracePart part={part() as TracePartData} />
+            </Match>
+            <Match when={part().kind === "terminal"}>
+              <TerminalPart part={part() as TerminalPartData} />
             </Match>
           </Switch>
         )}

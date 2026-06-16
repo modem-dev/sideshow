@@ -8,6 +8,7 @@ import type {
   Session,
   Surface,
   SurfacePart,
+  TerminalPart,
   TracePart,
   TraceStep,
 } from "../../server/types.ts";
@@ -21,6 +22,7 @@ export type {
   Session,
   Surface,
   SurfacePart,
+  TerminalPart,
   TracePart,
   TraceStep,
 };

@@ -47,6 +47,8 @@ const d = {
   traceKind: "free tag, e.g. tool|thought|shell",
   traceDetail: "expandable body (output, args, reasoning)",
   traceTs: "ISO timestamp",
+  terminalText: "terminal part: raw output (ANSI SGR color escapes are rendered)",
+  terminalCols: "terminal part: optional render width in columns",
 };
 
 export const MCP_PARTS_DESCRIPTION =
@@ -57,13 +59,15 @@ export const MCP_PARTS_DESCRIPTION =
   "after}]} (heavier). image: {kind:'image', assetId:'<from upload_asset>', alt?, caption?} — " +
   "renders an uploaded image; you can also embed the asset URL in an html part instead. trace: " +
   "{kind:'trace', steps:[{label, kind?, detail?, ts?}]} renders a step timeline, and/or " +
-  "{kind:'trace', assetId} for an uploaded trace file (downloadable). Optional diff layout " +
+  "{kind:'trace', assetId} for an uploaded trace file (downloadable). terminal: {kind:'terminal', " +
+  "text:'<output>', cols?, title?} renders monospace terminal output (ANSI SGR colors supported; " +
+  "cursor-addressing TUIs are not resolved). Optional diff layout " +
   "'unified'|'split'. Combine freely, e.g. [{kind:'html',...},{kind:'image',assetId},{kind:'trace',steps}].";
 
 export const MCP_PART_JSON_SCHEMA = {
   type: "object",
   properties: {
-    kind: { type: "string", enum: ["html", "markdown", "diff", "image", "trace"] },
+    kind: { type: "string", enum: ["html", "markdown", "diff", "image", "trace", "terminal"] },
     html: { type: "string", description: d.partHtml },
     markdown: { type: "string", description: d.partMarkdown },
     patch: { type: "string", description: d.partPatch },
@@ -86,6 +90,8 @@ export const MCP_PART_JSON_SCHEMA = {
     alt: { type: "string", description: d.imageAlt },
     caption: { type: "string", description: d.imageCaption },
     title: { type: "string", description: d.traceTitle },
+    text: { type: "string", description: d.terminalText },
+    cols: { type: "number", description: d.terminalCols },
     steps: {
       type: "array",
       description: d.traceSteps,
@@ -265,7 +271,7 @@ const traceStepSchema = z.object({
 
 export const mcpPartSchema = z
   .object({
-    kind: z.enum(["html", "markdown", "diff", "image", "trace"]),
+    kind: z.enum(["html", "markdown", "diff", "image", "trace", "terminal"]),
     html: z.string().optional().describe(d.partHtml),
     markdown: z.string().optional().describe(d.partMarkdown),
     patch: z.string().optional().describe(d.partPatch),
@@ -276,11 +282,14 @@ export const mcpPartSchema = z
     caption: z.string().optional().describe(d.imageCaption),
     title: z.string().optional().describe(d.traceTitle),
     steps: z.array(traceStepSchema).optional().describe(d.traceSteps),
+    text: z.string().optional().describe(d.terminalText),
+    cols: z.number().optional().describe(d.terminalCols),
   })
   .describe(
     "A surface part: html {kind:'html',html}; markdown {kind:'markdown',markdown} (prose); diff " +
       "{kind:'diff',patch}; image {kind:'image',assetId} (from upload_asset); trace {kind:'trace',steps} " +
-      "and/or {kind:'trace',assetId}",
+      "and/or {kind:'trace',assetId}; terminal {kind:'terminal',text} (monospace output; ANSI SGR " +
+      "colors rendered)",
   );
 
 export const STDIO_MCP_INPUT_SCHEMAS = {
