@@ -18,11 +18,22 @@ usage:
   sideshow publish <file|-> [options]     publish an HTML surface (one html part)
       --title <t>       surface title
       --diff <file|->   add a diff part from a unified/git patch (combine with html)
+      --image <file>    upload an image and append it as an image part
       --session <id>    target session (default: auto per agent session)
       --session-title <t>  name for a newly created session — name the task,
                         e.g. "Auth refactor" (ignored if the session exists)
       --agent <name>    agent name for new sessions (default: $SIDESHOW_AGENT or "agent")
       --new-session     force a fresh session
+  sideshow upload <file> [options]        upload an asset, print its id and URL
+      --kind <k>        image|trace|file (default: inferred from the file type)
+      --session <id>    session to attach to (default: auto)
+  sideshow image <file> [options]         upload an image and publish it as a surface
+      --title <t>       surface title
+      --caption <c>     caption shown under the image
+      (also: --session, --session-title, --agent, --new-session)
+  sideshow trace <file> [options]         upload a trace file and publish it as a surface
+      --title <t>       surface title
+      (also: --session, --session-title, --agent, --new-session)
   sideshow diff <file|-> [options]        publish a diff surface from a patch
       --title <t>       surface title
       --layout <mode>   "unified" (default) or "split"
@@ -206,6 +217,58 @@ function out(value) {
   console.log(JSON.stringify(value, null, 2));
 }
 
+const CONTENT_TYPES = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+  svg: "image/svg+xml",
+  json: "application/json",
+  jsonl: "application/x-ndjson",
+  ndjson: "application/x-ndjson",
+  txt: "text/plain",
+  log: "text/plain",
+  csv: "text/csv",
+  pdf: "application/pdf",
+};
+
+function contentTypeFor(file) {
+  const ext = file.split(".").pop()?.toLowerCase() ?? "";
+  return CONTENT_TYPES[ext] ?? "application/octet-stream";
+}
+
+// Upload raw file bytes to /api/assets. Returns { id, url, contentType, ... }.
+async function uploadFile(file, { session, kind } = {}) {
+  let bytes;
+  try {
+    bytes = readFileSync(file);
+  } catch {
+    fail(`cannot read file: ${file}`);
+  }
+  const params = new URLSearchParams();
+  params.set("filename", file.split(/[\\/]/).pop() ?? "upload");
+  if (session) params.set("session", session);
+  if (kind) params.set("kind", kind);
+  let res;
+  try {
+    res = await fetch(`${BASE}/api/assets?${params}`, {
+      method: "POST",
+      headers: {
+        "content-type": contentTypeFor(file),
+        ...(TOKEN ? { authorization: `Bearer ${TOKEN}` } : {}),
+      },
+      body: bytes,
+    });
+  } catch {
+    fail(`server not reachable at ${BASE} — start it with: sideshow serve`);
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) fail(body.error ?? `${res.status} ${res.statusText}`);
+  return body;
+}
+
 async function publishSurface(parts, flags) {
   const session = await resolveSession(flags, { create: true });
   return api("/api/surfaces", {
@@ -289,6 +352,7 @@ const commands = {
       options: {
         title: { type: "string" },
         diff: { type: "string" },
+        image: { type: "string" },
         layout: { type: "string" },
         session: { type: "string" },
         "session-title": { type: "string" },
@@ -304,7 +368,72 @@ const commands = {
         ...(flags.layout === "split" && { layout: "split" }),
       });
     }
-    const surface = await publishSurface(parts, flags);
+    // Resolve the session first so the image upload and the surface share it.
+    const session = await resolveSession(flags, { create: true });
+    if (flags.image !== undefined) {
+      const asset = await uploadFile(flags.image, { session, kind: "image" });
+      parts.push({ kind: "image", assetId: asset.id });
+    }
+    const surface = await publishSurface(parts, { ...flags, session });
+    out({ ...surface, url: `${BASE}/s/${surface.id}` });
+  },
+
+  async upload() {
+    const { values: flags, positionals } = parse({
+      allowPositionals: true,
+      options: { session: { type: "string" }, kind: { type: "string" } },
+    });
+    const file = positionals[0];
+    if (!file || file === "-") fail("usage: sideshow upload <file> [--kind k] [--session id]");
+    const session = flags.session ?? (await resolveSession(flags, { create: true }));
+    const asset = await uploadFile(file, { session, kind: flags.kind });
+    out(asset);
+  },
+
+  async image() {
+    const { values: flags, positionals } = parse({
+      allowPositionals: true,
+      options: {
+        title: { type: "string" },
+        caption: { type: "string" },
+        session: { type: "string" },
+        "session-title": { type: "string" },
+        agent: { type: "string" },
+        "new-session": { type: "boolean" },
+      },
+    });
+    const file = positionals[0];
+    if (!file || file === "-") fail("usage: sideshow image <file> [--title t]");
+    const session = await resolveSession(flags, { create: true });
+    const asset = await uploadFile(file, { session, kind: "image" });
+    const part = {
+      kind: "image",
+      assetId: asset.id,
+      ...(flags.caption && { caption: flags.caption }),
+    };
+    const surface = await publishSurface([part], { ...flags, session });
+    out({ ...surface, url: `${BASE}/s/${surface.id}` });
+  },
+
+  async trace() {
+    const { values: flags, positionals } = parse({
+      allowPositionals: true,
+      options: {
+        title: { type: "string" },
+        session: { type: "string" },
+        "session-title": { type: "string" },
+        agent: { type: "string" },
+        "new-session": { type: "boolean" },
+      },
+    });
+    const file = positionals[0];
+    if (!file || file === "-") fail("usage: sideshow trace <file> [--title t]");
+    const session = await resolveSession(flags, { create: true });
+    const asset = await uploadFile(file, { session, kind: "trace" });
+    const surface = await publishSurface([{ kind: "trace", assetId: asset.id }], {
+      ...flags,
+      session,
+    });
     out({ ...surface, url: `${BASE}/s/${surface.id}` });
   },
 

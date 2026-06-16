@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { HISTORY_LIMIT, htmlPart, type Store } from "../server/types.ts";
 
+const bytes = (...values: number[]) => new Uint8Array(values);
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Reusable contract suite: every Store implementation must pass it.
@@ -378,5 +380,79 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
       ["b"],
     );
     assert.deepEqual(await store.listComments({ sessionId: "missing" }), []);
+  });
+
+  // --- assets ---
+
+  contract("stores and reads back asset bytes; missing session is null", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    const data = bytes(0, 1, 2, 255, 128);
+    const asset = await store.putAsset({
+      sessionId: session.id,
+      kind: "image",
+      contentType: "image/png",
+      filename: "shot.png",
+      data,
+    });
+    assert.ok(asset);
+    assert.equal(asset.contentType, "image/png");
+    assert.equal(asset.byteLength, 5);
+    assert.equal(asset.filename, "shot.png");
+    assert.equal(asset.lastAccessedAt, asset.createdAt);
+
+    const got = await store.getAsset(asset.id);
+    assert.deepEqual([...(got?.data ?? [])], [0, 1, 2, 255, 128]);
+    assert.equal(await store.getAsset("missing"), null);
+
+    assert.equal(
+      await store.putAsset({ sessionId: "nope", kind: "file", contentType: "x", data }),
+      null,
+    );
+  });
+
+  contract("touchAsset advances lastAccessedAt", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    const asset = await store.putAsset({
+      sessionId: session.id,
+      kind: "file",
+      contentType: "text/plain",
+      data: bytes(1),
+    });
+    assert.ok(asset);
+    await sleep(10);
+    await store.touchAsset(asset.id);
+    const got = await store.getAsset(asset.id);
+    assert.ok(got && got.lastAccessedAt > asset.createdAt);
+  });
+
+  contract("lists assets by session and removes them", async (store) => {
+    const one = await store.createSession({ agent: "a" });
+    const two = await store.createSession({ agent: "b" });
+    const a = await store.putAsset({
+      sessionId: one.id,
+      kind: "file",
+      contentType: "x",
+      data: bytes(1),
+    });
+    await store.putAsset({ sessionId: two.id, kind: "file", contentType: "x", data: bytes(2) });
+    assert.equal((await store.listAssets(one.id)).length, 1);
+    assert.equal((await store.listAssets(two.id)).length, 1);
+
+    assert.equal(await store.removeAsset(a?.id ?? ""), true);
+    assert.equal(await store.removeAsset(a?.id ?? ""), false);
+    assert.equal((await store.listAssets(one.id)).length, 0);
+  });
+
+  contract("removing a session cascades to its assets", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    const asset = await store.putAsset({
+      sessionId: session.id,
+      kind: "image",
+      contentType: "image/png",
+      data: bytes(9),
+    });
+    assert.ok(asset);
+    await store.removeSession(session.id);
+    assert.equal(await store.getAsset(asset.id), null);
   });
 }

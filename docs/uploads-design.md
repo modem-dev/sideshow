@@ -1,6 +1,8 @@
 # Design: agent-driven uploads (assets, images, traces)
 
-Status: proposal (no code yet). Audience: sideshow maintainers/agents.
+Status: implemented. Audience: sideshow maintainers/agents. This documents the
+design and the decisions behind it; the code lives across `server/`, `workers/`,
+`viewer/src/`, `bin/`, and `mcp/`.
 
 ## Goal
 
@@ -12,7 +14,7 @@ them in the viewer. Two motivating flows:
    uploads it once, gets back a URL, and references it from an `html` part
    (`<img src="…">`).
 2. **Agent traces.** An agent uploads a trace of its run and the viewer renders
-   it as a step timeline *next to* the visualization, so the user can see what
+   it as a step timeline _next to_ the visualization, so the user can see what
    the agent did at each step — and/or downloads it for later analysis.
 
 This keeps faith with the product stances in `AGENTS.md`: the publish → render →
@@ -26,7 +28,7 @@ A surface is an ordered list of parts capped at `MAX_SURFACE_BYTES` (2 MB), and
 `html` bodies out (`stripParts`) precisely so it never ships large markup. Binary
 blobs (often base64-inflated by ~33%) do not belong inside that JSON:
 
-- a 1.5 MB screenshot would blow the surface limit meant to bound *markup*;
+- a 1.5 MB screenshot would blow the surface limit meant to bound _markup_;
 - every `list_surfaces` / SSE meta read would drag the bytes around;
 - the same image embedded in two surfaces would be stored twice.
 
@@ -43,22 +45,22 @@ export type AssetKind = "image" | "trace" | "file";
 
 export interface Asset {
   id: string;
-  sessionId: string;          // scopes lifetime + cascade delete
-  kind: AssetKind;            // hint for the viewer; "file" is the catch-all
-  contentType: string;        // e.g. "image/png", "application/json"
-  byteLength: number;         // decoded size (what limits check against)
-  filename: string | null;    // original name, for downloads
-  data: Uint8Array;           // raw bytes (see "Storage" — BLOB / on-disk base64)
+  sessionId: string; // scopes lifetime + cascade delete
+  kind: AssetKind; // hint for the viewer; "file" is the catch-all
+  contentType: string; // e.g. "image/png", "application/json"
+  byteLength: number; // decoded size (what limits check against)
+  filename: string | null; // original name, for downloads
+  data: Uint8Array; // raw bytes (see "Storage" — BLOB / on-disk base64)
   createdAt: string;
-  lastAccessedAt: string;     // bumped on serve; drives LRU eviction
+  lastAccessedAt: string; // bumped on serve; drives LRU eviction
 }
 
 export interface CreateAssetInput {
   sessionId: string;
-  kind?: AssetKind;           // inferred from contentType when omitted
+  kind?: AssetKind; // inferred from contentType when omitted
   contentType: string;
   filename?: string;
-  data: Uint8Array;           // raw bytes
+  data: Uint8Array; // raw bytes
 }
 ```
 
@@ -97,15 +99,15 @@ export interface ImagePart {
 // `assetId` points at a JSON/JSONL file rendered + offered for download.
 // At least one of `steps` / `assetId` is present.
 export interface TraceStep {
-  label: string;              // one-line summary, e.g. "read server/app.ts"
-  kind?: string;              // free tag: "tool" | "thought" | "shell" | …
-  detail?: string;           // expandable body (output, args, reasoning)
-  ts?: string;               // ISO timestamp, optional
+  label: string; // one-line summary, e.g. "read server/app.ts"
+  kind?: string; // free tag: "tool" | "thought" | "shell" | …
+  detail?: string; // expandable body (output, args, reasoning)
+  ts?: string; // ISO timestamp, optional
 }
 export interface TracePart {
   kind: "trace";
   steps?: TraceStep[];
-  assetId?: string;           // large/raw trace file, downloadable
+  assetId?: string; // large/raw trace file, downloadable
   title?: string;
 }
 
@@ -160,10 +162,10 @@ and `JsonFileStore`'s on-disk JSON).
   room — but partitioned so **unreferenced** assets go first and an asset still
   referenced by a live surface part is only evicted as a true last resort (when
   unreferenced candidates are exhausted). `referencedAssetIds()` collects every
-  `image`/`trace` `assetId` across current surfaces *and* their history versions.
+  `image`/`trace` `assetId` across current surfaces _and_ their history versions.
 
   This honors the chosen "auto-evict oldest" behavior while containing its blast
-  radius. Two safeguards keep eviction from being an *invisible* break (the
+  radius. Two safeguards keep eviction from being an _invisible_ break (the
   codebase's "feedback/▢ never silently lost" ethos):
   - **`lastAccessedAt` is bumped on every `GET /a/:id`**, so any asset whose
     surface is actually being viewed stays "warm" and sorts last for eviction —
@@ -175,7 +177,7 @@ and `JsonFileStore`'s on-disk JSON).
     `immutable`, so the touch-on-serve actually fires; asset ids are unique so
     correctness doesn't depend on long caching.)
 
-  Residual gap: a raw-URL embed in an html part whose surface is *never* viewed
+  Residual gap: a raw-URL embed in an html part whose surface is _never_ viewed
   for a long time could still be evicted under sustained pressure. For
   guaranteed-retention embeds, prefer an `image` part (tracked) over a raw
   `<img src>` — documented in the design guide.
@@ -238,7 +240,7 @@ no public/unauthenticated asset route.
 `server/surfacePage.ts` today allows `img-src https: data: blob:`. That covers
 `data:` URIs and HTTPS deployments, but **not** local `http://localhost`, and
 `'self'` is useless inside an `allow-same-origin`-less sandbox (opaque origin).
-To let agents embed a *served* asset by URL on every deployment:
+To let agents embed a _served_ asset by URL on every deployment:
 
 - thread the request origin into `renderHtmlPage({ title, html, origin })` from
   the `/s/:id` route (it already has `c.req.url`);
@@ -288,7 +290,7 @@ sideshow trace <file.json|-> --title "…"
 **MCP** (`server/mcpHttp.ts` + stdio passthrough in `mcp/server.ts`):
 
 - new tool `upload_asset { data (base64), contentType, filename?, kind?,
-  session? } -> { id, url, byteLength }`. Base64 is required because MCP is
+session? } -> { id, url, byteLength }`. Base64 is required because MCP is
   JSON-RPC (no binary frames).
 - `coerceParts()` extended to accept `image` and `trace` parts; `PARTS_SCHEMA`
   documents them so `publish_surface` / `update_surface` can include them.

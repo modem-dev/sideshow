@@ -1,14 +1,19 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
+  type Asset,
+  collectAssetIds,
   type Comment,
   type CommentQuery,
+  type CreateAssetInput,
   type CreateCommentInput,
   type CreateSessionInput,
   type CreateSurfaceInput,
   HISTORY_LIMIT,
   htmlPart,
+  MAX_BOARD_ASSET_BYTES,
   newId,
+  selectEvictions,
   type Session,
   type Store,
   type Surface,
@@ -17,10 +22,15 @@ import {
 
 export type * from "./types.ts";
 
+// On disk an asset's bytes are base64 (JSON can't hold a Uint8Array); in memory
+// it is the live Asset with raw bytes.
+type StoredAsset = Omit<Asset, "data"> & { data: string };
+
 interface FileShape {
   sessions: Session[];
   surfaces: Surface[];
   comments: Comment[];
+  assets: StoredAsset[];
   lastSeq: number;
 }
 
@@ -83,6 +93,7 @@ export class JsonFileStore implements Store {
   private sessions = new Map<string, Session>();
   private surfaces = new Map<string, Surface>();
   private comments: Comment[] = [];
+  private assets = new Map<string, Asset>();
   private lastSeq = 0;
   private loaded = false;
   private writeQueue: Promise<void> = Promise.resolve();
@@ -109,6 +120,13 @@ export class JsonFileStore implements Store {
         for (const s of data.snippets) this.surfaces.set(s.id, liftSnippet(s));
       }
       this.comments = (data.comments ?? []).map(liftComment);
+      for (const a of data.assets ?? []) {
+        this.assets.set(a.id, {
+          ...a,
+          data: new Uint8Array(Buffer.from(a.data, "base64")),
+          lastAccessedAt: a.lastAccessedAt ?? a.createdAt,
+        });
+      }
       this.lastSeq = data.lastSeq ?? 0;
     } catch (err: any) {
       if (err?.code !== "ENOENT") throw err;
@@ -121,6 +139,10 @@ export class JsonFileStore implements Store {
         sessions: [...this.sessions.values()],
         surfaces: [...this.surfaces.values()],
         comments: this.comments,
+        assets: [...this.assets.values()].map((a) => ({
+          ...a,
+          data: Buffer.from(a.data).toString("base64"),
+        })),
         lastSeq: this.lastSeq,
       } satisfies FileShape,
       null,
@@ -180,6 +202,9 @@ export class JsonFileStore implements Store {
       if (surface.sessionId === id) this.surfaces.delete(sid);
     }
     this.comments = this.comments.filter((c) => c.sessionId !== id);
+    for (const [aid, asset] of this.assets) {
+      if (asset.sessionId === id) this.assets.delete(aid);
+    }
     await this.persist();
     return true;
   }
@@ -292,5 +317,72 @@ export class JsonFileStore implements Store {
     this.touch(input.sessionId);
     await this.persist();
     return comment;
+  }
+
+  // --- assets ---
+
+  private referencedAssetIds(): Set<string> {
+    const out = new Set<string>();
+    for (const s of this.surfaces.values()) {
+      collectAssetIds(s.parts, out);
+      for (const h of s.history) collectAssetIds(h.parts, out);
+    }
+    return out;
+  }
+
+  async putAsset(input: CreateAssetInput) {
+    await this.load();
+    if (!this.sessions.has(input.sessionId)) return null;
+    const referenced = this.referencedAssetIds();
+    const candidates = [...this.assets.values()].map((a) => ({
+      id: a.id,
+      byteLength: a.byteLength,
+      lastAccessedAt: a.lastAccessedAt,
+      referenced: referenced.has(a.id),
+    }));
+    for (const id of selectEvictions(candidates, input.data.byteLength, MAX_BOARD_ASSET_BYTES)) {
+      this.assets.delete(id);
+    }
+    const now = new Date().toISOString();
+    const asset: Asset = {
+      id: newId(),
+      sessionId: input.sessionId,
+      kind: input.kind,
+      contentType: input.contentType,
+      byteLength: input.data.byteLength,
+      filename: input.filename ?? null,
+      data: input.data,
+      createdAt: now,
+      lastAccessedAt: now,
+    };
+    this.assets.set(asset.id, asset);
+    this.touch(input.sessionId);
+    await this.persist();
+    return asset;
+  }
+
+  async getAsset(id: string) {
+    await this.load();
+    return this.assets.get(id) ?? null;
+  }
+
+  async touchAsset(id: string) {
+    await this.load();
+    const asset = this.assets.get(id);
+    if (!asset) return;
+    asset.lastAccessedAt = new Date().toISOString();
+    await this.persist();
+  }
+
+  async listAssets(sessionId: string) {
+    await this.load();
+    return [...this.assets.values()].filter((a) => a.sessionId === sessionId);
+  }
+
+  async removeAsset(id: string) {
+    await this.load();
+    if (!this.assets.delete(id)) return false;
+    await this.persist();
+    return true;
   }
 }

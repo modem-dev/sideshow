@@ -1,6 +1,15 @@
-import { For, Index, onCleanup, onMount, Show } from "solid-js";
-import { api, relTime, type DiffPart as DiffPartData, type Surface } from "./api.ts";
+import { For, Index, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import {
+  api,
+  relTime,
+  type DiffPart as DiffPartData,
+  type ImagePart as ImagePartData,
+  type Surface,
+  type TracePart as TracePartData,
+} from "./api.ts";
 import { DiffPart } from "./DiffPart.tsx";
+import { ImagePart } from "./ImagePart.tsx";
+import { TracePart } from "./TracePart.tsx";
 import {
   comments,
   scrollTarget,
@@ -99,25 +108,33 @@ export function Card(props: { surface: Surface }) {
           reload the sandboxed document. */}
       <Index each={props.surface.parts}>
         {(part, i) => (
-          <Show when={part().kind === "html"} fallback={<DiffPart part={part() as DiffPartData} />}>
-            <iframe
-              ref={(el) => {
-                htmlFrames.set(i, el);
-                iframes.add(el);
-                onCleanup(() => {
-                  htmlFrames.delete(i);
-                  iframes.delete(el);
-                });
-              }}
-              sandbox="allow-scripts"
-              title={
-                props.surface.parts.length > 1
-                  ? `${props.surface.title} (part ${i + 1})`
-                  : props.surface.title
-              }
-              src={`/s/${props.surface.id}?part=${i}&ver=${props.surface.version}&cb=${props.surface.version}`}
-            ></iframe>
-          </Show>
+          <Switch fallback={<DiffPart part={part() as DiffPartData} />}>
+            <Match when={part().kind === "html"}>
+              <iframe
+                ref={(el) => {
+                  htmlFrames.set(i, el);
+                  iframes.add(el);
+                  onCleanup(() => {
+                    htmlFrames.delete(i);
+                    iframes.delete(el);
+                  });
+                }}
+                sandbox="allow-scripts"
+                title={
+                  props.surface.parts.length > 1
+                    ? `${props.surface.title} (part ${i + 1})`
+                    : props.surface.title
+                }
+                src={`/s/${props.surface.id}?part=${i}&ver=${props.surface.version}&cb=${props.surface.version}`}
+              ></iframe>
+            </Match>
+            <Match when={part().kind === "image"}>
+              <ImagePart part={part() as ImagePartData} />
+            </Match>
+            <Match when={part().kind === "trace"}>
+              <TracePart part={part() as TracePartData} />
+            </Match>
+          </Switch>
         )}
       </Index>
       <Thread

@@ -11,15 +11,21 @@ export const CDN_ALLOWLIST = [
 
 const cdns = CDN_ALLOWLIST.join(" ");
 
-const CSP = [
-  `default-src 'none'`,
-  `script-src 'unsafe-inline' ${cdns}`,
-  `style-src 'unsafe-inline' ${cdns}`,
-  `font-src ${cdns} data:`,
-  `img-src https: data: blob:`,
-  `connect-src ${cdns}`,
-  `media-src https: data: blob:`,
-].join("; ");
+// `origin` is the server's own origin, added to img/media so uploaded assets
+// (served at <origin>/a/:id) embed by URL. It is needed because the iframe runs
+// at an opaque origin (sandbox without allow-same-origin), so `'self'` matches
+// nothing, and a local http origin isn't covered by the `https:` source.
+function buildCsp(origin: string): string {
+  return [
+    `default-src 'none'`,
+    `script-src 'unsafe-inline' ${cdns}`,
+    `style-src 'unsafe-inline' ${cdns}`,
+    `font-src ${cdns} data:`,
+    `img-src https: data: blob: ${origin}`,
+    `connect-src ${cdns}`,
+    `media-src https: data: blob: ${origin}`,
+  ].join("; ");
+}
 
 // Design tokens exposed to snippets. Names match Claude's widget surface so
 // agents can reuse the same muscle memory. Both modes are always defined.
@@ -209,13 +215,13 @@ const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 // Wrap one html part in the themed, sandboxed document the iframe loads.
-export function renderHtmlPage(doc: { title: string; html: string }): string {
+export function renderHtmlPage(doc: { title: string; html: string; origin: string }): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="${CSP}">
+<meta http-equiv="Content-Security-Policy" content="${buildCsp(doc.origin)}">
 <title>${escapeHtml(doc.title)}</title>
 <style>${TOKENS_CSS}${KIT_CSS}</style>
 </head>

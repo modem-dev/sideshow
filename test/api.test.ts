@@ -596,3 +596,107 @@ test("rejects empty and oversized html", async () => {
     413,
   );
 });
+
+// --- assets ---
+
+const b64 = (bytes: number[]) => Buffer.from(new Uint8Array(bytes)).toString("base64");
+
+test("uploads an asset via base64 JSON and serves the exact bytes", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/assets",
+    json({ data: b64([137, 80, 78, 71, 0, 255]), contentType: "image/png", filename: "shot.png" }),
+  );
+  assert.equal(res.status, 201);
+  const asset = (await res.json()) as any;
+  assert.ok(asset.id);
+  assert.ok(asset.sessionId); // auto-created a session
+  assert.equal(asset.kind, "image"); // inferred from image/*
+  assert.equal(asset.byteLength, 6);
+  assert.ok(String(asset.url).endsWith(`/a/${asset.id}`));
+
+  const served = await app.request(`/a/${asset.id}`);
+  assert.equal(served.status, 200);
+  assert.equal(served.headers.get("content-type"), "image/png");
+  assert.equal(served.headers.get("content-disposition"), "inline");
+  assert.equal(served.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual([...new Uint8Array(await served.arrayBuffer())], [137, 80, 78, 71, 0, 255]);
+});
+
+test("uploads raw bytes with metadata from the query string", async () => {
+  const app = makeApp();
+  const res = await app.request("/api/assets?filename=trace.json&kind=trace", {
+    method: "POST",
+    headers: { "content-type": "application/json-not" }, // non-json -> raw path
+    body: new Uint8Array([123, 125]),
+  });
+  // content-type header here is the asset's own type, not the request envelope
+  const raw = await app.request("/api/assets?kind=file", {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: new Uint8Array([1, 2, 3]),
+  });
+  assert.equal(raw.status, 201);
+  const asset = (await raw.json()) as any;
+  assert.equal(asset.kind, "file");
+  assert.equal(asset.byteLength, 3);
+  assert.ok(res.status === 201);
+});
+
+test("non-inline types are served as attachments and html is neutered", async () => {
+  const app = makeApp();
+  const svg = (await (
+    await app.request("/api/assets", json({ data: b64([60, 115]), contentType: "image/svg+xml" }))
+  ).json()) as any;
+  const svgRes = await app.request(`/a/${svg.id}`);
+  assert.equal(svgRes.headers.get("content-type"), "image/svg+xml");
+  assert.match(svgRes.headers.get("content-disposition") ?? "", /^attachment/);
+
+  const html = (await (
+    await app.request("/api/assets", json({ data: b64([60, 104]), contentType: "text/html" }))
+  ).json()) as any;
+  const htmlRes = await app.request(`/a/${html.id}`);
+  assert.equal(htmlRes.headers.get("content-type"), "application/octet-stream");
+  assert.match(htmlRes.headers.get("content-disposition") ?? "", /^attachment/);
+});
+
+test("rejects empty and oversized uploads", async () => {
+  const app = makeApp();
+  assert.equal(
+    (await app.request("/api/assets", json({ data: "", contentType: "x" }))).status,
+    400,
+  );
+  const big = b64(Array(5 * 1024 * 1024 + 1).fill(0));
+  assert.equal(
+    (await app.request("/api/assets", json({ data: big, contentType: "image/png" }))).status,
+    413,
+  );
+});
+
+test("uploading to an unknown session 404s; serving a missing asset 404s", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/assets",
+    json({ data: b64([1]), contentType: "image/png", session: "nope" }),
+  );
+  assert.equal(res.status, 404);
+  assert.equal((await app.request("/a/missing")).status, 404);
+});
+
+test("the surface CSP allows the server origin so assets embed by url", async () => {
+  const app = makeApp();
+  const snip = (await (
+    await app.request("/api/snippets", json({ html: "<img src=/a/x>" }))
+  ).json()) as any;
+  const page = await (await app.request(`/s/${snip.id}`)).text();
+  assert.match(page, /img-src https: data: blob: http:\/\/localhost/);
+});
+
+test("asset routes require auth when a token is set", async () => {
+  const app = makeApp("secret");
+  assert.equal(
+    (await app.request("/api/assets", json({ data: b64([1]), contentType: "x" }))).status,
+    401,
+  );
+  assert.equal((await app.request("/a/anything")).status, 401);
+});

@@ -3,12 +3,25 @@ import type {
   Comment,
   DiffPart,
   HtmlPart,
+  ImagePart,
   Session,
   Surface,
   SurfacePart,
+  TracePart,
+  TraceStep,
 } from "../../server/types.ts";
 
-export type { Comment, DiffPart, HtmlPart, Session, Surface, SurfacePart };
+export type {
+  Comment,
+  DiffPart,
+  HtmlPart,
+  ImagePart,
+  Session,
+  Surface,
+  SurfacePart,
+  TracePart,
+  TraceStep,
+};
 
 // GET /api/sessions decorates each session with its surface count.
 export interface SessionRow extends Session {

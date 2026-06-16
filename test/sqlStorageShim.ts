@@ -13,7 +13,16 @@ export function createSqlStorage(): SqlStorage {
         db.exec(query);
         return cursor([]);
       }
-      const rows = db.prepare(query).all(...(bindings as (string | number | bigint | null)[]));
+      // node:sqlite binds blobs as Uint8Array; the DO API hands them in as
+      // ArrayBuffer (a SqlStorageValue) — adapt so BLOB columns round-trip.
+      const params = bindings.map((b) => (b instanceof ArrayBuffer ? new Uint8Array(b) : b)) as (
+        | string
+        | number
+        | bigint
+        | null
+        | Uint8Array
+      )[];
+      const rows = db.prepare(query).all(...params);
       return cursor(rows as Record<string, SqlStorageValue>[]);
     },
   };

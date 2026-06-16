@@ -15,11 +15,17 @@ a `kind`:
 - **`diff`** — a patch you hand over as _data_; the trusted viewer renders it
   natively as a syntax-highlighted code review (split or unified). Reach for it
   to show a changeset or review code, not to draw.
+- **`image`** — an uploaded image, referenced by `assetId` (see Uploads below),
+  rendered natively by the viewer. Reach for it to show a screenshot or a
+  generated picture.
+- **`trace`** — an agent trace rendered as a step timeline beside the surface.
+  Steps can travel inline, or live in an uploaded file you reference and offer
+  for download.
 
 A surface can combine parts, e.g. `[html, diff]` is a diagram with its code
-review in one card. Trust differs: html parts are sandboxed because you author
-the markup; diff parts are rendered by the viewer from patch data — send a
-patch, never markup.
+review in one card, and `[html, image]` is a sketch above a screenshot. Trust
+differs: html parts are sandboxed because you author the markup; diff/image/
+trace parts are rendered by the viewer from data — send data, never markup.
 
 A **`SurfacePart`** is one of:
 
@@ -27,11 +33,33 @@ A **`SurfacePart`** is one of:
 { "kind": "html", "html": "<p>...</p>" }
 { "kind": "diff", "patch": "<unified or git diff text>" }                          # preferred — compact
 { "kind": "diff", "files": [{ "filename": "a.ts", "before": "...", "after": "...", "language": "ts" }] }  # fallback
+{ "kind": "image", "assetId": "<id from an upload>", "alt": "...", "caption": "..." }
+{ "kind": "trace", "steps": [{ "label": "...", "kind": "tool", "detail": "...", "ts": "..." }] }
+{ "kind": "trace", "assetId": "<id of an uploaded JSON/JSONL trace>", "title": "..." }
 ```
 
 For a diff, send a `patch` — it carries only the changed lines, so it is the
 compact, preferred form. Use `files` (full before/after contents) only when you
 don't have a patch. A diff part takes an optional `"layout": "unified" | "split"`.
+
+## Uploads (images, traces, files)
+
+Push a binary asset once, reference it by id. Three ways, same result:
+
+```
+POST /api/assets   (raw)   Content-Type: image/png   <bytes>     ?filename=shot.png&kind=image&session=<id>
+POST /api/assets   (json)  { "data": "<base64>", "contentType": "image/png", "filename": "shot.png", "session": "<id>" }
+MCP  upload_asset  { data: "<base64>", contentType, filename?, kind?, session? }
+CLI  sideshow upload shot.png         # prints { id, url }
+```
+
+The response carries `{ id, url }`. Then either reference the asset in a part
+(`{ "kind": "image", "assetId": "<id>" }`) **or** embed its `url` inside an html
+part (`<img src="<url>">`). Assets belong to a session — pass the session you
+publish with so they're grouped and cleaned up together. Per-asset limit is
+5 MB. CLI shortcuts: `sideshow image shot.png --title "…"` (upload + publish in
+one shot), `sideshow trace run.json --title "…"`, and `sideshow publish
+sketch.html --image shot.png`.
 
 ## Publishing
 
@@ -179,7 +207,8 @@ Mental test: if the background were near-black, would every element still read?
 
 A CSP allows loading ONLY from these origins (anything else silently fails):
 `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, `unpkg.com`,
-`fonts.googleapis.com`, `fonts.gstatic.com`. Images may load from any https URL.
+`fonts.googleapis.com`, `fonts.gstatic.com`. Images may load from any https URL,
+a `data:` URI, or an asset you uploaded to this server (`<img src="/a/<id>">`).
 
 ## Interactivity
 

@@ -58,9 +58,16 @@ const diffFileSchema = z.object({
   language: z.string().optional(),
 });
 
+const traceStepSchema = z.object({
+  label: z.string().describe("one-line summary of the step"),
+  kind: z.string().optional().describe("free tag, e.g. tool|thought|shell"),
+  detail: z.string().optional().describe("expandable body (output, args, reasoning)"),
+  ts: z.string().optional().describe("ISO timestamp"),
+});
+
 const partSchema = z
   .object({
-    kind: z.enum(["html", "diff"]),
+    kind: z.enum(["html", "diff", "image", "trace"]),
     html: z.string().optional().describe("html part: body fragment (no doctype/html/head/body)"),
     patch: z
       .string()
@@ -71,9 +78,15 @@ const partSchema = z
       .optional()
       .describe("diff part: before/after pairs — heavier (full contents); prefer patch"),
     layout: z.enum(["unified", "split"]).optional(),
+    assetId: z.string().optional().describe("image/trace part: id from upload_asset"),
+    alt: z.string().optional().describe("image part: alt text"),
+    caption: z.string().optional().describe("image part: caption shown under the image"),
+    title: z.string().optional().describe("trace part: heading above the timeline"),
+    steps: z.array(traceStepSchema).optional().describe("trace part: ordered timeline steps"),
   })
   .describe(
-    "A surface part: {kind:'html', html} or {kind:'diff', patch} (preferred) / {kind:'diff', files}",
+    "A surface part: html {kind:'html',html}; diff {kind:'diff',patch}; image {kind:'image',assetId} " +
+      "(from upload_asset); trace {kind:'trace',steps} and/or {kind:'trace',assetId}",
   );
 
 const server = new McpServer(
@@ -249,6 +262,35 @@ server.registerTool(
   async () => {
     if (!sessionId) return text([]);
     return text(JSON.parse(await api(`/api/sessions/${sessionId}/surfaces`)));
+  },
+);
+
+server.registerTool(
+  "upload_asset",
+  {
+    description:
+      "Upload a binary asset (image, trace file, any file) and get back its id and URL. base64-encode the " +
+      "bytes in `data`. Then reference it: {kind:'image', assetId} or {kind:'trace', assetId} in a surface's " +
+      'parts, or embed the URL in an html part (<img src="...">). Attached to this conversation\'s session.',
+    inputSchema: {
+      data: z.string().describe("base64-encoded file bytes"),
+      contentType: z.string().describe("MIME type, e.g. image/png, application/json"),
+      filename: z.string().optional().describe("Original filename (used for downloads)"),
+      kind: z
+        .enum(["image", "trace", "file"])
+        .optional()
+        .describe("Inferred from contentType if omitted"),
+    },
+  },
+  async ({ data, contentType, filename, kind }) => {
+    const session = await ensureSession();
+    const created = JSON.parse(
+      await api("/api/assets", {
+        method: "POST",
+        body: JSON.stringify({ data, contentType, filename, kind, session }),
+      }),
+    );
+    return text(created);
   },
 );
 

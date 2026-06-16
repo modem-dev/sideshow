@@ -14,10 +14,10 @@ export interface Session {
 
 // A surface is an ordered list of parts. Each part declares its own kind;
 // the surface itself is kind-agnostic. An `html` part is arbitrary agent
-// markup (rendered sandboxed in an iframe); a `diff` part is structured data
-// (a patch) rendered by the trusted viewer. A snippet is just a surface with
-// one html part; a diagram-with-its-diff is `[html, diff]` in one card.
-export type SurfacePartKind = "html" | "diff";
+// markup (rendered sandboxed in an iframe); `diff`, `image`, and `trace` parts
+// are structured data rendered by the trusted viewer. A snippet is just a
+// surface with one html part; a diagram-with-its-diff is `[html, diff]`.
+export type SurfacePartKind = "html" | "diff" | "image" | "trace";
 
 export interface HtmlPart {
   kind: "html";
@@ -41,7 +41,37 @@ export interface DiffPart {
   layout?: "unified" | "split";
 }
 
-export type SurfacePart = HtmlPart | DiffPart;
+// An image part references an uploaded asset by id; the trusted viewer renders
+// it as a plain <img> in its own chrome (no iframe). Agents can also embed the
+// asset's URL inside an html part instead — both paths resolve to /a/:id.
+export interface ImagePart {
+  kind: "image";
+  assetId: string;
+  alt?: string;
+  caption?: string;
+}
+
+// One step in an agent trace. `label` is the one-line summary; `detail` is the
+// expandable body (tool output, args, reasoning). Everything else is optional.
+export interface TraceStep {
+  label: string;
+  kind?: string;
+  detail?: string;
+  ts?: string;
+}
+
+// A trace part renders a step timeline the viewer shows beside the surface.
+// `steps` travel inline (small, structured); `assetId` points at a larger
+// uploaded trace file (JSON/JSONL), offered for download and rendered when it
+// parses. At least one of the two is present.
+export interface TracePart {
+  kind: "trace";
+  steps?: TraceStep[];
+  assetId?: string;
+  title?: string;
+}
+
+export type SurfacePart = HtmlPart | DiffPart | ImagePart | TracePart;
 
 export interface SurfaceVersion {
   version: number;
@@ -70,6 +100,33 @@ export interface Comment {
   author: string;
   text: string;
   createdAt: string;
+}
+
+// An uploaded blob (image, trace file, arbitrary file) the agent pushes once and
+// references by id. Stored apart from surfaces so binary never bloats the parts
+// JSON or the 2 MB surface limit. `data` is raw bytes — base64 is an edge-only
+// encoding (HTTP/MCP request bodies, JsonFileStore's on-disk JSON).
+export type AssetKind = "image" | "trace" | "file";
+
+export interface Asset {
+  id: string;
+  sessionId: string;
+  kind: AssetKind;
+  contentType: string;
+  byteLength: number;
+  filename: string | null;
+  data: Uint8Array;
+  createdAt: string;
+  // Bumped on each serve; drives the reference-aware LRU eviction below.
+  lastAccessedAt: string;
+}
+
+export interface CreateAssetInput {
+  sessionId: string;
+  kind: AssetKind;
+  contentType: string;
+  filename?: string;
+  data: Uint8Array;
 }
 
 export interface CreateSessionInput {
@@ -121,9 +178,24 @@ export interface Store {
 
   listComments(query: CommentQuery): Promise<Comment[]>;
   createComment(input: CreateCommentInput): Promise<Comment | null>;
+
+  // Assets. putAsset evicts to stay under MAX_BOARD_ASSET_BYTES (see
+  // selectEvictions) and returns null only if the session is missing.
+  putAsset(input: CreateAssetInput): Promise<Asset | null>;
+  getAsset(id: string): Promise<Asset | null>;
+  // Bump lastAccessedAt (called when bytes are served), keeping live assets warm.
+  touchAsset(id: string): Promise<void>;
+  listAssets(sessionId: string): Promise<Asset[]>;
+  removeAsset(id: string): Promise<boolean>;
 }
 
 export const HISTORY_LIMIT = 20;
+
+// Per-asset upload cap (enforced at the HTTP/MCP edge → 413) and the board-wide
+// budget the store evicts down to. One Durable Object holds the whole board, so
+// the budget sits well under its ~10 GB SQLite ceiling.
+export const MAX_ASSET_BYTES = 5 * 1024 * 1024;
+export const MAX_BOARD_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
 
 export const newId = () => crypto.randomUUID().split("-")[0];
 
@@ -131,17 +203,68 @@ export const newId = () => crypto.randomUUID().split("-")[0];
 // `{ html }` shape (CLI `publish`, `POST /api/snippets`) to the parts model.
 export const htmlPart = (html: string): HtmlPart => ({ kind: "html", html });
 
-// The combined byte weight of a surface's parts, for size limits.
+// The combined byte weight of a surface's parts, for size limits. image/trace
+// parts are tiny (refs + inline steps) — the asset bytes they point at are
+// bounded separately by MAX_ASSET_BYTES, not this surface cap.
 export function partsByteLength(parts: SurfacePart[]): number {
   let n = 0;
   for (const p of parts) {
     if (p.kind === "html") n += p.html.length;
-    else {
+    else if (p.kind === "diff") {
       n += p.patch?.length ?? 0;
       for (const f of p.files ?? []) n += f.before.length + f.after.length;
+    } else if (p.kind === "image") {
+      n += p.assetId.length + (p.alt?.length ?? 0) + (p.caption?.length ?? 0);
+    } else {
+      n += (p.assetId?.length ?? 0) + (p.title?.length ?? 0);
+      for (const s of p.steps ?? []) {
+        n += s.label.length + (s.kind?.length ?? 0) + (s.detail?.length ?? 0);
+      }
     }
   }
   return n;
+}
+
+// Collect the asset ids an ordered parts list references (image/trace parts).
+// Used to keep referenced assets out of eviction's first wave. Note: assets
+// embedded by raw URL inside html markup are invisible here — touch-on-serve
+// keeps those warm instead.
+export function collectAssetIds(parts: SurfacePart[], out: Set<string>): void {
+  for (const p of parts) {
+    if (p.kind === "image") out.add(p.assetId);
+    else if (p.kind === "trace" && p.assetId) out.add(p.assetId);
+  }
+}
+
+export interface EvictionCandidate {
+  id: string;
+  byteLength: number;
+  lastAccessedAt: string;
+  referenced: boolean;
+}
+
+// Pick the assets to evict so `incomingBytes` fits under `budget`. Oldest
+// (lastAccessedAt) first, but unreferenced assets go before referenced ones —
+// a live embed is only evicted as a last resort, once unreferenced candidates
+// are exhausted. Returns the ids to remove (possibly empty).
+export function selectEvictions(
+  candidates: EvictionCandidate[],
+  incomingBytes: number,
+  budget: number,
+): string[] {
+  let total = candidates.reduce((sum, c) => sum + c.byteLength, 0);
+  if (total + incomingBytes <= budget) return [];
+  const order = [...candidates].sort((a, b) => {
+    if (a.referenced !== b.referenced) return a.referenced ? 1 : -1;
+    return a.lastAccessedAt.localeCompare(b.lastAccessedAt);
+  });
+  const evict: string[] = [];
+  for (const c of order) {
+    if (total + incomingBytes <= budget) break;
+    evict.push(c.id);
+    total -= c.byteLength;
+  }
+  return evict;
 }
 
 // First html part — the back-compat view used by the legacy snippet routes.

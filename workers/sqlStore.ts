@@ -1,12 +1,17 @@
 import {
+  type Asset,
+  collectAssetIds,
   type Comment,
   type CommentQuery,
+  type CreateAssetInput,
   type CreateCommentInput,
   type CreateSessionInput,
   type CreateSurfaceInput,
   HISTORY_LIMIT,
   htmlPart,
+  MAX_BOARD_ASSET_BYTES,
   newId,
+  selectEvictions,
   type Session,
   type Store,
   type Surface,
@@ -37,6 +42,11 @@ export class SqlStore implements Store {
         seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL,
         sessionId TEXT NOT NULL, surfaceId TEXT, surfaceTitle TEXT,
         author TEXT NOT NULL, text TEXT NOT NULL, createdAt TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS assets (
+        id TEXT PRIMARY KEY, sessionId TEXT NOT NULL, kind TEXT NOT NULL,
+        contentType TEXT NOT NULL, byteLength INTEGER NOT NULL, filename TEXT,
+        data BLOB NOT NULL, createdAt TEXT NOT NULL, lastAccessedAt TEXT NOT NULL
       );
     `);
     // Boards created before agentSeq existed need the column added; SQLite
@@ -120,6 +130,23 @@ export class SqlStore implements Store {
     };
   }
 
+  // The BLOB comes back as an ArrayBuffer (real DO) or a Uint8Array (the
+  // node:sqlite test shim); normalize to a fresh Uint8Array either way.
+  private rowToAsset(r: Record<string, SqlStorageValue>): Asset {
+    const raw = r.data as ArrayBuffer | Uint8Array;
+    return {
+      id: r.id as string,
+      sessionId: r.sessionId as string,
+      kind: r.kind as Asset["kind"],
+      contentType: r.contentType as string,
+      byteLength: r.byteLength as number,
+      filename: (r.filename as string) ?? null,
+      data: raw instanceof Uint8Array ? new Uint8Array(raw) : new Uint8Array(raw),
+      createdAt: r.createdAt as string,
+      lastAccessedAt: r.lastAccessedAt as string,
+    };
+  }
+
   private rowToComment(r: Record<string, SqlStorageValue>): Comment {
     return {
       id: r.id as string,
@@ -182,6 +209,7 @@ export class SqlStore implements Store {
     if (!(await this.getSession(id))) return false;
     this.sql.exec("DELETE FROM comments WHERE sessionId = ?", id);
     this.sql.exec("DELETE FROM surfaces WHERE sessionId = ?", id);
+    this.sql.exec("DELETE FROM assets WHERE sessionId = ?", id);
     this.sql.exec("DELETE FROM sessions WHERE id = ?", id);
     return true;
   }
@@ -334,5 +362,93 @@ export class SqlStore implements Store {
       text: input.text,
       createdAt,
     };
+  }
+
+  // --- assets ---
+
+  private referencedAssetIds(): Set<string> {
+    const out = new Set<string>();
+    for (const r of this.sql.exec("SELECT parts, history FROM surfaces").toArray()) {
+      collectAssetIds(JSON.parse(r.parts as string) as SurfacePart[], out);
+      for (const h of JSON.parse(r.history as string) as SurfaceVersion[]) {
+        collectAssetIds(h.parts, out);
+      }
+    }
+    return out;
+  }
+
+  async putAsset(input: CreateAssetInput) {
+    if (!(await this.getSession(input.sessionId))) return null;
+    const referenced = this.referencedAssetIds();
+    const candidates = this.sql
+      .exec("SELECT id, byteLength, lastAccessedAt FROM assets")
+      .toArray()
+      .map((r) => ({
+        id: r.id as string,
+        byteLength: r.byteLength as number,
+        lastAccessedAt: r.lastAccessedAt as string,
+        referenced: referenced.has(r.id as string),
+      }));
+    for (const id of selectEvictions(candidates, input.data.byteLength, MAX_BOARD_ASSET_BYTES)) {
+      this.sql.exec("DELETE FROM assets WHERE id = ?", id);
+    }
+    const now = new Date().toISOString();
+    const asset: Asset = {
+      id: newId(),
+      sessionId: input.sessionId,
+      kind: input.kind,
+      contentType: input.contentType,
+      byteLength: input.data.byteLength,
+      filename: input.filename ?? null,
+      data: input.data,
+      createdAt: now,
+      lastAccessedAt: now,
+    };
+    // Bind the blob as an ArrayBuffer (the SqlStorageValue type); the shim
+    // adapts it to a Uint8Array for node:sqlite.
+    const buf = asset.data.buffer.slice(
+      asset.data.byteOffset,
+      asset.data.byteOffset + asset.data.byteLength,
+    ) as ArrayBuffer;
+    this.sql.exec(
+      "INSERT INTO assets (id, sessionId, kind, contentType, byteLength, filename, data, createdAt, lastAccessedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      asset.id,
+      asset.sessionId,
+      asset.kind,
+      asset.contentType,
+      asset.byteLength,
+      asset.filename,
+      buf,
+      asset.createdAt,
+      asset.lastAccessedAt,
+    );
+    this.touch(input.sessionId);
+    return asset;
+  }
+
+  async getAsset(id: string) {
+    const rows = this.sql.exec("SELECT * FROM assets WHERE id = ?", id).toArray();
+    return rows.length > 0 ? this.rowToAsset(rows[0]) : null;
+  }
+
+  async touchAsset(id: string) {
+    this.sql.exec(
+      "UPDATE assets SET lastAccessedAt = ? WHERE id = ?",
+      new Date().toISOString(),
+      id,
+    );
+  }
+
+  async listAssets(sessionId: string) {
+    return this.sql
+      .exec("SELECT * FROM assets WHERE sessionId = ?", sessionId)
+      .toArray()
+      .map((r) => this.rowToAsset(r));
+  }
+
+  async removeAsset(id: string) {
+    if (!(await this.getAsset(id))) return false;
+    this.sql.exec("DELETE FROM assets WHERE id = ?", id);
+    return true;
   }
 }

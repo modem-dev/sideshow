@@ -1,6 +1,15 @@
 import type { Hono } from "hono";
 import type { CommentWait, Feedback } from "./app.ts";
-import { type Comment, htmlPart, type Store, type Surface, type SurfacePart } from "./types.ts";
+import {
+  type Asset,
+  type AssetKind,
+  type Comment,
+  htmlPart,
+  type Store,
+  type Surface,
+  type SurfacePart,
+  type TraceStep,
+} from "./types.ts";
 
 // Stateless MCP over streamable HTTP: every request is self-contained, which
 // is what a serverless deployment needs. Session continuity is explicit —
@@ -26,7 +35,22 @@ export interface McpDeps {
     author: string;
   }): Promise<{ comment: Comment; userFeedback?: Feedback[] } | { error: string; status: number }>;
   waitForComments(q: CommentWait): Promise<{ comments: Comment[]; lastSeq: number }>;
+  uploadAsset(input: {
+    data: Uint8Array;
+    contentType: string;
+    filename?: string;
+    kind?: AssetKind;
+    session?: string;
+  }): Promise<{ asset: Omit<Asset, "data"> } | { error: string; status: number }>;
   guide: string;
+}
+
+// base64 -> bytes, runtime-agnostic (atob is a global in Node and Workers).
+function decodeBase64(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
 }
 
 // Coerce loosely-typed tool args into validated SurfacePart[]. Unknown kinds
@@ -60,6 +84,34 @@ export function coerceParts(raw: unknown): SurfacePart[] {
         ...(files && { files }),
         ...(layout && { layout }),
       });
+    } else if (kind === "image" && typeof (p as any).assetId === "string") {
+      parts.push({
+        kind: "image",
+        assetId: (p as any).assetId,
+        ...(typeof (p as any).alt === "string" && { alt: (p as any).alt }),
+        ...(typeof (p as any).caption === "string" && { caption: (p as any).caption }),
+      });
+    } else if (kind === "trace") {
+      const steps = Array.isArray((p as any).steps)
+        ? (p as any).steps
+            .filter((s: any) => s && typeof s.label === "string")
+            .map(
+              (s: any): TraceStep => ({
+                label: String(s.label),
+                ...(typeof s.kind === "string" && { kind: s.kind }),
+                ...(typeof s.detail === "string" && { detail: s.detail }),
+                ...(typeof s.ts === "string" && { ts: s.ts }),
+              }),
+            )
+        : undefined;
+      const assetId = typeof (p as any).assetId === "string" ? (p as any).assetId : undefined;
+      if ((!steps || steps.length === 0) && !assetId) continue;
+      parts.push({
+        kind: "trace",
+        ...(steps && steps.length > 0 && { steps }),
+        ...(assetId && { assetId }),
+        ...(typeof (p as any).title === "string" && { title: (p as any).title }),
+      });
     }
   }
   return parts;
@@ -81,15 +133,17 @@ const INSTRUCTIONS =
 const PARTS_SCHEMA = {
   type: "array",
   description:
-    "Ordered parts. An html part is {kind:'html', html:'<body fragment>'}. A diff part is normally " +
-    "{kind:'diff', patch:'<unified/git diff>'} (may span multiple files) — send the patch, it is the " +
-    "compact, preferred form. {kind:'diff', files:[{filename, before, after}]} also works but sends whole " +
-    "file contents, so reach for it only when you lack a patch. Optional layout 'unified'|'split'. " +
-    "Combine, e.g. [{kind:'html',html:'<svg.../>'},{kind:'diff',patch:'...'}].",
+    "Ordered parts. html: {kind:'html', html:'<body fragment>'}. diff: {kind:'diff', " +
+    "patch:'<unified/git diff>'} (preferred, compact) or {kind:'diff', files:[{filename, before, " +
+    "after}]} (heavier). image: {kind:'image', assetId:'<from upload_asset>', alt?, caption?} — " +
+    "renders an uploaded image; you can also embed the asset URL in an html part instead. trace: " +
+    "{kind:'trace', steps:[{label, kind?, detail?, ts?}]} renders a step timeline, and/or " +
+    "{kind:'trace', assetId} for an uploaded trace file (downloadable). Optional diff layout " +
+    "'unified'|'split'. Combine freely, e.g. [{kind:'html',...},{kind:'image',assetId},{kind:'trace',steps}].",
   items: {
     type: "object",
     properties: {
-      kind: { type: "string", enum: ["html", "diff"] },
+      kind: { type: "string", enum: ["html", "diff", "image", "trace"] },
       html: { type: "string", description: "html part: body fragment (no doctype/html/head/body)" },
       patch: {
         type: "string",
@@ -111,6 +165,27 @@ const PARTS_SCHEMA = {
         },
       },
       layout: { type: "string", enum: ["unified", "split"] },
+      assetId: {
+        type: "string",
+        description: "image/trace part: id returned by upload_asset",
+      },
+      alt: { type: "string", description: "image part: alt text" },
+      caption: { type: "string", description: "image part: caption shown under the image" },
+      title: { type: "string", description: "trace part: heading shown above the timeline" },
+      steps: {
+        type: "array",
+        description: "trace part: ordered steps rendered as a timeline",
+        items: {
+          type: "object",
+          properties: {
+            label: { type: "string", description: "one-line summary of the step" },
+            kind: { type: "string", description: "free tag, e.g. tool|thought|shell" },
+            detail: { type: "string", description: "expandable body (output, args, reasoning)" },
+            ts: { type: "string", description: "ISO timestamp" },
+          },
+          required: ["label"],
+        },
+      },
     },
     required: ["kind"],
   },
@@ -240,6 +315,30 @@ const TOOLS = [
     },
   },
   {
+    name: "upload_asset",
+    description:
+      "Upload a binary asset (image, trace file, any file) and get back its id and URL. base64-encode the " +
+      "bytes in `data` (MCP carries no binary). Then reference it: put {kind:'image', assetId} or " +
+      "{kind:'trace', assetId} in a surface's parts, or embed the returned url in an html part " +
+      '(<img src="...">). Pass the same session id you publish with so the asset is grouped and cleaned up ' +
+      "with it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        data: { type: "string", description: "base64-encoded file bytes" },
+        contentType: { type: "string", description: "MIME type, e.g. image/png, application/json" },
+        filename: { type: "string", description: "Original filename (used for downloads)" },
+        kind: {
+          type: "string",
+          enum: ["image", "trace", "file"],
+          description: "Asset kind (inferred from contentType when omitted)",
+        },
+        session: { type: "string", description: "Session id to attach the asset to" },
+      },
+      required: ["data", "contentType"],
+    },
+  },
+  {
     name: "get_design_guide",
     description:
       "Fetch the design contract: surface parts, html fragment rules, theme CSS variables, CDN allowlist, " +
@@ -350,6 +449,34 @@ export function registerMcp(app: Hono, deps: McpDeps) {
             version: s.version,
             updatedAt: s.updatedAt,
           })),
+          null,
+          2,
+        );
+      }
+      case "upload_asset": {
+        if (typeof args.data !== "string" || args.data.length === 0) {
+          throw new Error("upload_asset needs base64 `data`");
+        }
+        const result = await deps.uploadAsset({
+          data: decodeBase64(args.data),
+          contentType: typeof args.contentType === "string" ? args.contentType : "",
+          filename: typeof args.filename === "string" ? args.filename : undefined,
+          kind:
+            args.kind === "image" || args.kind === "trace" || args.kind === "file"
+              ? args.kind
+              : undefined,
+          session: typeof args.session === "string" ? args.session : undefined,
+        });
+        if ("error" in result) throw new Error(result.error);
+        return JSON.stringify(
+          {
+            id: result.asset.id,
+            sessionId: result.asset.sessionId,
+            url: `${origin}/a/${result.asset.id}`,
+            contentType: result.asset.contentType,
+            byteLength: result.asset.byteLength,
+            kind: result.asset.kind,
+          },
           null,
           2,
         );

@@ -5,8 +5,11 @@ import { EventBus } from "./events.ts";
 import { registerMcp } from "./mcpHttp.ts";
 import { renderHtmlPage } from "./surfacePage.ts";
 import {
+  type Asset,
+  type AssetKind,
   type Comment,
   htmlPart,
+  MAX_ASSET_BYTES,
   partsByteLength,
   type Store,
   type Surface,
@@ -15,6 +18,52 @@ import {
 
 const MAX_SURFACE_BYTES = 2 * 1024 * 1024;
 const MAX_WAIT_SECONDS = 300;
+
+// Asset serving policy: only raster images are served inline; everything else
+// (incl. svg, json, text, the octet-stream catch-all) is an attachment, so a
+// top-level open of /a/:id can never execute an uploaded document as a live
+// same-origin script. <img>/fetch ignore Content-Disposition, so embedding and
+// inline trace rendering keep working regardless.
+const INLINE_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+]);
+const ATTACH_SAFE_TYPES = new Set([
+  "image/svg+xml",
+  "application/json",
+  "application/x-ndjson",
+  "text/plain",
+  "text/csv",
+]);
+
+function assetServeHeaders(asset: Asset): { contentType: string; disposition: string } {
+  if (INLINE_IMAGE_TYPES.has(asset.contentType)) {
+    return { contentType: asset.contentType, disposition: "inline" };
+  }
+  const contentType = ATTACH_SAFE_TYPES.has(asset.contentType)
+    ? asset.contentType
+    : "application/octet-stream";
+  const name = (asset.filename || asset.id).replace(/[^\w.-]/g, "_");
+  return { contentType, disposition: `attachment; filename="${name}"` };
+}
+
+// Pick an AssetKind when the caller didn't specify one.
+function inferAssetKind(contentType: string): AssetKind {
+  return contentType.startsWith("image/") ? "image" : "file";
+}
+
+const isAssetKind = (v: unknown): v is AssetKind => v === "image" || v === "trace" || v === "file";
+
+// base64 -> bytes, runtime-agnostic (atob is a global in Node and Workers).
+function decodeBase64(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
 // Docs and onboarding snippets are written against the local default; serve
 // them with the real origin so a deployed instance shows copy-pasteable URLs.
 const LOCAL_ORIGIN = "http://localhost:4242";
@@ -204,6 +253,42 @@ export function createApp({
     if (!surface) return { error: "session not found", status: 404 };
     bus.broadcast({ type: "surface-created", id: surface.id, sessionId, version: 1 });
     return { surface, userFeedback: await collectFeedback(sessionId) };
+  }
+
+  // Store an uploaded blob. Like publishSurface, an explicit session is
+  // validated and a missing one is auto-created so an upload can precede the
+  // first publish. The asset's data is dropped from the result (it's bytes).
+  async function uploadAsset(input: {
+    data: Uint8Array;
+    contentType: string;
+    filename?: string;
+    kind?: AssetKind;
+    session?: string;
+    agent?: string;
+  }): Promise<{ asset: Omit<Asset, "data"> } | { error: string; status: 400 | 404 | 413 }> {
+    if (input.data.byteLength === 0) return { error: "empty upload", status: 400 };
+    if (input.data.byteLength > MAX_ASSET_BYTES) {
+      return { error: `asset exceeds ${MAX_ASSET_BYTES} bytes`, status: 413 };
+    }
+    let sessionId = input.session;
+    if (sessionId && !(await store.getSession(sessionId))) {
+      return { error: `session "${sessionId}" not found`, status: 404 };
+    }
+    if (!sessionId) {
+      const session = await store.createSession({ agent: input.agent ?? "agent" });
+      bus.broadcast({ type: "session-created", id: session.id });
+      sessionId = session.id;
+    }
+    const asset = await store.putAsset({
+      sessionId,
+      kind: input.kind ?? inferAssetKind(input.contentType),
+      contentType: input.contentType || "application/octet-stream",
+      filename: input.filename,
+      data: input.data,
+    });
+    if (!asset) return { error: "session not found", status: 404 };
+    const { data: _data, ...meta } = asset;
+    return { asset: meta };
   }
 
   async function reviseSurface(
@@ -540,7 +625,67 @@ export function createApp({
     const part = parts[idx];
     if (!part || part.kind !== "html") return c.text("No html part at that index", 404);
     c.header("X-Content-Type-Options", "nosniff");
-    return c.html(renderHtmlPage({ title, html: part.html }));
+    return c.html(renderHtmlPage({ title, html: part.html, origin: new URL(c.req.url).origin }));
+  });
+
+  // --- assets (agent-uploaded images, traces, files) ---
+
+  // Accepts raw bytes (the asset's own Content-Type, metadata via query) or a
+  // JSON envelope { data: base64, contentType, ... } — so curl --data-binary
+  // and a JSON client both work, and MCP can ride base64. The body is read once
+  // and only treated as an envelope when it is application/json carrying a
+  // base64 `data` string; a raw JSON asset (no top-level `data`) stays raw.
+  app.post("/api/assets", async (c) => {
+    const mime = (c.req.header("content-type") ?? "").split(";")[0].trim().toLowerCase();
+    const buf = new Uint8Array(await c.req.arrayBuffer());
+    let envelope: any = null;
+    if (mime === "application/json") {
+      try {
+        const j = JSON.parse(new TextDecoder().decode(buf));
+        if (j && typeof j.data === "string") envelope = j;
+      } catch {
+        // not an envelope — fall through to the raw path
+      }
+    }
+    const kindQ = c.req.query("kind");
+    const body = envelope
+      ? {
+          data: decodeBase64(envelope.data),
+          contentType:
+            typeof envelope.contentType === "string"
+              ? envelope.contentType
+              : "application/octet-stream",
+          filename: typeof envelope.filename === "string" ? envelope.filename : undefined,
+          kind: isAssetKind(envelope.kind) ? envelope.kind : undefined,
+          session: typeof envelope.session === "string" ? envelope.session : undefined,
+          agent: typeof envelope.agent === "string" ? envelope.agent : undefined,
+        }
+      : {
+          data: buf,
+          contentType: mime || "application/octet-stream",
+          filename: c.req.query("filename"),
+          kind: isAssetKind(kindQ) ? kindQ : undefined,
+          session: c.req.query("session"),
+          agent: c.req.query("agent"),
+        };
+    const result = await uploadAsset(body);
+    if ("error" in result) return c.json({ error: result.error }, result.status);
+    const origin = new URL(c.req.url).origin;
+    return c.json({ ...result.asset, url: `${origin}/a/${result.asset.id}` }, 201);
+  });
+
+  app.get("/a/:id", async (c) => {
+    const asset = await store.getAsset(c.req.param("id"));
+    if (!asset) return c.text("Asset not found", 404);
+    await store.touchAsset(asset.id);
+    const { contentType, disposition } = assetServeHeaders(asset);
+    c.header("Content-Type", contentType);
+    c.header("Content-Disposition", disposition);
+    c.header("X-Content-Type-Options", "nosniff");
+    // Short revalidating cache (not immutable) so touch-on-serve keeps firing
+    // and the LRU clock reflects real views; asset ids are unique anyway.
+    c.header("Cache-Control", "private, max-age=60");
+    return c.body(asset.data as unknown as ArrayBuffer);
   });
 
   // --- live feed ---
@@ -586,6 +731,7 @@ export function createApp({
     reviseSurface,
     createComment,
     waitForComments,
+    uploadAsset,
     guide: guideMarkdown,
   });
 

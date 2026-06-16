@@ -28,11 +28,13 @@ consciously, not as a side effect):
 ## Map
 
 - `server/app.ts` — runtime-agnostic Hono app: all routes, SSE `/api/events`,
-  long-poll `/api/comments`, renderer `/s/:id`, and the shared flow functions
-  both REST and MCP call.
+  long-poll `/api/comments`, renderer `/s/:id`, asset upload/serve
+  (`/api/assets`, `/a/:id`), and the shared flow functions both REST and MCP call.
 - `server/types.ts` — data model + `Store` interface; no runtime imports. A
-  surface is an ordered list of parts (`html` | `diff`); a snippet is sugar for
-  a single html part. `firstHtml`/`htmlPart` bridge the legacy snippet shape.
+  surface is an ordered list of parts (`html` | `diff` | `image` | `trace`); a
+  snippet is sugar for a single html part. `firstHtml`/`htmlPart` bridge the
+  legacy snippet shape. Assets (uploaded blobs) are a separate entity, referenced
+  by `image`/`trace` parts; `selectEvictions` is the reference-aware LRU policy.
 - `server/storage.ts` — `JsonFileStore` (local Node). `workers/sqlStore.ts` —
   `SqlStore` (Durable Object SQLite). Both must pass `test/storeContract.ts`,
   and both migrate legacy `snippets`/`snippetId` data to surfaces on load.

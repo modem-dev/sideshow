@@ -15,6 +15,13 @@ All notable user-visible changes to this project are documented in this file.
   `POST /api/surfaces`, and `sideshow diff <patch>` / `sideshow publish --diff`.
   Diff parts are rendered from patch data by the viewer, so agents send a patch,
   never markup, and the sandbox is untouched.
+- Uploads: agents can push images, traces, and files across all three tiers —
+  `POST /api/assets` (raw bytes or base64 JSON), the `upload_asset` MCP tool, and
+  `sideshow upload` / `image` / `trace` / `publish --image`. Reference an upload
+  with an `image` part (rendered natively) or a `trace` part (a step timeline
+  beside the surface, plus a download link), or embed its URL inside an html part
+  (`<img src="/a/<id>">` — the surface CSP now allows the server's own origin).
+  Assets are session-scoped and capped at 5 MB each.
 
 ### Changed
 
