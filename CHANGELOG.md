@@ -18,6 +18,10 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Changed
 
+- `sideshow-term watch` now starts a local server in the background when needed,
+  and bare `sideshow-term` opens the watcher. Terminal servers default to port
+  4243, with `--port` for choosing another local port. `sideshow-term serve`
+  remains for explicit server-only use.
 - Snippets are now "surfaces" throughout the API: `/api/surfaces`, `surface-*`
   SSE events, and comments keyed by `surfaceId`. The old snippet endpoints and
   the `publish_snippet`/`update_snippet` tools remain as back-compat aliases, so

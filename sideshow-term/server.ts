@@ -50,7 +50,7 @@ const app = createApp({
   fetchLatestRelease: async () => null,
 });
 
-const port = Number(process.env.PORT ?? 4242);
+const port = Number(process.env.PORT ?? 4243);
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`sideshow-term listening on http://localhost:${info.port}`);
   console.log(`open the live viewer in a terminal:  sideshow-term watch`);

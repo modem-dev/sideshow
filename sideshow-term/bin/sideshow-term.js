@@ -5,21 +5,34 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-const BASE = (process.env.SIDESHOW_URL ?? "http://localhost:4242").replace(/\/$/, "");
+const BASE = (process.env.SIDESHOW_URL ?? "http://localhost:4243").replace(/\/$/, "");
 const TOKEN = process.env.SIDESHOW_TOKEN;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const HELP = `sideshow-term — a live terminal visual surface for coding agents
 
 usage:
+  sideshow-term [--port N]                open the live TUI viewer, starting a local server if needed
+  sideshow-term watch [opts]              open the live TUI viewer (needs Bun)
+      --port N              local server port when auto-starting (default 4243)
+      --url <url>           attach to an existing server instead of localhost
+      --no-serve            fail instead of auto-starting a local server
+      --keep-server         leave an auto-started server running after the viewer exits
   sideshow-term serve [--port N]          start the server (REST + SSE + MCP)
-  sideshow-term watch                     open the live TUI viewer (needs Bun)
   sideshow-term render <file|-> [--width N]  preview STML to plain text (needs Bun)
   sideshow-term publish <file|-> [opts]   publish an STML snippet
       --title <t>            snippet title
@@ -39,7 +52,7 @@ usage:
   sideshow-term setup                     print the agent integration block
 
 environment:
-  SIDESHOW_URL    server base URL (default http://localhost:4242)
+  SIDESHOW_URL    server base URL (default http://localhost:4243)
   SIDESHOW_TOKEN  bearer token for a deployed instance
   SIDESHOW_AGENT  agent name used when creating sessions
 `;
@@ -139,20 +152,109 @@ function entrypoint(devParts, distParts) {
 }
 
 // Run a Bun script (the opentui pieces). Bun is required only for these.
-function runBun(devParts, distParts, args, { inherit = true } = {}) {
+function spawnBun(devParts, distParts, args, { inherit = true, env = process.env } = {}) {
   const child = spawn("bun", [entrypoint(devParts, distParts), ...args], {
     stdio: inherit ? "inherit" : ["ignore", "inherit", "inherit"],
-    env: process.env,
+    env,
   });
   child.on("error", (err) => {
     if (err.code === "ENOENT")
       fail("this command needs Bun — install it from https://bun.sh, then re-run");
     fail(String(err.message ?? err));
   });
+  return child;
+}
+
+function runBun(devParts, distParts, args, options = {}) {
+  const child = spawnBun(devParts, distParts, args, options);
   child.on("exit", (code) => process.exit(code ?? 0));
 }
 
-const rest = process.argv.slice(3);
+async function probeServer(base) {
+  try {
+    const res = await fetch(`${base}/api/sessions`, {
+      headers: TOKEN ? { authorization: `Bearer ${TOKEN}` } : {},
+      signal: AbortSignal.timeout(1000),
+    });
+    return { reachable: true, ok: res.ok, status: res.status, statusText: res.statusText };
+  } catch {
+    return { reachable: false, ok: false };
+  }
+}
+
+async function waitForServer(base, child, logFile) {
+  let exited = false;
+  child.once("exit", () => {
+    exited = true;
+  });
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (exited) fail(`server exited before becoming ready — see ${logFile}`);
+    const probe = await probeServer(base);
+    if (probe.ok) return;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  fail(`server did not become ready at ${base} — see ${logFile}`);
+}
+
+function serverLogFile(port) {
+  const dir = join(homedir(), ".sideshow-term", "logs");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return join(dir, `server-${port}.log`);
+}
+
+function startOwnedServer(port) {
+  const logFile = serverLogFile(port);
+  const log = openSync(logFile, "a");
+  writeSync(log, `\n--- ${new Date().toISOString()} sideshow-term serve --port ${port} ---\n`);
+  const child = spawn(process.execPath, [entrypoint(["server.ts"], ["dist", "server.js"])], {
+    stdio: ["ignore", log, log],
+    env: { ...process.env, PORT: port },
+  });
+  child.on("error", (err) => fail(String(err.message ?? err)));
+  child.on("exit", () => closeSync(log));
+  return { child, logFile };
+}
+
+function stopOwnedServer(child) {
+  if (!child || child.killed || child.exitCode !== null) return;
+  child.kill("SIGTERM");
+  setTimeout(() => {
+    if (!child.killed && child.exitCode === null) child.kill("SIGKILL");
+  }, 1500).unref();
+}
+
+function watchBun(base, ownedServer, { keepServer = false } = {}) {
+  return new Promise((resolve) => {
+    let done = false;
+    const cleanup = (code) => {
+      if (done) return;
+      done = true;
+      if (ownedServer && !keepServer) stopOwnedServer(ownedServer.child);
+      resolve(code ?? 0);
+    };
+    const child = spawn("bun", [entrypoint(["src", "watch.ts"], ["dist", "src", "watch.js"])], {
+      stdio: "inherit",
+      env: { ...process.env, SIDESHOW_URL: base },
+    });
+    child.on("error", (err) => {
+      if (ownedServer && !keepServer) stopOwnedServer(ownedServer.child);
+      if (err.code === "ENOENT")
+        fail("this command needs Bun — install it from https://bun.sh, then re-run");
+      fail(String(err.message ?? err));
+    });
+    child.on("exit", cleanup);
+    for (const signal of ["SIGINT", "SIGTERM"]) {
+      process.once(signal, () => {
+        child.kill(signal);
+        cleanup(signal === "SIGINT" ? 130 : 143);
+      });
+    }
+  });
+}
+
+const firstArg = process.argv[2];
+const rest = firstArg && !firstArg.startsWith("-") ? process.argv.slice(3) : process.argv.slice(2);
 function parse(config = {}) {
   let parsed;
   try {
@@ -175,7 +277,7 @@ function parse(config = {}) {
 const commands = {
   async serve() {
     const { values: flags } = parse({ options: { port: { type: "string" } } });
-    const port = flags.port ?? process.env.PORT ?? "4242";
+    const port = flags.port ?? process.env.PORT ?? "4243";
     const child = spawn(process.execPath, [entrypoint(["server.ts"], ["dist", "server.js"])], {
       stdio: "inherit",
       env: { ...process.env, PORT: port },
@@ -183,8 +285,33 @@ const commands = {
     child.on("exit", (code) => process.exit(code ?? 0));
   },
 
-  watch() {
-    runBun(["src", "watch.ts"], ["dist", "src", "watch.js"], []);
+  async watch() {
+    const { values: flags } = parse({
+      options: {
+        port: { type: "string" },
+        url: { type: "string" },
+        "no-serve": { type: "boolean" },
+        "keep-server": { type: "boolean" },
+      },
+    });
+    if (flags.url && flags.port) fail("pass either --url or --port, not both");
+    const explicitUrl = flags.url ?? process.env.SIDESHOW_URL;
+    const port = flags.port ?? process.env.PORT ?? "4243";
+    const base = (explicitUrl ?? `http://localhost:${port}`).replace(/\/$/, "");
+    const probe = await probeServer(base);
+    let ownedServer = null;
+    if (!probe.ok) {
+      if (probe.reachable) {
+        fail(`server at ${base} returned ${probe.status} ${probe.statusText ?? ""}`.trim());
+      }
+      if (explicitUrl || flags["no-serve"]) {
+        fail(`server not reachable at ${base} — start it with: sideshow-term serve`);
+      }
+      ownedServer = startOwnedServer(port);
+      await waitForServer(base, ownedServer.child, ownedServer.logFile);
+    }
+    const code = await watchBun(base, ownedServer, { keepServer: flags["keep-server"] });
+    process.exit(code);
   },
 
   render() {
@@ -315,8 +442,10 @@ async function fetchTextWithFallback(path, localFile) {
   return readFileSync(localFile, "utf8");
 }
 
-const cmd = process.argv[2];
-if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
+const cmd = firstArg && !firstArg.startsWith("-") ? firstArg : undefined;
+if (!cmd) {
+  await commands.watch();
+} else if (cmd === "help" || cmd === "--help" || cmd === "-h") {
   console.log(HELP);
 } else if (commands[cmd]) {
   await commands[cmd]();

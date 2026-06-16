@@ -18,7 +18,7 @@ Fetch the markup contract once per session:
 sideshow-term guide        # or: curl -s $SIDESHOW_URL/guide
 ```
 
-If `SIDESHOW_URL` is unset, the surface is at `http://localhost:4242`. If the
+If `SIDESHOW_URL` is unset, the surface is at `http://localhost:4243`. If the
 server is not running, start it: `sideshow-term serve`. If the
 `sideshow-term` command is not on PATH but you are inside this repo, use
 `node sideshow-term/bin/sideshow-term.js ...`.

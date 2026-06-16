@@ -16,7 +16,7 @@ import {
 import { buildDocument } from "./render.ts";
 import { resolveColor } from "./theme.ts";
 
-const BASE = (process.env.SIDESHOW_URL ?? "http://localhost:4242").replace(/\/$/, "");
+const BASE = (process.env.SIDESHOW_URL ?? "http://localhost:4243").replace(/\/$/, "");
 const TOKEN = process.env.SIDESHOW_TOKEN;
 const authHeaders: Record<string, string> = TOKEN ? { authorization: `Bearer ${TOKEN}` } : {};
 

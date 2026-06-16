@@ -52,6 +52,6 @@ select`. Inline tags: `b i u color kbd badge br`. Colors: semantic tokens
 
 ## Environment
 
-- `SIDESHOW_URL` — server base URL (default `http://localhost:4242`).
+- `SIDESHOW_URL` — server base URL (default `http://localhost:4243`).
 - `SIDESHOW_TOKEN` — bearer token for a deployed instance (sent automatically
   by the CLI; for raw curl add `-H "Authorization: Bearer $SIDESHOW_TOKEN"`).

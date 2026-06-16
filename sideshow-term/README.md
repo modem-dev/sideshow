@@ -29,12 +29,9 @@ renderer — opentui's native core uses Bun's FFI).
 ```sh
 cd sideshow-term
 npm install                      # installs runtime dependencies
-node bin/sideshow-term.js serve  # server on http://localhost:4242
+node bin/sideshow-term.js watch  # starts a local server if needed, then opens the viewer
 
-# in another terminal — the live viewer:
-node bin/sideshow-term.js watch
-
-# seed a few example snippets to look around:
+# in another terminal, seed a few example snippets to look around:
 node bin/sideshow-term.js demo
 ```
 
@@ -42,7 +39,7 @@ Then point an agent at the surface (teaches any agent with a shell to publish
 STML):
 
 ```sh
-curl -s http://localhost:4242/setup >> AGENTS.md
+curl -s http://localhost:4243/setup >> AGENTS.md
 ```
 
 ## How it relates to sideshow
@@ -63,8 +60,9 @@ the CLI shells out to Bun for `watch` and `render`.
 ## CLI
 
 ```
-sideshow-term serve [--port N]              start the server (REST + SSE + MCP)
-sideshow-term watch                         open the live TUI viewer (Bun)
+sideshow-term [--port N]                    open the live TUI viewer, starting a local server if needed
+sideshow-term watch [--port N] [--no-serve] open the live TUI viewer (Bun)
+sideshow-term serve [--port N]              start only the server (REST + SSE + MCP)
 sideshow-term render <file|-> [--width N]   preview STML to plain text (Bun)
 sideshow-term publish <file|-> [--title …]  publish an STML snippet
 sideshow-term update <id> <file|->          revise a snippet (new version)
