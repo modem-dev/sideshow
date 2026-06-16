@@ -66,3 +66,33 @@ export async function update(
   });
   if (!res.ok) throw new Error(`update failed: ${res.status}`);
 }
+
+// A 1x1 transparent PNG, base64 — small enough to inline in a test.
+export const TINY_PNG_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+export async function upload(
+  serverUrl: string,
+  body: { data: string; contentType: string; filename?: string; kind?: string; session?: string },
+): Promise<{ id: string; sessionId: string; url: string; kind: string }> {
+  const res = await fetch(`${serverUrl}/api/assets`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+  return res.json() as Promise<{ id: string; sessionId: string; url: string; kind: string }>;
+}
+
+export async function publishParts(
+  serverUrl: string,
+  body: { title?: string; parts: unknown[]; agent?: string; session?: string },
+): Promise<{ id: string; sessionId: string; version: number }> {
+  const res = await fetch(`${serverUrl}/api/surfaces`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`publishParts failed: ${res.status}`);
+  return res.json() as Promise<{ id: string; sessionId: string; version: number }>;
+}
