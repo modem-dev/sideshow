@@ -61,7 +61,7 @@ the CLI shells out to Bun for `watch` and `render`.
 
 ```
 sideshow-term [--port N]                    open the live TUI viewer, starting a local server if needed
-sideshow-term watch [--port N] [--no-serve] open the live TUI viewer (Bun)
+sideshow-term watch [--port N] [--no-serve] open the live TUI viewer (Bun; keyboard + mouse)
 sideshow-term serve [--port N]              start only the server (REST + SSE + MCP)
 sideshow-term render <file|-> [--width N]   preview STML to plain text (Bun)
 sideshow-term publish <file|-> [--title …]  publish an STML snippet

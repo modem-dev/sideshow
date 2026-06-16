@@ -47,7 +47,7 @@ async function api<T>(path: string): Promise<T | null> {
 }
 
 async function main() {
-  const renderer = await createCliRenderer({ exitOnCtrlC: true, targetFps: 30 });
+  const renderer = await createCliRenderer({ exitOnCtrlC: true, targetFps: 30, useMouse: true });
 
   // --- static layout ---
   const rootCol = new BoxRenderable(renderer, {
@@ -93,7 +93,7 @@ async function main() {
   main.add(scroll);
 
   const footer = new TextRenderable(renderer, {
-    content: "↑/↓ select   [ / ] scroll   r refresh   q quit",
+    content: "↑/↓ select   click sidebar   [ / ] scroll   wheel scroll   r refresh   q quit",
     paddingLeft: 1,
     height: 1,
     fg: muted,
@@ -134,6 +134,12 @@ async function main() {
     for (const child of node.getChildren().slice()) node.remove(child.id);
   }
 
+  function selectSnippet(id: string) {
+    selectedId = id;
+    renderSidebar();
+    void showSelected();
+  }
+
   function renderSidebar() {
     clearChildren(sidebar);
     if (flat.length === 0) {
@@ -154,6 +160,14 @@ async function main() {
             content: label,
             fg: selected ? heading : undefined,
             bg: selected ? (resolveColor("subtle") ?? undefined) : undefined,
+            height: 1,
+            width: "100%",
+            selectable: false,
+            onMouseUp(event) {
+              if (event.button !== 0) return;
+              event.stopPropagation();
+              selectSnippet(snip.id);
+            },
           }),
         );
       }
@@ -195,9 +209,7 @@ async function main() {
     if (flat.length === 0) return;
     const cur = selectedIndex();
     const next = Math.max(0, Math.min(flat.length - 1, (cur < 0 ? 0 : cur) + delta));
-    selectedId = flat[next].id;
-    renderSidebar();
-    void showSelected();
+    selectSnippet(flat[next].id);
   }
 
   renderer.keyInput.on("keypress", (key) => {
