@@ -9,6 +9,7 @@ import {
   type Surface,
   type SurfacePart,
 } from "./types.ts";
+import { HTTP_MCP_TOOLS, MCP_INSTRUCTIONS, MCP_SERVER_INFO } from "./mcpSpec.ts";
 import { coerceSurfaceParts } from "./surfaceParts.ts";
 
 // Stateless MCP over streamable HTTP: every request is self-contained, which
@@ -57,236 +58,6 @@ function decodeBase64(b64: string): Uint8Array {
 // and empty parts are dropped rather than rejected, so a slightly-off call
 // still publishes what it can.
 export const coerceParts = coerceSurfaceParts;
-
-const INSTRUCTIONS =
-  "sideshow is a live visual surface the user watches in a browser. Publish surfaces to illustrate concepts, " +
-  "sketch UI ideas, visualize data, or show a code review while you work. A surface is an ordered list of " +
-  "parts: an `html` part is markup you write (a body fragment), a `diff` part is a patch the viewer renders " +
-  "as a syntax-highlighted, split/unified diff. Combine them — e.g. a diagram html part above a diff part — " +
-  "in one card. publish_surface is the general tool; publish_snippet is sugar for a single html part. Call " +
-  "get_design_guide once before your first publish — it defines the contract. Your first publish creates a " +
-  "session and returns its sessionId: pass it as `session` on later calls so your surfaces stay grouped. On " +
-  'that first publish, also pass sessionTitle to name the session after the task (e.g. "Auth refactor"). The ' +
-  "user can comment in their browser; call wait_for_feedback after publishing something you want a reaction " +
-  "to — it resumes where you left off. Any publish/update/reply result may also carry a userFeedback array — " +
-  "comments the user left since your last call, delivered once.";
-
-const PARTS_SCHEMA = {
-  type: "array",
-  description:
-    "Ordered parts. html: {kind:'html', html:'<body fragment>'}. diff: {kind:'diff', " +
-    "patch:'<unified/git diff>'} (preferred, compact) or {kind:'diff', files:[{filename, before, " +
-    "after}]} (heavier). image: {kind:'image', assetId:'<from upload_asset>', alt?, caption?} — " +
-    "renders an uploaded image; you can also embed the asset URL in an html part instead. trace: " +
-    "{kind:'trace', steps:[{label, kind?, detail?, ts?}]} renders a step timeline, and/or " +
-    "{kind:'trace', assetId} for an uploaded trace file (downloadable). Optional diff layout " +
-    "'unified'|'split'. Combine freely, e.g. [{kind:'html',...},{kind:'image',assetId},{kind:'trace',steps}].",
-  items: {
-    type: "object",
-    properties: {
-      kind: { type: "string", enum: ["html", "diff", "image", "trace"] },
-      html: { type: "string", description: "html part: body fragment (no doctype/html/head/body)" },
-      patch: {
-        type: "string",
-        description: "diff part: a unified/git diff string — the preferred, compact form",
-      },
-      files: {
-        type: "array",
-        description:
-          "diff part: explicit before/after pairs — heavier (full file contents); prefer patch",
-        items: {
-          type: "object",
-          properties: {
-            filename: { type: "string" },
-            before: { type: "string" },
-            after: { type: "string" },
-            language: { type: "string" },
-          },
-          required: ["filename", "before", "after"],
-        },
-      },
-      layout: { type: "string", enum: ["unified", "split"] },
-      assetId: {
-        type: "string",
-        description: "image/trace part: id returned by upload_asset",
-      },
-      alt: { type: "string", description: "image part: alt text" },
-      caption: { type: "string", description: "image part: caption shown under the image" },
-      title: { type: "string", description: "trace part: heading shown above the timeline" },
-      steps: {
-        type: "array",
-        description: "trace part: ordered steps rendered as a timeline",
-        items: {
-          type: "object",
-          properties: {
-            label: { type: "string", description: "one-line summary of the step" },
-            kind: { type: "string", description: "free tag, e.g. tool|thought|shell" },
-            detail: { type: "string", description: "expandable body (output, args, reasoning)" },
-            ts: { type: "string", description: "ISO timestamp" },
-          },
-          required: ["label"],
-        },
-      },
-    },
-    required: ["kind"],
-  },
-};
-
-const TOOLS = [
-  {
-    name: "publish_surface",
-    description:
-      "Publish a surface to the user's sideshow board. A surface is an ordered list of parts (html and/or " +
-      "diff). Returns the surface id, view URL, and sessionId — pass sessionId as `session` on later calls. " +
-      "On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those " +
-      "are new comments from the user. Call get_design_guide first if you have not this session.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        title: { type: "string", description: "Short human-readable title shown above the card" },
-        parts: PARTS_SCHEMA,
-        session: {
-          type: "string",
-          description: "Session id from a previous publish (omit on first)",
-        },
-        sessionTitle: {
-          type: "string",
-          description:
-            'Session name shown in the sidebar — name the task, e.g. "Auth refactor". Honored only when ' +
-            "this publish creates the session.",
-        },
-        agent: {
-          type: "string",
-          description: "Your agent name for the session label (first publish only)",
-        },
-      },
-      required: ["title", "parts"],
-    },
-  },
-  {
-    name: "update_surface",
-    description:
-      "Revise a surface in place (same card, new version). Prefer this over publishing a near-duplicate. " +
-      "Pass the full replacement parts array. If the result includes userFeedback, read it.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Surface id returned by publish_surface" },
-        parts: PARTS_SCHEMA,
-        title: { type: "string", description: "Replacement title" },
-      },
-      required: ["id"],
-    },
-  },
-  {
-    name: "publish_snippet",
-    description:
-      "Publish an HTML snippet — sugar for a surface with one html part. Send a body fragment only. Returns " +
-      "the id, view URL, and sessionId. Pass sessionTitle on first publish. Prefer publish_surface when you " +
-      "want a diff or multiple parts.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        title: { type: "string", description: "Short human-readable title" },
-        html: { type: "string", description: "HTML body fragment to render" },
-        session: {
-          type: "string",
-          description: "Session id from a previous publish (omit on first)",
-        },
-        sessionTitle: { type: "string", description: "Session name (first publish only)" },
-        agent: { type: "string", description: "Your agent name (first publish only)" },
-      },
-      required: ["title", "html"],
-    },
-  },
-  {
-    name: "update_snippet",
-    description: "Revise an html snippet in place — sugar for update_surface with one html part.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Surface id" },
-        html: { type: "string", description: "Replacement HTML body fragment" },
-        title: { type: "string", description: "Replacement title" },
-      },
-      required: ["id"],
-    },
-  },
-  {
-    name: "wait_for_feedback",
-    description:
-      "Block until the user comments on this session in their browser (or the timeout passes). Returns new " +
-      "comments since the agent last received feedback on any channel. Use timeoutSeconds 0 for a " +
-      "non-blocking check.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        session: { type: "string", description: "Session id to watch" },
-        afterSeq: {
-          type: "number",
-          description: "explicit cursor override (default: where the agent left off)",
-        },
-        timeoutSeconds: { type: "number", description: "How long to wait, 0-300 (default 60)" },
-      },
-      required: ["session"],
-    },
-  },
-  {
-    name: "reply_to_user",
-    description:
-      "Post a short reply under a surface's comment thread. Use to acknowledge feedback or explain a revision.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        surfaceId: { type: "string", description: "Surface whose thread to reply in" },
-        message: { type: "string", description: "Plain-text reply" },
-        author: { type: "string", description: 'Your agent name (default "agent")' },
-      },
-      required: ["surfaceId", "message"],
-    },
-  },
-  {
-    name: "list_surfaces",
-    description: "List surfaces — pass a session id to scope, or omit for all sessions.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        session: { type: "string", description: "Optional session id to scope the list" },
-      },
-    },
-  },
-  {
-    name: "upload_asset",
-    description:
-      "Upload a binary asset (image, trace file, any file) and get back its id and URL. base64-encode the " +
-      "bytes in `data` (MCP carries no binary). Then reference it: put {kind:'image', assetId} or " +
-      "{kind:'trace', assetId} in a surface's parts, or embed the returned url in an html part " +
-      '(<img src="...">). Pass the same session id you publish with so the asset is grouped and cleaned up ' +
-      "with it.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        data: { type: "string", description: "base64-encoded file bytes" },
-        contentType: { type: "string", description: "MIME type, e.g. image/png, application/json" },
-        filename: { type: "string", description: "Original filename (used for downloads)" },
-        kind: {
-          type: "string",
-          enum: ["image", "trace", "file"],
-          description: "Asset kind (inferred from contentType when omitted)",
-        },
-        session: { type: "string", description: "Session id to attach the asset to" },
-      },
-      required: ["data", "contentType"],
-    },
-  },
-  {
-    name: "get_design_guide",
-    description:
-      "Fetch the design contract: surface parts, html fragment rules, theme CSS variables, CDN allowlist, " +
-      "and the interactivity bridge. Call once per session before publishing.",
-    inputSchema: { type: "object", properties: {} },
-  },
-];
 
 export function registerMcp(app: Hono, deps: McpDeps) {
   const surfaceResult = (result: { surface: Surface; userFeedback?: Feedback[] }, origin: string) =>
@@ -451,13 +222,13 @@ export function registerMcp(app: Hono, deps: McpDeps) {
             ? msg.params.protocolVersion
             : "2025-03-26",
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "sideshow", version: "0.1.0" },
-        instructions: INSTRUCTIONS,
+        serverInfo: MCP_SERVER_INFO,
+        instructions: MCP_INSTRUCTIONS,
       });
     }
     if (msg.id === undefined) return c.body(null, 202); // notifications
     if (msg.method === "ping") return rpc(msg.id, {});
-    if (msg.method === "tools/list") return rpc(msg.id, { tools: TOOLS });
+    if (msg.method === "tools/list") return rpc(msg.id, { tools: HTTP_MCP_TOOLS });
     if (msg.method === "tools/call") {
       const origin = new URL(c.req.url).origin;
       try {

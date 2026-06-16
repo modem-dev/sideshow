@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+import {
+  MCP_INSTRUCTIONS,
+  MCP_SERVER_INFO,
+  MCP_TOOL_DESCRIPTIONS,
+  STDIO_MCP_INPUT_SCHEMAS,
+} from "../server/mcpSpec.ts";
 
 // Point at a deployed instance later by setting SIDESHOW_URL.
 const API = process.env.SIDESHOW_URL ?? "http://localhost:4242";
@@ -51,76 +56,13 @@ async function ensureSession(title?: string): Promise<string> {
   return sessionId;
 }
 
-const diffFileSchema = z.object({
-  filename: z.string(),
-  before: z.string(),
-  after: z.string(),
-  language: z.string().optional(),
-});
-
-const traceStepSchema = z.object({
-  label: z.string().describe("one-line summary of the step"),
-  kind: z.string().optional().describe("free tag, e.g. tool|thought|shell"),
-  detail: z.string().optional().describe("expandable body (output, args, reasoning)"),
-  ts: z.string().optional().describe("ISO timestamp"),
-});
-
-const partSchema = z
-  .object({
-    kind: z.enum(["html", "diff", "image", "trace"]),
-    html: z.string().optional().describe("html part: body fragment (no doctype/html/head/body)"),
-    patch: z
-      .string()
-      .optional()
-      .describe("diff part: a unified/git diff string (preferred, compact)"),
-    files: z
-      .array(diffFileSchema)
-      .optional()
-      .describe("diff part: before/after pairs — heavier (full contents); prefer patch"),
-    layout: z.enum(["unified", "split"]).optional(),
-    assetId: z.string().optional().describe("image/trace part: id from upload_asset"),
-    alt: z.string().optional().describe("image part: alt text"),
-    caption: z.string().optional().describe("image part: caption shown under the image"),
-    title: z.string().optional().describe("trace part: heading above the timeline"),
-    steps: z.array(traceStepSchema).optional().describe("trace part: ordered timeline steps"),
-  })
-  .describe(
-    "A surface part: html {kind:'html',html}; diff {kind:'diff',patch}; image {kind:'image',assetId} " +
-      "(from upload_asset); trace {kind:'trace',steps} and/or {kind:'trace',assetId}",
-  );
-
-const server = new McpServer(
-  { name: "sideshow", version: "0.1.0" },
-  {
-    instructions:
-      "sideshow is a live visual surface the user watches in a browser. Publish surfaces to illustrate " +
-      "concepts, sketch UI ideas, visualize data, or show a code review while you work. A surface is an " +
-      "ordered list of parts: an `html` part is markup you write, a `diff` part is a patch the viewer renders " +
-      "as a syntax-highlighted split/unified diff. Combine them in one card. publish_surface is the general " +
-      "tool; publish_snippet is sugar for a single html part. Call get_design_guide once before your first " +
-      "publish. Your surfaces are grouped into one session for this conversation; on your first publish pass " +
-      'sessionTitle to name the session after the task (e.g. "Auth refactor"). The user can comment in their ' +
-      "browser; check with wait_for_feedback after publishing something you want a reaction to. Any " +
-      "publish/update/reply result may carry a userFeedback array — comments the user left since your last " +
-      "call, delivered once.",
-  },
-);
+const server = new McpServer(MCP_SERVER_INFO, { instructions: MCP_INSTRUCTIONS });
 
 server.registerTool(
   "publish_surface",
   {
-    description:
-      "Publish a surface (an ordered list of html and/or diff parts) to the user's sideshow board. Returns " +
-      "the id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes " +
-      "userFeedback, read it. Call get_design_guide first if you have not this session.",
-    inputSchema: {
-      title: z.string().describe("Short human-readable title shown above the card"),
-      parts: z.array(partSchema).describe("Ordered parts; combine html and diff freely"),
-      sessionTitle: z
-        .string()
-        .optional()
-        .describe('Session name (first publish only), e.g. "Auth refactor"'),
-    },
+    description: MCP_TOOL_DESCRIPTIONS.publishSurfaceStdio,
+    inputSchema: STDIO_MCP_INPUT_SCHEMAS.publishSurface,
   },
   async ({ title, parts, sessionTitle }) => {
     const session = await ensureSession(sessionTitle);
@@ -137,14 +79,8 @@ server.registerTool(
 server.registerTool(
   "update_surface",
   {
-    description:
-      "Revise a surface in place (same card, new version). Prefer this over a near-duplicate. Pass the full " +
-      "replacement parts array. If the result includes userFeedback, read it.",
-    inputSchema: {
-      id: z.string().describe("Surface id returned by publish_surface"),
-      parts: z.array(partSchema).optional().describe("Replacement parts array"),
-      title: z.string().optional().describe("Replacement title"),
-    },
+    description: MCP_TOOL_DESCRIPTIONS.updateSurface,
+    inputSchema: STDIO_MCP_INPUT_SCHEMAS.updateSurface,
   },
   async ({ id, parts, title }) => {
     const updated = JSON.parse(
@@ -157,14 +93,8 @@ server.registerTool(
 server.registerTool(
   "publish_snippet",
   {
-    description:
-      "Publish an HTML snippet — sugar for a surface with one html part. Send a body fragment only. Returns " +
-      "the id and view URL. Prefer publish_surface when you want a diff or multiple parts.",
-    inputSchema: {
-      title: z.string().describe("Short human-readable title shown above the snippet"),
-      html: z.string().describe("HTML body fragment to render"),
-      sessionTitle: z.string().optional().describe("Session name (first publish only)"),
-    },
+    description: MCP_TOOL_DESCRIPTIONS.publishSnippet,
+    inputSchema: STDIO_MCP_INPUT_SCHEMAS.publishSnippet,
   },
   async ({ title, html, sessionTitle }) => {
     const session = await ensureSession(sessionTitle);
@@ -181,12 +111,8 @@ server.registerTool(
 server.registerTool(
   "update_snippet",
   {
-    description: "Revise an html snippet in place — sugar for update_surface with one html part.",
-    inputSchema: {
-      id: z.string().describe("Surface id"),
-      html: z.string().optional().describe("Replacement HTML body fragment"),
-      title: z.string().optional().describe("Replacement title"),
-    },
+    description: MCP_TOOL_DESCRIPTIONS.updateSnippet,
+    inputSchema: STDIO_MCP_INPUT_SCHEMAS.updateSnippet,
   },
   async ({ id, html, title }) => {
     const parts = html === undefined ? undefined : [{ kind: "html", html }];
@@ -200,17 +126,8 @@ server.registerTool(
 server.registerTool(
   "wait_for_feedback",
   {
-    description:
-      "Block until the user comments on this session in their browser (or the timeout passes). Returns new " +
-      "comments since the last call. Use timeoutSeconds=0 for a non-blocking check.",
-    inputSchema: {
-      timeoutSeconds: z
-        .number()
-        .min(0)
-        .max(300)
-        .optional()
-        .describe("How long to wait (default 120, 0 = check only)"),
-    },
+    description: MCP_TOOL_DESCRIPTIONS.waitForFeedback,
+    inputSchema: STDIO_MCP_INPUT_SCHEMAS.waitForFeedback,
   },
   async ({ timeoutSeconds }) => {
     const session = await ensureSession();
@@ -237,13 +154,8 @@ server.registerTool(
 server.registerTool(
   "reply_to_user",
   {
-    description:
-      "Post a short reply under a surface's comment thread in the user's browser. Use to acknowledge feedback " +
-      "or explain a revision without making the user switch to the terminal.",
-    inputSchema: {
-      surfaceId: z.string().describe("Surface whose thread to reply in"),
-      message: z.string().describe("Plain-text reply"),
-    },
+    description: MCP_TOOL_DESCRIPTIONS.replyToUser,
+    inputSchema: STDIO_MCP_INPUT_SCHEMAS.replyToUser,
   },
   async ({ surfaceId, message }) => {
     const created = JSON.parse(
@@ -258,7 +170,7 @@ server.registerTool(
 
 server.registerTool(
   "list_surfaces",
-  { description: "List surfaces in this conversation's session.", inputSchema: {} },
+  { description: MCP_TOOL_DESCRIPTIONS.listSurfacesStdio, inputSchema: {} },
   async () => {
     if (!sessionId) return text([]);
     return text(JSON.parse(await api(`/api/sessions/${sessionId}/surfaces`)));
@@ -268,19 +180,8 @@ server.registerTool(
 server.registerTool(
   "upload_asset",
   {
-    description:
-      "Upload a binary asset (image, trace file, any file) and get back its id and URL. base64-encode the " +
-      "bytes in `data`. Then reference it: {kind:'image', assetId} or {kind:'trace', assetId} in a surface's " +
-      'parts, or embed the URL in an html part (<img src="...">). Attached to this conversation\'s session.',
-    inputSchema: {
-      data: z.string().describe("base64-encoded file bytes"),
-      contentType: z.string().describe("MIME type, e.g. image/png, application/json"),
-      filename: z.string().optional().describe("Original filename (used for downloads)"),
-      kind: z
-        .enum(["image", "trace", "file"])
-        .optional()
-        .describe("Inferred from contentType if omitted"),
-    },
+    description: MCP_TOOL_DESCRIPTIONS.uploadAssetStdio,
+    inputSchema: STDIO_MCP_INPUT_SCHEMAS.uploadAsset,
   },
   async ({ data, contentType, filename, kind }) => {
     const session = await ensureSession();
@@ -297,9 +198,7 @@ server.registerTool(
 server.registerTool(
   "get_design_guide",
   {
-    description:
-      "Fetch the design contract: surface parts, html fragment rules, theme CSS variables, CDN allowlist, and " +
-      "the interactivity bridge. Call once per session before publishing.",
+    description: MCP_TOOL_DESCRIPTIONS.getDesignGuide,
     inputSchema: {},
   },
   async () => text(await api("/guide")),

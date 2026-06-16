@@ -217,6 +217,10 @@ function out(value) {
   console.log(JSON.stringify(value, null, 2));
 }
 
+function outSurface(surface) {
+  out({ ...surface, url: `${BASE}/s/${surface.id}` });
+}
+
 const CONTENT_TYPES = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -374,8 +378,7 @@ const commands = {
       const asset = await uploadFile(flags.image, { session, kind: "image" });
       parts.push({ kind: "image", assetId: asset.id });
     }
-    const surface = await publishSurface(parts, { ...flags, session });
-    out({ ...surface, url: `${BASE}/s/${surface.id}` });
+    outSurface(await publishSurface(parts, { ...flags, session }));
   },
 
   async upload() {
@@ -411,8 +414,7 @@ const commands = {
       assetId: asset.id,
       ...(flags.caption && { caption: flags.caption }),
     };
-    const surface = await publishSurface([part], { ...flags, session });
-    out({ ...surface, url: `${BASE}/s/${surface.id}` });
+    outSurface(await publishSurface([part], { ...flags, session }));
   },
 
   async trace() {
@@ -430,11 +432,12 @@ const commands = {
     if (!file || file === "-") fail("usage: sideshow trace <file> [--title t]");
     const session = await resolveSession(flags, { create: true });
     const asset = await uploadFile(file, { session, kind: "trace" });
-    const surface = await publishSurface([{ kind: "trace", assetId: asset.id }], {
-      ...flags,
-      session,
-    });
-    out({ ...surface, url: `${BASE}/s/${surface.id}` });
+    outSurface(
+      await publishSurface([{ kind: "trace", assetId: asset.id }], {
+        ...flags,
+        session,
+      }),
+    );
   },
 
   async diff() {
@@ -456,8 +459,7 @@ const commands = {
         ...(flags.layout === "split" && { layout: "split" }),
       },
     ];
-    const surface = await publishSurface(parts, flags);
-    out({ ...surface, url: `${BASE}/s/${surface.id}` });
+    outSurface(await publishSurface(parts, flags));
   },
 
   async update() {
@@ -468,11 +470,12 @@ const commands = {
     const id = positionals[0];
     if (!id) fail("usage: sideshow update <id> <file|->");
     const html = readContent(positionals[1]);
-    const surface = await api(`/api/surfaces/${id}`, {
-      method: "PUT",
-      body: JSON.stringify({ parts: [{ kind: "html", html }], title: flags.title }),
-    });
-    out({ ...surface, url: `${BASE}/s/${surface.id}` });
+    outSurface(
+      await api(`/api/surfaces/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ parts: [{ kind: "html", html }], title: flags.title }),
+      }),
+    );
   },
 
   async wait() {
