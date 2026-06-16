@@ -23,6 +23,13 @@ All notable user-visible changes to this project are documented in this file.
   the `publish_snippet`/`update_snippet` tools remain as back-compat aliases, so
   existing agent configs keep working. Stored boards migrate in place on load.
 
+### Fixed
+
+- `sideshow-term` can now be packaged and installed standalone: its server
+  runtime dependencies are declared, it reuses the `sideshow` package's server
+  core, and published installs run built JavaScript instead of TypeScript from
+  `node_modules`.
+
 ## [0.4.0] - 2026-06-15
 
 ### Added

@@ -1,6 +1,7 @@
-// sideshow-term server. It reuses sideshow's runtime-agnostic core verbatim
-// (createApp + JsonFileStore) — snippets are opaque strings to the store, so
-// the same REST API, SSE feed and long-poll serve STML just as well as HTML.
+// sideshow-term server. It reuses sideshow's runtime-agnostic core
+// (createApp + JsonFileStore) from the sideshow package — snippets are opaque
+// strings to the store, so the same REST API, SSE feed and long-poll serve STML
+// just as well as HTML.
 // What differs is the agent-facing contract: /guide and /setup teach the
 // opentui markup, not browser HTML, and the viewer is the TUI (`watch`), not
 // a browser, so we hand createApp a placeholder landing page.
@@ -10,12 +11,14 @@
 
 import { serve } from "@hono/node-server";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createApp } from "../server/app.ts";
-import { JsonFileStore } from "../server/storage.ts";
+import { createApp } from "sideshow/dist/server/app.js";
+import { JsonFileStore } from "sideshow/dist/server/storage.js";
 
-const root = dirname(fileURLToPath(import.meta.url));
+const here = dirname(fileURLToPath(import.meta.url));
+const root = basename(here) === "dist" ? dirname(here) : here;
 
 const [guideMarkdown, setupText, pkgJson] = await Promise.all([
   readFile(join(root, "guide", "DESIGN_GUIDE.md"), "utf8"),
@@ -34,7 +37,9 @@ live viewer in a terminal:</p>
 </body>`;
 
 const app = createApp({
-  store: new JsonFileStore(process.env.SIDESHOW_DATA ?? join(root, "data", "sideshow-term.json")),
+  store: new JsonFileStore(
+    process.env.SIDESHOW_DATA ?? join(homedir(), ".sideshow-term", "sideshow-term.json"),
+  ),
   viewerHtml: landing,
   guideMarkdown,
   setupText,

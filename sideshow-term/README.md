@@ -28,7 +28,7 @@ renderer — opentui's native core uses Bun's FFI).
 
 ```sh
 cd sideshow-term
-npm install                      # installs @opentui/core
+npm install                      # installs runtime dependencies
 node bin/sideshow-term.js serve  # server on http://localhost:4242
 
 # in another terminal — the live viewer:
@@ -47,10 +47,10 @@ curl -s http://localhost:4242/setup >> AGENTS.md
 
 ## How it relates to sideshow
 
-sideshow-term **reuses sideshow's server core unmodified** — `createApp` and
-`JsonFileStore` from `../server`. Snippets are opaque strings to the store, so
-the same REST API, SSE live feed, long-poll comments, and MCP endpoint serve
-STML exactly as they serve HTML. What's new lives entirely in this folder:
+sideshow-term **reuses sideshow's server core** — `createApp` and
+`JsonFileStore` come from the `sideshow` package. Snippets are opaque strings to
+the store, so the same REST API, SSE live feed, long-poll comments, and MCP
+endpoint serve STML exactly as they serve HTML. What's new in this package is:
 
 - **a different contract.** `/guide` and `/setup` teach STML, not browser HTML.
 - **a different viewer.** A long-running opentui TUI (`watch`) replaces the

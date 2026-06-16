@@ -6,16 +6,34 @@
   "bin": {
     "sideshow-term": "bin/sideshow-term.js"
   },
+  "files": [
+    "bin/",
+    "dist/",
+    "docs/",
+    "examples/",
+    "guide/",
+    "skills/",
+    "README.md"
+  ],
   "type": "module",
   "scripts": {
     "serve": "node server.ts",
     "watch": "bun src/watch.ts",
     "render": "bun src/previewCli.ts",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "test": "node --test 'test/**/*.test.ts'",
     "test:render": "bun test/render.smoke.ts"
   },
   "dependencies": {
-    "@opentui/core": "^0.4.1"
+    "@hono/node-server": "^1.19.14",
+    "@opentui/core": "^0.4.1",
+    "hono": "^4.12.25",
+    "sideshow": "^0.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=22.18"

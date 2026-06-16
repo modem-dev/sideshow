@@ -5,7 +5,7 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -133,9 +133,14 @@ function out(value) {
   console.log(JSON.stringify(value, null, 2));
 }
 
+function entrypoint(devParts, distParts) {
+  const dev = join(ROOT, ...devParts);
+  return existsSync(dev) ? dev : join(ROOT, ...distParts);
+}
+
 // Run a Bun script (the opentui pieces). Bun is required only for these.
-function runBun(scriptParts, args, { inherit = true } = {}) {
-  const child = spawn("bun", [join(ROOT, ...scriptParts), ...args], {
+function runBun(devParts, distParts, args, { inherit = true } = {}) {
+  const child = spawn("bun", [entrypoint(devParts, distParts), ...args], {
     stdio: inherit ? "inherit" : ["ignore", "inherit", "inherit"],
     env: process.env,
   });
@@ -171,7 +176,7 @@ const commands = {
   async serve() {
     const { values: flags } = parse({ options: { port: { type: "string" } } });
     const port = flags.port ?? process.env.PORT ?? "4242";
-    const child = spawn(process.execPath, [join(ROOT, "server.ts")], {
+    const child = spawn(process.execPath, [entrypoint(["server.ts"], ["dist", "server.js"])], {
       stdio: "inherit",
       env: { ...process.env, PORT: port },
     });
@@ -179,11 +184,11 @@ const commands = {
   },
 
   watch() {
-    runBun(["src", "watch.ts"], []);
+    runBun(["src", "watch.ts"], ["dist", "src", "watch.js"], []);
   },
 
   render() {
-    runBun(["src", "previewCli.ts"], rest);
+    runBun(["src", "previewCli.ts"], ["dist", "src", "previewCli.js"], rest);
   },
 
   async publish() {

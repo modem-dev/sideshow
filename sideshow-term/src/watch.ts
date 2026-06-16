@@ -18,7 +18,7 @@ import { resolveColor } from "./theme.ts";
 
 const BASE = (process.env.SIDESHOW_URL ?? "http://localhost:4242").replace(/\/$/, "");
 const TOKEN = process.env.SIDESHOW_TOKEN;
-const authHeaders = TOKEN ? { authorization: `Bearer ${TOKEN}` } : {};
+const authHeaders: Record<string, string> = TOKEN ? { authorization: `Bearer ${TOKEN}` } : {};
 
 interface SnippetMeta {
   id: string;
