@@ -443,7 +443,7 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.equal((await store.listAssets(one.id)).length, 0);
   });
 
-  contract("removing a session cascades to its assets", async (store) => {
+  contract("removing a session cascades to its unreferenced assets", async (store) => {
     const session = await store.createSession({ agent: "pi" });
     const asset = await store.putAsset({
       sessionId: session.id,
@@ -454,5 +454,52 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.ok(asset);
     await store.removeSession(session.id);
     assert.equal(await store.getAsset(asset.id), null);
+  });
+
+  contract("content-addressed: identical bytes dedupe to one asset", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    const data = bytes(1, 2, 3, 4);
+    const first = await store.putAsset({
+      sessionId: session.id,
+      kind: "image",
+      contentType: "image/png",
+      data,
+    });
+    const second = await store.putAsset({
+      sessionId: session.id,
+      kind: "image",
+      contentType: "image/png",
+      data,
+    });
+    assert.ok(first && second);
+    // same content → same (content-hash) id, and the bytes are stored once
+    assert.equal(second.id, first.id);
+    assert.equal((await store.listAssets(session.id)).length, 1);
+    // the id is the hex sha256, not a random short id
+    assert.match(first.id, /^[0-9a-f]{64}$/);
+  });
+
+  contract("a referenced asset survives its session being deleted", async (store) => {
+    const owner = await store.createSession({ agent: "uploader" });
+    const asset = await store.putAsset({
+      sessionId: owner.id,
+      kind: "image",
+      contentType: "image/png",
+      data: bytes(7, 7, 7),
+    });
+    assert.ok(asset);
+    // a surface in a DIFFERENT session references the asset by id
+    const other = await store.createSession({ agent: "publisher" });
+    await store.createSurface({
+      sessionId: other.id,
+      parts: [{ kind: "image", assetId: asset.id }],
+    });
+    assert.equal(await store.isAssetReferenced(asset.id), true);
+
+    // deleting the uploader's session must not take the still-referenced asset
+    await store.removeSession(owner.id);
+    const got = await store.getAsset(asset.id);
+    assert.ok(got, "referenced asset should survive its owning session's deletion");
+    assert.deepEqual([...got.data], [7, 7, 7]);
   });
 }

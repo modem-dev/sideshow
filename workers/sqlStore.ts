@@ -7,6 +7,7 @@ import {
   type CreateCommentInput,
   type CreateSessionInput,
   type CreateSurfaceInput,
+  hashAssetId,
   HISTORY_LIMIT,
   htmlPart,
   MAX_BOARD_ASSET_BYTES,
@@ -209,7 +210,14 @@ export class SqlStore implements Store {
     if (!(await this.getSession(id))) return false;
     this.sql.exec("DELETE FROM comments WHERE sessionId = ?", id);
     this.sql.exec("DELETE FROM surfaces WHERE sessionId = ?", id);
-    this.sql.exec("DELETE FROM assets WHERE sessionId = ?", id);
+    // Surfaces are gone, so referencedAssetIds now reflects survivors only:
+    // drop this session's own assets except any a surviving surface still
+    // points at (assets are content-addressed and may be shared across sessions).
+    const referenced = this.referencedAssetIds();
+    for (const r of this.sql.exec("SELECT id FROM assets WHERE sessionId = ?", id).toArray()) {
+      const aid = r.id as string;
+      if (!referenced.has(aid)) this.sql.exec("DELETE FROM assets WHERE id = ?", aid);
+    }
     this.sql.exec("DELETE FROM sessions WHERE id = ?", id);
     return true;
   }
@@ -379,6 +387,14 @@ export class SqlStore implements Store {
 
   async putAsset(input: CreateAssetInput) {
     if (!(await this.getSession(input.sessionId))) return null;
+    // Content-addressed: identical bytes dedupe to the existing blob (idempotent
+    // upload), keeping its original session and createdAt; we just warm it.
+    const id = await hashAssetId(input.data);
+    if (await this.getAsset(id)) {
+      await this.touchAsset(id);
+      this.touch(input.sessionId);
+      return (await this.getAsset(id))!;
+    }
     const referenced = this.referencedAssetIds();
     const candidates = this.sql
       .exec("SELECT id, byteLength, lastAccessedAt FROM assets")
@@ -394,7 +410,7 @@ export class SqlStore implements Store {
     }
     const now = new Date().toISOString();
     const asset: Asset = {
-      id: newId(),
+      id,
       sessionId: input.sessionId,
       kind: input.kind,
       contentType: input.contentType,
@@ -450,5 +466,9 @@ export class SqlStore implements Store {
     if (!(await this.getAsset(id))) return false;
     this.sql.exec("DELETE FROM assets WHERE id = ?", id);
     return true;
+  }
+
+  async isAssetReferenced(id: string) {
+    return this.referencedAssetIds().has(id);
   }
 }

@@ -675,7 +675,19 @@ export function createApp({
   });
 
   app.get("/a/:id", async (c) => {
-    const asset = await store.getAsset(c.req.param("id"));
+    const id = c.req.param("id");
+    let asset = await store.getAsset(id);
+    // Optimistic uploads: an agent can derive an asset's URL from its content
+    // hash and publish a surface referencing it before (or while) the bytes are
+    // uploaded. Rather than 404 in that window, briefly wait for the bytes —
+    // but only when a live surface actually points at this id, so unknown ids
+    // still fail fast.
+    if (!asset && (await store.isAssetReferenced(id))) {
+      for (let i = 0; i < 20 && !asset; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        asset = await store.getAsset(id);
+      }
+    }
     if (!asset) return c.text("Asset not found", 404);
     await store.touchAsset(asset.id);
     const { contentType, disposition } = assetServeHeaders(asset);

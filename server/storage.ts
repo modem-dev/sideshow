@@ -9,6 +9,7 @@ import {
   type CreateCommentInput,
   type CreateSessionInput,
   type CreateSurfaceInput,
+  hashAssetId,
   HISTORY_LIMIT,
   htmlPart,
   MAX_BOARD_ASSET_BYTES,
@@ -202,8 +203,13 @@ export class JsonFileStore implements Store {
       if (surface.sessionId === id) this.surfaces.delete(sid);
     }
     this.comments = this.comments.filter((c) => c.sessionId !== id);
+    // Assets are content-addressed and may be referenced across sessions, so a
+    // session only takes its OWN assets down with it, and only those no live
+    // surface still points at (referencedAssetIds is computed after the above
+    // deletes, so it reflects survivors only).
+    const referenced = this.referencedAssetIds();
     for (const [aid, asset] of this.assets) {
-      if (asset.sessionId === id) this.assets.delete(aid);
+      if (asset.sessionId === id && !referenced.has(aid)) this.assets.delete(aid);
     }
     await this.persist();
     return true;
@@ -333,6 +339,16 @@ export class JsonFileStore implements Store {
   async putAsset(input: CreateAssetInput) {
     await this.load();
     if (!this.sessions.has(input.sessionId)) return null;
+    // Content-addressed: identical bytes dedupe to the existing blob (idempotent
+    // upload), keeping its original session and createdAt; we just warm it.
+    const id = await hashAssetId(input.data);
+    const existing = this.assets.get(id);
+    if (existing) {
+      existing.lastAccessedAt = new Date().toISOString();
+      this.touch(input.sessionId);
+      await this.persist();
+      return existing;
+    }
     const referenced = this.referencedAssetIds();
     const candidates = [...this.assets.values()].map((a) => ({
       id: a.id,
@@ -345,7 +361,7 @@ export class JsonFileStore implements Store {
     }
     const now = new Date().toISOString();
     const asset: Asset = {
-      id: newId(),
+      id,
       sessionId: input.sessionId,
       kind: input.kind,
       contentType: input.contentType,
@@ -384,5 +400,10 @@ export class JsonFileStore implements Store {
     if (!this.assets.delete(id)) return false;
     await this.persist();
     return true;
+  }
+
+  async isAssetReferenced(id: string) {
+    await this.load();
+    return this.referencedAssetIds().has(id);
   }
 }

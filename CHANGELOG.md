@@ -21,7 +21,13 @@ All notable user-visible changes to this project are documented in this file.
   with an `image` part (rendered natively) or a `trace` part (a step timeline
   beside the surface, plus a download link), or embed its URL inside an html part
   (`<img src="/a/<id>">` — the surface CSP now allows the server's own origin).
-  Assets are session-scoped and capped at 5 MB each.
+  An asset's id is the SHA-256 of its bytes, so its URL is content-addressed:
+  derive it before uploading (`sideshow asset-url <file>`) and reference it in a
+  surface published before — or alongside — the upload; the viewer briefly waits
+  for an in-flight asset instead of showing a broken image. Identical uploads
+  dedupe to one blob, and an asset lives as long as any surface references it
+  (even across sessions), so a referenced upload is never lost to a session
+  delete. Capped at 5 MB each.
 
 ### Changed
 

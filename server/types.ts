@@ -187,6 +187,9 @@ export interface Store {
   touchAsset(id: string): Promise<void>;
   listAssets(sessionId: string): Promise<Asset[]>;
   removeAsset(id: string): Promise<boolean>;
+  // Whether any live surface (current or historical version) references this
+  // asset id. Drives the optimistic-read wait and reference-aware deletion.
+  isAssetReferenced(id: string): Promise<boolean>;
 }
 
 export const HISTORY_LIMIT = 20;
@@ -198,6 +201,18 @@ export const MAX_ASSET_BYTES = 5 * 1024 * 1024;
 export const MAX_BOARD_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
 
 export const newId = () => crypto.randomUUID().split("-")[0];
+
+// Content-addressed asset id: the lowercase hex SHA-256 of the bytes. Because
+// it depends only on the content, an agent can derive `/a/:id` from the bytes
+// alone — no upload round-trip — and write the URL into a surface before (or
+// while) the upload lands. Identical uploads collapse to one stored blob.
+// Uses Web Crypto (a global on Node ≥20 and Workers) to stay runtime-agnostic.
+export async function hashAssetId(data: Uint8Array): Promise<string> {
+  // Copy into a fresh ArrayBuffer-backed view: digest wants a definite
+  // ArrayBuffer, and this also avoids the SharedArrayBuffer-backed lib type.
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(data));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 // A snippet is sugar for a single html part; this bridges the legacy
 // `{ html }` shape (CLI `publish`, `POST /api/snippets`) to the parts model.

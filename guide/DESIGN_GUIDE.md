@@ -55,11 +55,22 @@ CLI  sideshow upload shot.png         # prints { id, url }
 
 The response carries `{ id, url }`. Then either reference the asset in a part
 (`{ "kind": "image", "assetId": "<id>" }`) **or** embed its `url` inside an html
-part (`<img src="<url>">`). Assets belong to a session — pass the session you
-publish with so they're grouped and cleaned up together. Per-asset limit is
-5 MB. CLI shortcuts: `sideshow image shot.png --title "…"` (upload + publish in
-one shot), `sideshow trace run.json --title "…"`, and `sideshow publish
-sketch.html --image shot.png`.
+part (`<img src="<url>">`). Per-asset limit is 5 MB.
+
+An asset's **id is the SHA-256 of its bytes**, so the URL is content-addressed
+and you can know it _before_ (or while) you upload — no need to wait for the
+upload to reference it. Derive it locally (`sideshow asset-url shot.png`, or
+`shasum -a 256 shot.png`) and write the `<img src="/a/<hash>">` or the
+`assetId` straight into your surface, then upload the bytes in any order. The
+viewer briefly waits for an in-flight asset rather than showing a broken image.
+Identical bytes dedupe to one stored blob, and an asset survives as long as any
+surface references it (even across sessions), so a referenced upload is never
+lost when a session is deleted.
+
+CLI shortcuts: `sideshow image shot.png --title "…"` (upload + publish in one
+shot), `sideshow trace run.json --title "…"`, `sideshow publish sketch.html
+--image shot.png`, and `sideshow asset-url shot.png` (print the URL without
+uploading).
 
 ## Publishing
 

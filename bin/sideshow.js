@@ -27,6 +27,7 @@ usage:
   sideshow upload <file> [options]        upload an asset, print its id and URL
       --kind <k>        image|trace|file (default: inferred from the file type)
       --session <id>    session to attach to (default: auto)
+  sideshow asset-url <file>               print the URL a file will have (content hash; no upload)
   sideshow image <file> [options]         upload an image and publish it as a surface
       --title <t>       surface title
       --caption <c>     caption shown under the image
@@ -388,6 +389,17 @@ const commands = {
     const session = flags.session ?? (await resolveSession(flags, { create: true }));
     const asset = await uploadFile(file, { session, kind: flags.kind });
     out(asset);
+  },
+
+  // Print the URL a file WILL have once uploaded, derived from its content hash
+  // alone — no server call. Lets you write an <img src> (or reference the id)
+  // before, or in parallel with, the upload. Matches the server's hashAssetId.
+  async "asset-url"() {
+    const { positionals } = parse({ allowPositionals: true, options: {} });
+    const file = positionals[0];
+    if (!file || file === "-") fail("usage: sideshow asset-url <file>");
+    const id = createHash("sha256").update(readFileSync(file)).digest("hex");
+    out({ id, url: `${BASE}/a/${id}` });
   },
 
   async image() {
