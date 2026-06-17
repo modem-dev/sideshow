@@ -2,7 +2,14 @@
 // rows/cards persist across refetches (focus, composer drafts, iframes).
 import { createSignal } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
-import { api, type Comment, type SessionRow, type Surface, type VersionInfo } from "./api.ts";
+import {
+  api,
+  type Comment,
+  type SessionRow,
+  type Surface,
+  type TraceStep,
+  type VersionInfo,
+} from "./api.ts";
 import { applyTheme } from "./theme.ts";
 
 // A comment as the viewer renders it: server comments plus the optimistic
@@ -52,11 +59,18 @@ const [surfacesStore, setSurfacesInternal] = createStore<Surface[]>([]);
 export const surfaces = surfacesStore;
 const [commentsState, setCommentsInternal] = createSignal<ViewComment[]>([]);
 export const comments = commentsState;
+// Session-scoped agent trace steps for the selected session (timeline view).
+const [traceStepsState, setTraceStepsInternal] = createSignal<TraceStep[]>([]);
+export const traceSteps = traceStepsState;
 const [streamLoadingState, setStreamLoadingInternal] = createSignal(false);
 export const streamLoading = streamLoadingState;
 const [liveState, setLiveInternal] = createSignal(false);
 export const live = liveState;
 export const [navOpen, setNavOpen] = createSignal(false);
+// Stream (cards top-to-bottom) vs. timeline (treatment E: surfaces on a center
+// spine with the trace steps between them). Per-board view preference.
+export type ViewMode = "stream" | "timeline";
+export const [viewMode, setViewMode] = createSignal<ViewMode>("stream");
 // Surface id the next mounted card should scroll to (set for SSE arrivals
 // landing while the user is near the bottom, not the initial batch of a
 // session switch).
@@ -127,6 +141,8 @@ export async function select(id: string) {
   setStreamLoadingInternal(true);
   setSurfacesInternal(reconcile([]));
   setCommentsInternal([]);
+  setTraceStepsInternal([]);
+  void fetchTrace(id);
   const metas = await api<{ id: string }[]>(`/api/sessions/${id}/surfaces`).catch(() => []);
   const details = (
     await Promise.all(metas.map((m) => api<Surface>(`/api/surfaces/${m.id}`).catch(() => null)))
@@ -170,6 +186,15 @@ async function upsertSurface(id: string, { scroll = true } = {}) {
     }
     setSurfacesInternal(surfaces.length, s);
   }
+}
+
+// Fetch the session's trace steps (timeline view). Ignored if the user has
+// switched away by the time it resolves.
+export async function fetchTrace(sessionId: string) {
+  const res = await api<{ steps: TraceStep[] }>(`/api/sessions/${sessionId}/trace`).catch(
+    () => null,
+  );
+  if (res && selected() === sessionId) setTraceStepsInternal(res.steps);
 }
 
 export function nearBottom() {
@@ -259,6 +284,9 @@ export function connect() {
       const idx = surfaces.findIndex((s) => s.id === e.id);
       if (idx >= 0) setSurfacesInternal(produce((arr) => arr.splice(idx, 1)));
       await refreshSessionsQuiet();
+    } else if (e.type === "trace-updated") {
+      // the agent working is ambient, not an alert — refetch quietly, no badge
+      if (e.sessionId === selected()) await fetchTrace(e.sessionId);
     } else if (e.type === "comment-created") {
       if (away && e.sessionId) markUnread(e.sessionId);
       if (e.sessionId === selected()) {
@@ -276,6 +304,7 @@ async function resyncSelected() {
   const before = selected();
   await refreshSessions();
   if (!before || selected() !== before) return; // select() rebuilt the stream
+  void fetchTrace(before);
   const metas = await api<{ id: string }[]>(`/api/sessions/${before}/surfaces`).catch(() => []);
   const ids = new Set(metas.map((m) => m.id));
   setSurfacesInternal(

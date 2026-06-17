@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show }
 import { api, relTime, sessionLabel, type SessionRow } from "./api.ts";
 import { Card, cardEls, frameForSource } from "./Card.tsx";
 import { renderNotes } from "./notes.ts";
+import { SessionTimeline } from "./SessionTimeline.tsx";
 import { activeTheme, initTheme, setTheme, themeOptions } from "./theme.ts";
 import {
   checkVersion,
@@ -21,6 +22,7 @@ import {
   setNavOpen,
   setPillTarget,
   setUnread,
+  setViewMode,
   streamLoading,
   surfaces,
   toast,
@@ -28,6 +30,7 @@ import {
   toastText,
   unread,
   updateNotice,
+  viewMode,
 } from "./state.ts";
 
 // The "Connect Claude Code" integrations modal — module-level so the sidebar
@@ -328,16 +331,50 @@ function SessionView() {
         <span class="meta" id="sessMeta">
           {current() ? `${current()!.agent} · started ${relTime(current()!.createdAt)}` : ""}
         </span>
+        <span class="head-sp"></span>
+        <ViewToggle />
       </div>
       <div id="stream">
-        <WhatsNewCard />
-        <Show when={!streamLoading() && surfaces.length === 0}>
-          <div class="empty" id="streamEmpty">
-            No surfaces in this session yet.
-          </div>
+        <Show
+          when={viewMode() === "timeline"}
+          fallback={
+            <>
+              <WhatsNewCard />
+              <Show when={!streamLoading() && surfaces.length === 0}>
+                <div class="empty" id="streamEmpty">
+                  No surfaces in this session yet.
+                </div>
+              </Show>
+              <For each={surfaces}>{(s) => <Card surface={s} />}</For>
+            </>
+          }
+        >
+          <SessionTimeline />
         </Show>
-        <For each={surfaces}>{(s) => <Card surface={s} />}</For>
       </div>
+    </div>
+  );
+}
+
+// Stream ↔ timeline switch in the session head. Timeline is treatment E — the
+// session's surfaces on a center spine with the trace steps between them.
+function ViewToggle() {
+  return (
+    <div class="view-toggle" role="group" aria-label="View mode">
+      <button
+        classList={{ on: viewMode() === "stream" }}
+        aria-pressed={viewMode() === "stream"}
+        onClick={() => setViewMode("stream")}
+      >
+        Stream
+      </button>
+      <button
+        classList={{ on: viewMode() === "timeline" }}
+        aria-pressed={viewMode() === "timeline"}
+        onClick={() => setViewMode("timeline")}
+      >
+        Timeline
+      </button>
     </div>
   );
 }

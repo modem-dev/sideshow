@@ -1203,3 +1203,184 @@ iframe {
   transform: translateX(-50%) translateY(0);
   pointer-events: auto;
 }
+
+/* ---- session view toggle (Stream / Timeline) ---- */
+.session-head .head-sp {
+  flex: 1;
+}
+.view-toggle {
+  display: inline-flex;
+  align-self: center;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.view-toggle button {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  padding: 4px 13px;
+  cursor: pointer;
+}
+.view-toggle button.on {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* ---- treatment E: session timeline ---- */
+/* One spine down the middle. Surfaces are opaque cards that cover the line;
+   the step clusters between them sit on the visible stretches of spine, their
+   dots straddling the center. The grid trick: every step/toggle is a two-column
+   grid and its body lives in column 2, so its leading dot lands on the 50% line. */
+.timeline {
+  position: relative;
+  padding-top: 6px;
+}
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--border);
+  transform: translateX(-50%);
+  z-index: 0;
+}
+/* Left rail, not a centered spine: the line runs down the left and ONLY the
+   anchors get a node on it — user prompts and published surfaces. Everything
+   else (the agent's prose, the folded command summary) is quiet text indented
+   past the rail, so the eye lands on prompts and surfaces and the work reads as
+   the connective tissue between them. */
+.tl-rail-pad {
+  padding-left: 28px;
+}
+.tl-surface {
+  position: relative;
+  z-index: 1;
+  padding-left: 28px;
+  /* breathing room so a card separates from the trace lines around it */
+  margin: 22px 0;
+}
+.tl-node {
+  position: absolute;
+  left: 7px;
+  top: 4px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--faint);
+  border: 3px solid var(--bg);
+  transform: translateX(-50%);
+  z-index: 2;
+}
+.tl-row {
+  position: relative;
+  z-index: 1;
+  padding: 3px 0 3px 28px;
+}
+.tl-marker {
+  position: absolute;
+  left: 7px;
+  transform: translateX(-50%);
+  z-index: 2;
+}
+/* prompt — the only inline anchor: a filled accent node + bold text */
+.tl-prompt {
+  margin-top: 15px;
+}
+.tl-marker.prompt {
+  top: 5px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--faint);
+  border: 3px solid var(--bg);
+}
+.tl-prompt > .body {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+/* response — the agent's prose, no marker */
+.tl-response > .body {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+/* the folded middle-notes toggle */
+.tl-notes-fold > .body {
+  font-size: 12px;
+  color: var(--faint);
+}
+/* command summary — one folded line per turn, no marker, by-kind chips */
+.tl-cmd-head {
+  cursor: pointer;
+}
+.tl-cmd-head > .body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--faint);
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.tl-cmd-count {
+  opacity: 0.85;
+}
+.tl-cmd-chip {
+  color: var(--faint);
+  background: var(--hover);
+  border-radius: 5px;
+  padding: 0 6px;
+}
+.tl-chev {
+  display: inline-block;
+  transition: transform 0.15s;
+  color: var(--faint);
+}
+.tl-chev.open {
+  transform: rotate(90deg);
+}
+/* an expanded command's own row, indented under the summary */
+.tl-cmd-row > .body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--faint);
+}
+.tl-cmd-row .knd {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  opacity: 0.8;
+}
+.tl-clickable {
+  cursor: pointer;
+}
+.tl-detail {
+  margin: 2px 0 4px;
+  padding: 8px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  white-space: pre-wrap;
+}
+.tl-tail {
+  padding-bottom: 80px;
+}
+.tl-tail > .body {
+  font-size: 12px;
+  color: var(--faint);
+}
