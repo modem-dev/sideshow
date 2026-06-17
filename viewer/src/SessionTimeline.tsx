@@ -3,12 +3,14 @@ import type { Surface, TraceStep } from "./api.ts";
 import { Card } from "./Card.tsx";
 import { streamLoading, surfaces, traceSteps } from "./state.ts";
 
-// Treatment E, refined (approach 2): a left rail where ONLY the anchors get a
-// node — user prompts and published surfaces. Between them the work reads as
-// quiet connective tissue: the agent's responses as plain prose, and all of a
-// turn's tool calls collapsed into ONE summary line (run ×7 · read ×2),
-// expandable. A "turn" runs from one prompt to the next. Steps are the real
-// session trace (synced from the transcript) interleaved with surfaces by time.
+// Treatment E, refined (A → C). A left rail where only anchors get a node —
+// user prompts and published surfaces. Each turn shows just its intent (first
+// note) and outcome (last note); everything between — the middle notes AND the
+// tool calls, in their real chronological order — folds into one "··· N steps
+// ···" toggle. Expanding it reveals the work in order (a note, then the
+// commands it triggered, then the next note), not an end-of-turn command dump.
+// Steps are the real session trace (synced from the transcript) interleaved
+// with surfaces by time.
 
 interface Gap {
   surface: Surface | null; // the surface this gap leads into; null = trailing
@@ -31,12 +33,12 @@ function buildGaps(surfs: readonly Surface[], steps: readonly TraceStep[]): Gap[
   return gaps;
 }
 
-// A turn: a prompt (or the lead-in before one), its prose responses, and the
-// tool calls it ran. Commands aggregate across the whole turn into one summary.
+// A turn: a prompt (or the lead-in before one) and its ordered events — the
+// agent's notes and tool calls, kept in sequence so the fold can show them in
+// the order they happened.
 interface Turn {
   prompt: TraceStep | null;
-  responses: TraceStep[];
-  commands: TraceStep[];
+  events: TraceStep[];
 }
 
 function groupTurns(steps: readonly TraceStep[]): Turn[] {
@@ -44,19 +46,17 @@ function groupTurns(steps: readonly TraceStep[]): Turn[] {
   let cur: Turn | null = null;
   const ensure = () => {
     if (!cur) {
-      cur = { prompt: null, responses: [], commands: [] };
+      cur = { prompt: null, events: [] };
       turns.push(cur);
     }
     return cur;
   };
   for (const s of steps) {
     if (s.kind === "prompt") {
-      cur = { prompt: s, responses: [], commands: [] };
+      cur = { prompt: s, events: [] };
       turns.push(cur);
-    } else if (s.kind === "say") {
-      ensure().responses.push(s);
     } else {
-      ensure().commands.push(s);
+      ensure().events.push(s);
     }
   }
   return turns;
@@ -95,39 +95,54 @@ export function SessionTimeline() {
 }
 
 function TurnBlock(props: { turn: Turn }) {
+  const events = () => props.turn.events;
+  // first and last note positions; the work between them (and the tool calls)
+  // collapse into the fold.
+  const sayIdx = createMemo(() =>
+    events().reduce<number[]>((acc, e, i) => (e.kind === "say" ? (acc.push(i), acc) : acc), []),
+  );
+  const intentIdx = () => (sayIdx().length > 0 ? sayIdx()[0] : -1);
+  const outcomeIdx = () => (sayIdx().length > 1 ? sayIdx()[sayIdx().length - 1] : -1);
+  const middle = createMemo(() =>
+    events().filter((_, i) => i !== intentIdx() && i !== outcomeIdx()),
+  );
   return (
     <>
       <Show when={props.turn.prompt}>{(p) => <TextRow kind="prompt" step={p()} />}</Show>
-      <Responses steps={props.turn.responses} />
-      <Show when={props.turn.commands.length > 0}>
-        <CommandSummary steps={props.turn.commands} />
+      <Show when={intentIdx() >= 0}>
+        <TextRow kind="response" step={events()[intentIdx()]} />
+      </Show>
+      <Show when={middle().length > 0}>
+        <WorkFold steps={middle()} />
+      </Show>
+      <Show when={outcomeIdx() >= 0}>
+        <TextRow kind="response" step={events()[outcomeIdx()]} />
       </Show>
     </>
   );
 }
 
-// The agent's narration is the noisiest, most repetitive part of a turn. Keep
-// the two that carry meaning — the intent (first) and the outcome (last) — and
-// fold everything between into a "··· N more notes ···" line you can open.
-function Responses(props: { steps: TraceStep[] }) {
+// The middle of a turn — notes and tool calls in order — behind one toggle.
+// Collapsed it's a quiet "··· N steps ···" line; expanded it lays the steps out
+// in sequence (a note, then the commands under it, then the next note).
+function WorkFold(props: { steps: TraceStep[] }) {
   const [open, setOpen] = createSignal(false);
-  const steps = () => props.steps;
+  const n = () => props.steps.length;
   return (
-    <Show
-      when={steps().length > 2}
-      fallback={<For each={steps()}>{(r) => <TextRow kind="response" step={r} />}</For>}
-    >
-      <TextRow kind="response" step={steps()[0]} />
+    <>
       <div class="tl-row tl-notes-fold">
         <div class="body tl-clickable" onClick={() => setOpen(!open())}>
-          {open() ? "··· hide notes ···" : `··· ${steps().length - 2} more notes ···`}
+          {open() ? `··· hide ${n()} steps ···` : `··· ${n()} steps ···`}
         </div>
       </div>
       <Show when={open()}>
-        <For each={steps().slice(1, -1)}>{(r) => <TextRow kind="response" step={r} />}</For>
+        <For each={props.steps}>
+          {(s) =>
+            s.kind === "say" ? <TextRow kind="response" step={s} /> : <CommandRow step={s} />
+          }
+        </For>
       </Show>
-      <TextRow kind="response" step={steps()[steps().length - 1]} />
-    </Show>
+    </>
   );
 }
 
@@ -154,44 +169,8 @@ function TextRow(props: { kind: "prompt" | "response"; step: TraceStep }) {
   );
 }
 
-// All of a turn's tool calls, folded into one line summarized by kind. No
-// marker. Collapsed by default — the detail people won't read stays hidden.
-function CommandSummary(props: { steps: TraceStep[] }) {
-  const [open, setOpen] = createSignal(false);
-  const summary = createMemo(() => {
-    const by = new Map<string, number>();
-    for (const s of props.steps) {
-      const k = s.kind ?? "step";
-      by.set(k, (by.get(k) ?? 0) + 1);
-    }
-    return [...by.entries()];
-  });
-  return (
-    <>
-      <div class="tl-row tl-cmd-head" onClick={() => setOpen(!open())}>
-        <div class="body">
-          <span class="tl-chev" classList={{ open: open() }}>
-            ›
-          </span>
-          <span class="tl-cmd-count">
-            {props.steps.length} command{props.steps.length === 1 ? "" : "s"}
-          </span>
-          <For each={summary()}>
-            {([kind, n]) => (
-              <span class="tl-cmd-chip">
-                {kind} ×{n}
-              </span>
-            )}
-          </For>
-        </div>
-      </div>
-      <Show when={open()}>
-        <For each={props.steps}>{(s) => <CommandRow step={s} />}</For>
-      </Show>
-    </>
-  );
-}
-
+// One tool call inside an expanded fold: a faint mono line (kind + label),
+// expanding to its input/result detail.
 function CommandRow(props: { step: TraceStep }) {
   const [open, setOpen] = createSignal(false);
   const more = () => !!props.step.detail;
