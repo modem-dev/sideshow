@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -66,6 +66,13 @@ usage:
                         publish to create one)
       --after <seq>     re-read comments after this cursor on the first poll
                         (default: resume where the agent left off, server-side)
+  sideshow trace-sync [options]           sync your step trace from the session
+                                          transcript onto the timeline (run it at
+                                          a checkpoint, e.g. after publishing)
+      --session <id>    target session (default: auto)
+      --transcript <f>  transcript file (default: newest Claude Code log for cwd)
+      --reset           replace the session's trace (full re-sync, not just the tail)
+      --quiet           print nothing on success
   sideshow comment <text> [options]       reply to the user on a surface
       --surface <id>    surface to attach the comment to (required)
       --author <name>   defaults to agent name
@@ -374,6 +381,147 @@ function parse(config = {}) {
 function entrypoint(...parts) {
   const built = join(ROOT, "dist", ...parts).replace(/\.ts$/, ".js");
   return existsSync(built) ? built : join(ROOT, ...parts);
+}
+
+// --- trace sync: derive a session's step trace from the agent's transcript ---
+// The agent already writes a full session transcript; rather than instrument
+// every tool call live, we read that transcript and post a curated, truncated,
+// incremental batch — the agent runs this at its leisure (e.g. after a publish)
+// so the user can see how it got there. Claude Code is the transcript format
+// supported today (newest *.jsonl under ~/.claude/projects/<encoded-cwd>/).
+
+const TRACE_MAX_DETAIL = 1800;
+const TRACE_MAX_LABEL = 140;
+const truncStr = (s, n) => (s.length > n ? s.slice(0, n) + "…" : s);
+
+function findTranscript(cwd) {
+  const dir = join(homedir(), ".claude", "projects", cwd.replace(/[/.]/g, "-"));
+  if (!existsSync(dir)) return null;
+  let newest = null;
+  let newestMs = -1;
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith(".jsonl")) continue;
+    const p = join(dir, f);
+    const m = statSync(p).mtimeMs;
+    if (m > newestMs) {
+      newestMs = m;
+      newest = p;
+    }
+  }
+  return newest;
+}
+
+function resultText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((b) => (typeof b === "string" ? b : (b?.text ?? ""))).join("");
+  }
+  return "";
+}
+
+// Map a tool call to a compact {kind,label} — a few meaningful kinds, not the
+// raw tool zoo (mirrors how a tracing tool normalizes events).
+function summarizeTool(name, input) {
+  const base = (p) => (typeof p === "string" ? p.split("/").pop() : "");
+  if (name === "Read") return { kind: "read", label: `Read ${base(input?.file_path)}` };
+  if (["Edit", "MultiEdit", "Write", "NotebookEdit"].includes(name)) {
+    return { kind: "edit", label: `Edit ${base(input?.file_path ?? input?.notebook_path)}` };
+  }
+  if (name === "Grep")
+    return { kind: "grep", label: `Grep ${JSON.stringify(input?.pattern ?? "")}` };
+  if (name === "Glob") return { kind: "glob", label: `Glob ${input?.pattern ?? ""}` };
+  if (name === "Bash") return { kind: "run", label: input?.command ?? "command" };
+  if (name === "WebFetch") return { kind: "web", label: `Fetch ${input?.url ?? ""}` };
+  if (name === "WebSearch")
+    return { kind: "web", label: `Search ${JSON.stringify(input?.query ?? "")}` };
+  if (name === "Task") return { kind: "agent", label: input?.description ?? "Subagent task" };
+  if (name?.startsWith("mcp__")) return { kind: "mcp", label: name.split("__").slice(1).join(" ") };
+  return { kind: (name || "tool").toLowerCase().slice(0, 20), label: name || "tool" };
+}
+
+// Parse a Claude Code transcript into ordered steps, pairing each tool_use with
+// its later tool_result for the detail body. Skips noise (TodoWrite, partial
+// last line). Best-effort: a format it doesn't recognize yields no steps.
+function buildTraceSteps(text) {
+  const steps = [];
+  const pending = new Map(); // tool_use_id -> step index awaiting its result
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    let rec;
+    try {
+      rec = JSON.parse(t);
+    } catch {
+      continue;
+    }
+    const ts = typeof rec.timestamp === "string" ? rec.timestamp : undefined;
+    const role = rec.message?.role;
+    const content = rec.message?.content;
+
+    // A genuine user prompt: real text the user typed, not an injected/meta
+    // message (isMeta), a slash-command wrapper or system-reminder (starts with
+    // "<"), or a user record that only carries a tool_result. Those latter ones
+    // fall through to the block loop so their results still pair with the call.
+    if (role === "user" && !rec.isMeta && !rec.isSidechain) {
+      const carriesResult =
+        Array.isArray(content) && content.some((b) => b?.type === "tool_result");
+      let prompt = "";
+      if (typeof content === "string") prompt = content;
+      else if (Array.isArray(content) && !carriesResult) {
+        prompt = content
+          .filter((b) => b?.type === "text")
+          .map((b) => b.text)
+          .join("\n");
+      }
+      prompt = prompt.trim();
+      if (prompt && !prompt.startsWith("<")) {
+        steps.push({
+          kind: "prompt",
+          label: truncStr(prompt.split("\n")[0], TRACE_MAX_LABEL),
+          detail: truncStr(prompt, TRACE_MAX_DETAIL),
+          ts,
+        });
+        continue;
+      }
+    }
+
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (block?.type === "text" && role === "assistant") {
+        const say = (block.text ?? "").trim();
+        if (say) {
+          steps.push({
+            kind: "say",
+            label: truncStr(say.split("\n")[0], TRACE_MAX_LABEL),
+            detail: truncStr(say, TRACE_MAX_DETAIL),
+            ts,
+          });
+        }
+      } else if (block?.type === "tool_use" && block.name !== "TodoWrite") {
+        const { kind, label } = summarizeTool(block.name, block.input);
+        steps.push({
+          kind,
+          label: truncStr(label, TRACE_MAX_LABEL),
+          detail: truncStr(JSON.stringify(block.input ?? {}), TRACE_MAX_DETAIL),
+          ts,
+        });
+        pending.set(block.id, steps.length - 1);
+      } else if (block?.type === "tool_result") {
+        const idx = pending.get(block.tool_use_id);
+        if (idx != null) {
+          const out = truncStr(resultText(block.content), 1200).trim();
+          if (out)
+            steps[idx].detail = truncStr(`${steps[idx].detail}\n\n→ ${out}`, TRACE_MAX_DETAIL);
+          pending.delete(block.tool_use_id);
+        }
+      } else if (block?.type === "thinking" && typeof block.thinking === "string") {
+        const think = block.thinking.trim();
+        if (think)
+          steps.push({ kind: "think", label: truncStr(think.split("\n")[0], TRACE_MAX_LABEL), ts });
+      }
+    }
+  }
+  return steps;
 }
 
 const commands = {
@@ -695,6 +843,48 @@ const commands = {
         console.log(watchLine(c));
       }
     }
+  },
+
+  // Derive this session's step trace from the agent's transcript and post the
+  // steps appended since last run (one batched call). The agent runs it at a
+  // checkpoint — e.g. right after publishing — so the timeline shows the work
+  // behind each surface. Idempotent: a per-session cursor sends only the tail,
+  // and the first sync of a session replaces (reset) so re-runs never dupe.
+  async "trace-sync"() {
+    const { values: flags, positionals } = parse({
+      options: {
+        session: { type: "string" },
+        transcript: { type: "string" },
+        quiet: { type: "boolean" },
+        reset: { type: "boolean" },
+      },
+      allowPositionals: true,
+    });
+    const session = (await resolveSession(flags)) ?? (await resolveSessionByCwd());
+    if (!session) fail("no active session — publish first, or pass --session");
+    const transcript = flags.transcript ?? positionals[0] ?? findTranscript(process.cwd());
+    if (!transcript || !existsSync(transcript)) {
+      fail(
+        `no transcript found (looked under ~/.claude/projects for ${process.cwd()}) — pass --transcript <file>`,
+      );
+    }
+    const steps = buildTraceSteps(readFileSync(transcript, "utf8"));
+
+    // cursor: steps already sent for this session, kept in the agent's CLI state
+    const cursors = readState().traceCursors ?? {};
+    const prev = cursors[session];
+    const reset = flags.reset || prev == null || steps.length < prev;
+    const toSend = reset ? steps : steps.slice(prev);
+    if (toSend.length === 0 && !reset) {
+      if (!flags.quiet) out({ ok: true, added: 0, total: steps.length });
+      return;
+    }
+    const res = await api(`/api/sessions/${session}/trace`, {
+      method: "POST",
+      body: JSON.stringify({ steps: toSend, reset }),
+    });
+    writeState({ traceCursors: { ...cursors, [session]: steps.length } });
+    if (!flags.quiet) out({ session, added: toSend.length, reset, total: res.count });
   },
 
   async comment() {
