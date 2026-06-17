@@ -144,6 +144,39 @@ test("session thread shows snippet-less comments and messages the agent", async 
   await expect(page.locator("#stream > .card")).toHaveCount(3);
 });
 
+test("a comment's copy button puts an agent-ready paste block on the clipboard", async ({
+  page,
+  server,
+  context,
+  browserName,
+}) => {
+  const snippet = await publish(server.url, { html: "<p>x</p>", title: "Doc", agent: "e2e" });
+  // only chromium lets tests grant clipboard access; the other engines still
+  // exercise the button + toast path
+  if (browserName === "chromium") {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  }
+
+  await page.goto(server.url);
+  const card = page.locator(".card:not(#sessionThread)");
+  const input = card.locator(".composer input");
+  await input.fill("tighten the spacing");
+  await input.press("Enter");
+
+  // the copy button appears only once the comment is confirmed (not pending)
+  const cmt = card.locator(".cmt");
+  await expect(cmt).not.toHaveClass(/pending/);
+  await cmt.hover();
+  await cmt.locator(".copy").click();
+
+  await expect(page.locator("#toast")).toContainText("Copied");
+  if (browserName === "chromium") {
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      `sideshow comment on “Doc” (surface ${snippet.id}):\n“tighten the spacing”`,
+    );
+  }
+});
+
 test("a failed comment send restores the input instead of losing the message", async ({
   page,
   server,
@@ -160,7 +193,7 @@ test("a failed comment send restores the input instead of losing the message", a
   await input.fill("important feedback");
   await input.press("Enter");
 
-  await expect(page.locator("#toast")).toContainText("Couldn't send");
+  await expect(page.locator("#toast")).toContainText("Couldn't post");
   await expect(input).toHaveValue("important feedback");
   await expect(card.locator(".cmt")).toHaveCount(0);
 

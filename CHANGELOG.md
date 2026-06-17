@@ -47,6 +47,9 @@ All notable user-visible changes to this project are documented in this file.
   dedupe to one blob, and an asset lives as long as any surface references it
   (even across sessions), so a referenced upload is never lost to a session
   delete. Capped at 5 MB each.
+- A copy button on each posted comment puts an agent-ready paste block on the
+  clipboard (surface title + id + the comment), for handing a comment straight
+  to a terminal agent.
 
 ### Changed
 
@@ -54,6 +57,10 @@ All notable user-visible changes to this project are documented in this file.
   Earlier) so the freshest work stays on top, and sessions with no surfaces yet
   are dimmed and sunk to the bottom of their group — keeping a long history
   scannable.
+- The viewer is framed around leaving comments rather than messaging an agent:
+  composers read "Leave a comment…" with a "Comment" button. No delivery
+  receipts or "listening" indicators — a comment is an annotation the agent
+  picks up through the feedback loop, not a synchronous message.
 - A surface card's open and delete actions are now minimal Lucide icons
   (external-link and trash) instead of text labels; delete turns red on hover.
 - `sideshow-term watch` now starts a local server in the background when needed,

@@ -700,6 +700,26 @@ iframe {
   color: var(--faint);
   align-self: center;
 }
+.cmt .copy {
+  flex: none;
+  font-size: 12px;
+  color: var(--faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.cmt:hover .copy,
+.cmt .copy:focus-visible {
+  opacity: 1;
+}
+.cmt .copy:hover {
+  color: var(--text);
+  background: var(--hover);
+}
 .composer {
   display: flex;
   gap: 8px;
@@ -729,6 +749,7 @@ iframe {
   border-radius: 8px;
   padding: 0 12px;
   cursor: pointer;
+  white-space: nowrap;
 }
 .composer button:hover {
   color: var(--text);

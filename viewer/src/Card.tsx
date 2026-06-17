@@ -2,6 +2,7 @@ import { For, Index, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import {
   api,
   relTime,
+  sessionLabel,
   type DiffPart as DiffPartData,
   type ImagePart as ImagePartData,
   type MarkdownPart as MarkdownPartData,
@@ -20,6 +21,7 @@ import {
   scrollTarget,
   selected,
   sendComment,
+  sessions,
   setScrollTarget,
   toast,
   type ViewComment,
@@ -169,7 +171,7 @@ export function Card(props: { surface: Surface }) {
       </Index>
       <Thread
         surfaceId={props.surface.id}
-        placeholder="Reply to the agent…"
+        placeholder="Leave a comment…"
         send={(text) =>
           sendComment({ surface: props.surface.id, text, author: "user" }, props.surface.id, text)
         }
@@ -180,7 +182,7 @@ export function Card(props: { surface: Surface }) {
 
 // Comments without a surface (e.g. `sideshow comment` with no --surface)
 // live in a session-level thread at the bottom of the stream, which also
-// lets the user message the agent without picking a surface.
+// lets the user leave a comment without picking a surface.
 export function SessionThread() {
   return (
     <div class="card" id="sessionThread">
@@ -190,7 +192,7 @@ export function SessionThread() {
       </div>
       <Thread
         surfaceId={null}
-        placeholder="Message the agent…"
+        placeholder="Leave a comment…"
         send={(text) => sendComment({ session: selected(), text, author: "user" }, null, text)}
       />
     </div>
@@ -213,7 +215,26 @@ function Thread(props: {
   );
 }
 
+// The paste block a copied comment puts on the clipboard — enough context
+// for an agent to act on the comment when handed it directly.
+function pasteBlock(c: ViewComment): string {
+  if (c.surfaceId) {
+    return `sideshow comment on “${c.surfaceTitle ?? "a surface"}” (surface ${c.surfaceId}):\n“${c.text}”`;
+  }
+  const s = sessions.find((x) => x.id === c.sessionId);
+  return `sideshow comment, session “${s ? sessionLabel(s) : c.sessionId}”:\n“${c.text}”`;
+}
+
 function CommentRow(props: { comment: ViewComment }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(pasteBlock(props.comment));
+      toast("Copied — paste it to your agent");
+    } catch {
+      toast("Couldn't copy to clipboard");
+    }
+  };
+  const isUser = () => props.comment.author === "user" && !props.comment.pending;
   return (
     <div
       class="cmt"
@@ -222,6 +243,11 @@ function CommentRow(props: { comment: ViewComment }) {
     >
       <span class="who">{props.comment.author === "user" ? "you" : props.comment.author}</span>
       <span class="txt">{props.comment.text}</span>
+      <Show when={isUser()}>
+        <button class="copy" title="Copy for pasting to your agent" onClick={copy}>
+          ⧉
+        </button>
+      </Show>
       <span class="when">{relTime(props.comment.createdAt)}</span>
     </div>
   );
@@ -238,7 +264,7 @@ function Composer(props: { placeholder: string; send: (text: string) => Promise<
     if (error !== null) {
       if (!input.value) input.value = text;
       input.focus();
-      toast(`Couldn't send — ${error}. Your message is back in the box.`);
+      toast(`Couldn't post that comment — ${error}. It's back in the box.`);
     }
   };
   return (
@@ -250,7 +276,7 @@ function Composer(props: { placeholder: string; send: (text: string) => Promise<
           if (e.key === "Enter") send();
         }}
       />
-      <button onClick={send}>Send</button>
+      <button onClick={send}>Comment</button>
     </div>
   );
 }
