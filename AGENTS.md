@@ -6,10 +6,11 @@ _use_ a running sideshow lives in `guide/AGENT_SETUP.md`, served at `/setup`.)
 
 ## What this is and why
 
-A live visual surface for terminal coding agents: agents publish HTML
-snippets over CLI/MCP/HTTP; the user watches them render in a browser and
-comments back. The two-way loop — publish → live render → comment →
-revise/reply — is the product. When in doubt, optimize for the loop.
+A live visual surface for terminal coding agents: agents publish surfaces
+(multi-part cards — html, markdown, diff, terminal, image, trace) over
+CLI/MCP/HTTP; the user watches them render in a browser and comments back. The
+two-way loop — publish → live render → comment → revise/reply — is the product.
+When in doubt, optimize for the loop.
 
 Current product stances (deliberate choices, not accidents — revisit
 consciously, not as a side effect):
@@ -31,16 +32,20 @@ consciously, not as a side effect):
   long-poll `/api/comments`, renderer `/s/:id`, asset upload/serve
   (`/api/assets`, `/a/:id`), and the shared flow functions both REST and MCP call.
 - `server/types.ts` — data model + `Store` interface; no runtime imports. A
-  surface is an ordered list of parts (`html` | `diff` | `image` | `trace`); a
-  snippet is sugar for a single html part. `firstHtml`/`htmlPart` bridge the
-  legacy snippet shape. Assets (uploaded blobs) are a separate entity, referenced
-  by `image`/`trace` parts; `selectEvictions` is the reference-aware LRU policy.
+  surface is an ordered list of parts (`html` | `markdown` | `diff` | `terminal`
+  | `image` | `trace`); a snippet is sugar for a single html part.
+  `firstHtml`/`htmlPart` bridge the legacy snippet shape. Assets (uploaded blobs)
+  are a separate entity, referenced by `image`/`trace` parts; `selectEvictions`
+  is the reference-aware LRU policy.
+- `server/public.ts` — the `sideshow/server` package export (`createApp`,
+  `JsonFileStore`, types) for embedding the app in a Node process.
 - `server/storage.ts` — `JsonFileStore` (local Node). `workers/sqlStore.ts` —
   `SqlStore` (Durable Object SQLite). Both must pass `test/storeContract.ts`,
   and both migrate legacy `snippets`/`snippetId` data to surfaces on load.
 - `server/surfacePage.ts` — sandboxed document for one html part: CSP allowlist
-  and the postMessage bridge (resize, sendPrompt, openLink). Diff parts never
-  reach here — the viewer renders them natively (they are data, not markup).
+  and the postMessage bridge (resize, sendPrompt, openLink). Only html parts
+  reach here — markdown, diff, terminal, image, and trace parts are data the
+  viewer renders natively, never markup in the sandbox.
 - `server/mcpHttp.ts` — stateless MCP at `/mcp`. `mcp/server.ts` — stdio MCP,
   a thin client over the HTTP API (passes response fields through untouched).
 - `viewer/` — the viewer: Solid + TypeScript in `viewer/src/`, built by Vite

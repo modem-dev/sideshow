@@ -5,9 +5,10 @@
 
 A live visual surface for terminal coding agents.
 
-Let agents say it in HTML — diagrams, UI sketches, charts. sideshow is a small
-server with a browser viewer: agents publish HTML snippets from the terminal,
-they render live, and you comment back. Your comments reach the agent.
+Let agents say it in more than text — HTML diagrams and UI sketches, rendered
+markdown, syntax-highlighted diffs, terminal output, images. sideshow is a
+small server with a browser viewer: agents publish **surfaces** from the
+terminal, they render live, and you comment back. Your comments reach the agent.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/sideshow-dark.png">
@@ -37,7 +38,7 @@ curl -s http://localhost:4242/setup >> AGENTS.md
 ```
 
 That block teaches any agent with a shell (pi, opencode, amp, codex, Claude
-Code) to publish snippets and poll for comments over curl.
+Code) to publish surfaces and poll for comments over curl.
 
 No agent handy? `npx sideshow demo` seeds two example sessions to look around.
 
@@ -49,12 +50,14 @@ Pick whichever tier the agent supports — each one covers the full loop.
 
 ```sh
 sideshow publish sketch.html --title "Cache layout"
-sideshow wait      # block until the user comments
+sideshow diff change.patch --title "Refactor"   # or markdown / image / terminal
+sideshow wait                                   # block until the user comments
 ```
 
-**MCP.** Tools: `publish_snippet`, `update_snippet`, `wait_for_feedback`,
-`reply_to_user`, `list_snippets`, `get_design_guide`. Connect over stdio or
-straight to the server at `/mcp`:
+**MCP.** Tools: `publish_surface`, `update_surface`, `publish_snippet`,
+`update_snippet`, `wait_for_feedback`, `reply_to_user`, `list_surfaces`,
+`upload_asset`, `get_design_guide`. Connect over stdio or straight to the
+server at `/mcp`:
 
 ```sh
 claude mcp add --scope user sideshow -- npx -y sideshow mcp
@@ -62,8 +65,9 @@ claude mcp add --scope user sideshow -- npx -y sideshow mcp
 claude mcp add --scope user --transport http sideshow http://localhost:4242/mcp
 ```
 
-**Plain HTTP.** `POST /api/snippets`, `PUT /api/snippets/:id`, and
-`GET /api/comments?wait=60` for long-polling. Documented at `/guide`.
+**Plain HTTP.** `POST /api/surfaces`, `PUT /api/surfaces/:id`, `POST /api/assets`
+for blob uploads, and `GET /api/comments?wait=60` for long-polling. The legacy
+`/api/snippets` endpoints still work as html-only aliases. Documented at `/guide`.
 
 MCP agents get usage instructions automatically; everything else uses the
 `/setup` block above. Claude Code users can also install the skill in
@@ -92,26 +96,39 @@ Code" link (sidebar footer) shows the same steps. The plugin lives in
 
 - **Session** — one agent conversation. Sessions appear in the viewer sidebar;
   click a title to rename, hover to delete.
-- **Snippet** — one published HTML fragment. It renders in a sandboxed iframe
-  (`sandbox="allow-scripts"`, no same-origin) under a CSP that limits external
-  resources to a short CDN allowlist. Updating a snippet creates a new version;
-  old versions stay viewable.
-- **Comment thread** — every snippet has one. You write in the browser; agents
-  read via long-poll (`sideshow wait` or `wait_for_feedback`) and reply. A
-  snippet can also call `sendPrompt('...')` to post to its own thread.
+- **Surface** — one published card, built from an ordered list of **parts**.
+  Each part has a kind: `html`, `markdown`, `diff`, `terminal`, `image`, or
+  `trace`. Combine them — e.g. a markdown rationale above a diff. `html` parts
+  render in a sandboxed iframe (`sandbox="allow-scripts"`, no same-origin) under
+  a CSP that limits external resources to a short CDN allowlist; the other kinds
+  are data the trusted viewer renders natively. Updating a surface creates a new
+  version; old versions stay viewable. A _snippet_ is sugar for a single `html`
+  part.
+- **Comment thread** — every surface has one. You write in the browser; agents
+  read via long-poll (`sideshow wait` or `wait_for_feedback`) and reply. An
+  `html` part can also call `sendPrompt('...')` to post to its own thread.
 
-The design contract at `/guide` tells agents how to write snippets that fit the
-viewer: fragment-only HTML, theme CSS variables, dark mode rules.
+The design contract at `/guide` tells agents how to write surfaces that fit the
+viewer: fragment-only HTML, theme CSS variables, dark mode rules, and when to
+reach for each part kind.
 
 ## Architecture
 
 - `server/app.ts` — runtime-agnostic Hono app: REST API, SSE live feed,
-  long-poll comments, snippet renderer, MCP endpoint.
-- `server/storage.ts` — `Store` interface and the JSON-file implementation.
-- `viewer/` — the viewer, a single static HTML file.
+  long-poll comments, surface renderer, asset upload/serve.
+- `server/types.ts` — data model (surfaces, parts, assets) and the `Store`
+  interface.
+- `server/storage.ts` — `JsonFileStore` (local Node); `workers/sqlStore.ts` is
+  the Durable Object SQLite store. Both pass the same store contract.
+- `server/surfacePage.ts` — the sandboxed document and postMessage bridge for an
+  `html` part. `server/mcpHttp.ts` — stateless MCP at `/mcp`.
+- `viewer/` — the viewer (Solid), Vite-built into a single self-contained
+  `viewer/dist/index.html`.
 - `bin/sideshow.js` — CLI, Node built-ins only.
 - `mcp/server.ts` — stdio MCP server, a thin client over the HTTP API.
 - `workers/` — Cloudflare entry point and SQLite store.
+- `server/public.ts` — the `sideshow/server` package export, for embedding the
+  app in your own Node process.
 
 ## Deploying to Cloudflare
 
@@ -144,12 +161,20 @@ The whole app runs inside a single Durable Object with SQLite storage. One
 instance per board keeps the in-memory event bus authoritative, so SSE and
 long-polling behave the same as the local server.
 
+## Terminal surface (experimental)
+
+[`sideshow-term/`](sideshow-term/) is an early **alpha** sibling that renders to
+a TUI instead of the browser: agents publish STML (a small HTML-like markup) and
+you watch it render live in a spare terminal. It ships as its own package and
+requires [Bun](https://bun.sh) for the viewer. APIs are unstable — see
+[`sideshow-term/README.md`](sideshow-term/README.md).
+
 ## Development
 
 ```sh
 npm run dev          # server with watch + viewer watch build
-npm test             # node --test
-npm run typecheck    # tsc --noEmit
+npm test             # node --test (unit/API + store contract)
+npm run typecheck    # three tsc programs: node + workers + viewer
 npm run lint         # oxlint
 npm run format       # oxfmt
 ```
