@@ -9,6 +9,7 @@
     "coding-agents",
     "html-preview",
     "mcp",
+    "pi-package",
     "visualization"
   ],
   "homepage": "https://github.com/modem-dev/sideshow#readme",
@@ -29,7 +30,8 @@
     "dist/",
     "viewer/dist/",
     "guide/",
-    "skills/"
+    "skills/",
+    "extensions/"
   ],
   "type": "module",
   "exports": {
@@ -104,5 +106,13 @@
   },
   "engines": {
     "node": ">=22.18"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ]
   }
 }

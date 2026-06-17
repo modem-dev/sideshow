@@ -54,6 +54,16 @@ sideshow diff change.patch --title "Refactor"   # or markdown / image / terminal
 sideshow wait                                   # block until the user comments
 ```
 
+**Pi extension.** Pi users can install the package directly. It adds native
+`sideshow_*` tools for publishing/updating surfaces, uploading assets, waiting
+for feedback, and replying in browser threads:
+
+```sh
+pi install npm:sideshow
+# or try it for one run:
+pi -e npm:sideshow
+```
+
 **MCP.** Tools: `publish_surface`, `update_surface`, `publish_snippet`,
 `update_snippet`, `wait_for_feedback`, `reply_to_user`, `list_surfaces`,
 `upload_asset`, `get_design_guide`. Connect over stdio or straight to the
