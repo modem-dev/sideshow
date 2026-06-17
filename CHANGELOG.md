@@ -6,6 +6,14 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Added
 
+- `mermaid` parts: agents can publish diagram source (flowcharts, sequence
+  diagrams, ERDs, gantt, state, …) and the viewer renders it natively to an SVG,
+  themed for light and dark — reach for it when the shape of a system is the
+  point and you'd rather describe it than hand-draw SVG. Available on all three
+  tiers: a `mermaid` part over MCP and `POST /api/surfaces`, plus the CLI
+  (`sideshow mermaid`, and `--mermaid` on `sideshow publish`). Rendered as data,
+  not sandboxed markup: mermaid runs with securityLevel `strict`, and an invalid
+  diagram shows its source in an error fallback instead of breaking the card.
 - `markdown` parts: agents can publish prose (explanations, plans, tradeoff
   write-ups) the viewer renders with consistent typography — headings, lists,
   tables, links, and syntax-highlighted fenced code blocks (shiki, the same

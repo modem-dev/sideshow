@@ -14,11 +14,12 @@ export interface Session {
 
 // A surface is an ordered list of parts. Each part declares its own kind;
 // the surface itself is kind-agnostic. An `html` part is arbitrary agent
-// markup (rendered sandboxed in an iframe); `diff`, `image`, `trace`, and
-// `markdown` parts are structured data rendered by the trusted viewer. A
+// markup (rendered sandboxed in an iframe); `diff`, `image`, `trace`,
+// `markdown`, and `mermaid` parts are structured data rendered by the trusted
+// viewer. A
 // snippet is just a surface with one html part; a diagram-with-its-diff is
 // `[html, diff]`.
-export type SurfacePartKind = "html" | "diff" | "image" | "trace" | "markdown";
+export type SurfacePartKind = "html" | "diff" | "image" | "trace" | "markdown" | "mermaid";
 
 export interface HtmlPart {
   kind: "html";
@@ -33,6 +34,17 @@ export interface HtmlPart {
 export interface MarkdownPart {
   kind: "markdown";
   markdown: string;
+}
+
+// A mermaid part is diagram source (flowchart, sequence, ERD, gantt, …) the
+// trusted viewer renders to SVG with the mermaid library. Like markdown it is
+// NOT sandboxed: mermaid renders in the viewer's own origin with
+// securityLevel 'strict', sanitizing the SVG and disabling scripts/HTML labels
+// (see MermaidPart.tsx). Agents wanting hand-drawn vector art use an html part
+// with inline <svg> instead.
+export interface MermaidPart {
+  kind: "mermaid";
+  mermaid: string;
 }
 
 export interface DiffFile {
@@ -82,7 +94,7 @@ export interface TracePart {
   title?: string;
 }
 
-export type SurfacePart = HtmlPart | DiffPart | ImagePart | TracePart | MarkdownPart;
+export type SurfacePart = HtmlPart | DiffPart | ImagePart | TracePart | MarkdownPart | MermaidPart;
 
 export interface SurfaceVersion {
   version: number;
@@ -243,6 +255,8 @@ export function partsByteLength(parts: SurfacePart[]): number {
       n += p.assetId.length + (p.alt?.length ?? 0) + (p.caption?.length ?? 0);
     } else if (p.kind === "markdown") {
       n += p.markdown.length;
+    } else if (p.kind === "mermaid") {
+      n += p.mermaid.length;
     } else {
       n += (p.assetId?.length ?? 0) + (p.title?.length ?? 0);
       for (const s of p.steps ?? []) {
