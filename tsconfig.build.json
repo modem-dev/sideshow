@@ -4,7 +4,7 @@
     "noEmit": false,
     "outDir": "dist",
     "rewriteRelativeImportExtensions": true,
-    "declaration": false,
+    "declaration": true,
     "sourceMap": false
   },
   "include": ["server", "mcp"]

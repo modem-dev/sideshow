@@ -6,6 +6,9 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Added
 
+- The npm package now exposes a stable `sideshow/server` entrypoint for
+  integrations such as `sideshow-term` to reuse `createApp` and `JsonFileStore`
+  without importing private `dist/server/*` internals.
 - Surfaces: a published card is now an ordered list of parts, not a single
   HTML blob. A `diff` part renders a unified/git patch as a syntax-highlighted
   split/unified code review (via @pierre/diffs) directly in the viewer; an
