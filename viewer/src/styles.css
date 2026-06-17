@@ -83,12 +83,33 @@ aside {
   overflow-y: auto;
   padding: 4px 8px;
 }
+/* Recency group header (Today / Yesterday / Earlier). The first one hugs the
+   top; later ones get breathing room above. */
+.sess-group {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+  color: var(--faint);
+  padding: 12px 10px 4px;
+}
+.sess-group:first-child {
+  padding-top: 6px;
+}
 .sess {
   position: relative;
   padding: 9px 10px;
   border-radius: 8px;
   cursor: pointer;
   margin-bottom: 2px;
+}
+/* Sessions with no surfaces yet: present but visually receded. */
+.sess.vacant:not(.sel) .sess-title {
+  font-weight: 400;
+  color: var(--muted);
+}
+.sess.vacant:not(.sel) .sess-meta {
+  opacity: 0.8;
 }
 .sess:hover {
   background: var(--hover);

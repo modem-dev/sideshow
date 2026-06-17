@@ -6,6 +6,7 @@ import {
   checkVersion,
   connect,
   dismissUpdate,
+  groupSessions,
   live,
   navOpen,
   nearBottom,
@@ -75,6 +76,11 @@ export default function App() {
   // the mobile drawer slides in via a body class (see styles.css)
   createEffect(() => document.body.classList.toggle("nav-open", navOpen()));
 
+  // sessions bucketed by recency for the sidebar; recomputes whenever the
+  // session list changes (incl. the 45s quiet refresh, which keeps the
+  // Today/Yesterday split fresh as the day rolls over)
+  const sessionGroups = createMemo(() => groupSessions(sessions, new Date()));
+
   return (
     <>
       <div id="app">
@@ -97,7 +103,14 @@ export default function App() {
           </div>
           <UpdateBanner />
           <div id="sessionList">
-            <For each={sessions}>{(s) => <SessionItem session={s} />}</For>
+            <For each={sessionGroups()}>
+              {(group) => (
+                <>
+                  <div class="sess-group">{group.label}</div>
+                  <For each={group.sessions}>{(s) => <SessionItem session={s} />}</For>
+                </>
+              )}
+            </For>
           </div>
           <div class="aside-foot">
             <a href="/guide" target="_blank">
@@ -237,6 +250,7 @@ function SessionItem(props: { session: SessionRow }) {
       classList={{
         sel: props.session.id === selected(),
         unread: unread().has(props.session.id),
+        vacant: props.session.surfaceCount === 0,
       }}
       data-id={props.session.id}
       role="button"
@@ -252,8 +266,11 @@ function SessionItem(props: { session: SessionRow }) {
     >
       <div class="sess-title">{label()}</div>
       <div class="sess-meta">
-        {props.session.agent} · {props.session.surfaceCount} surface
-        {props.session.surfaceCount === 1 ? "" : "s"} · {relTime(props.session.lastActiveAt)}
+        {props.session.agent} ·{" "}
+        {props.session.surfaceCount === 0
+          ? "no surfaces yet"
+          : `${props.session.surfaceCount} surface${props.session.surfaceCount === 1 ? "" : "s"}`}{" "}
+        · {relTime(props.session.lastActiveAt)}
       </div>
       <span class="dot"></span>
       <button

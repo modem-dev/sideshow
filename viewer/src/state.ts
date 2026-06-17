@@ -9,6 +9,40 @@ import { api, type Comment, type SessionRow, type Surface, type VersionInfo } fr
 export type ViewComment = Comment & { pending?: boolean };
 
 export const [sessions, setSessions] = createStore<SessionRow[]>([]);
+
+export interface SessionGroup {
+  label: string;
+  sessions: SessionRow[];
+}
+
+// Bucket sessions by last-active recency (Today / Yesterday / Earlier) so the
+// freshest work stays on top and a long history reads at a glance. Within a
+// bucket, sessions with no surfaces yet sink to the bottom (and render dimmed)
+// — present but out of the way. Empty buckets are omitted. `now` is injectable
+// for tests; callers pass the real clock.
+export function groupSessions(list: readonly SessionRow[], now: Date): SessionGroup[] {
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 86_400_000;
+  const buckets: SessionGroup[] = [
+    { label: "Today", sessions: [] },
+    { label: "Yesterday", sessions: [] },
+    { label: "Earlier", sessions: [] },
+  ];
+  for (const s of list) {
+    const t = Date.parse(s.lastActiveAt);
+    const bucket = t >= startOfToday ? buckets[0] : t >= startOfYesterday ? buckets[1] : buckets[2];
+    bucket.sessions.push(s);
+  }
+  for (const b of buckets) {
+    b.sessions.sort((a, c) => {
+      const ae = a.surfaceCount === 0;
+      const ce = c.surfaceCount === 0;
+      if (ae !== ce) return ae ? 1 : -1; // empties last
+      return c.lastActiveAt.localeCompare(a.lastActiveAt); // newest first
+    });
+  }
+  return buckets.filter((b) => b.sessions.length > 0);
+}
 export const [selected, setSelected] = createSignal<string | null>(null);
 export const [unread, setUnread] = createSignal<ReadonlySet<string>>(new Set<string>());
 export const [surfaces, setSurfaces] = createStore<Surface[]>([]);

@@ -1,5 +1,35 @@
 import { expect, publish, test, update } from "./fixtures.ts";
 
+test("the sidebar groups sessions by recency and sinks empty ones to the bottom", async ({
+  page,
+  server,
+}) => {
+  // one session with a surface, one with none (created directly)
+  await publish(server.url, { html: "<p>x</p>", title: "Has work", agent: "busy" });
+  await fetch(`${server.url}/api/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agent: "idle", title: "Empty one" }),
+  });
+
+  await page.goto(server.url);
+
+  // both were created just now, so they share one recency group
+  await expect(page.locator(".sess-group").first()).toHaveText("Today");
+
+  // the empty session is marked vacant, sinks below the one with work, and
+  // reads "no surfaces yet" instead of a count
+  const rows = page.locator("#sessionList .sess");
+  await expect(rows).toHaveCount(2);
+  // the session with work is on top even though the empty one is more recent
+  await expect(rows.nth(0)).toContainText("1 surface");
+  await expect(rows.nth(0)).not.toHaveClass(/vacant/);
+  // the empty session sinks below, marked vacant, reading "no surfaces yet"
+  await expect(rows.nth(1)).toHaveClass(/vacant/);
+  await expect(rows.nth(1)).toContainText("Empty one");
+  await expect(rows.nth(1)).toContainText("no surfaces yet");
+});
+
 test("snippet published over HTTP appears live via SSE, no reload", async ({ page, server }) => {
   await page.goto(server.url);
   await expect(page.locator("#onboard")).toBeVisible();

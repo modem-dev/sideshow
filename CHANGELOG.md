@@ -50,6 +50,10 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Changed
 
+- The session sidebar now groups sessions by recency (Today / Yesterday /
+  Earlier) so the freshest work stays on top, and sessions with no surfaces yet
+  are dimmed and sunk to the bottom of their group — keeping a long history
+  scannable.
 - A surface card's open and delete actions are now minimal Lucide icons
   (external-link and trash) instead of text labels; delete turns red on hover.
 - `sideshow-term watch` now starts a local server in the background when needed,
