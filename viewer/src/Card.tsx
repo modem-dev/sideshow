@@ -1,4 +1,14 @@
-import { For, Index, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import {
+  createSignal,
+  For,
+  Index,
+  type JSX,
+  Match,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+} from "solid-js";
 import {
   api,
   relTime,
@@ -11,7 +21,7 @@ import {
   type TracePart as TracePartData,
 } from "./api.ts";
 import { DiffPart } from "./DiffPart.tsx";
-import { OpenIcon, TrashIcon } from "./icons.tsx";
+import { CommentIcon, LinkIcon, OpenIcon, TrashIcon } from "./icons.tsx";
 import { ImagePart } from "./ImagePart.tsx";
 import { MarkdownPart } from "./MarkdownPart.tsx";
 import { TerminalPart } from "./TerminalPart.tsx";
@@ -93,29 +103,8 @@ export function Card(props: { surface: Surface }) {
             )}
           </Show>
         </span>
-        <span class="card-meta">{relTime(props.surface.updatedAt)}</span>
         <span class="sp"></span>
-        <a
-          class="act icon open"
-          target="_blank"
-          href={`/s/${props.surface.id}`}
-          title="Open in a new tab"
-          aria-label="Open in a new tab"
-        >
-          <OpenIcon />
-        </a>
-        <button
-          class="act icon del"
-          title="Delete surface"
-          aria-label={`Delete "${props.surface.title}"`}
-          onClick={async () => {
-            if (confirm(`Delete "${props.surface.title}"?`)) {
-              await api(`/api/surfaces/${props.surface.id}`, { method: "DELETE" });
-            }
-          }}
-        >
-          <TrashIcon />
-        </button>
+        <span class="card-meta">{relTime(props.surface.updatedAt)}</span>
       </div>
       {/* Parts render in order, dispatched by kind. Each kind is an explicit
           Match; the fallback is reserved for a kind this viewer build doesn't
@@ -172,6 +161,48 @@ export function Card(props: { surface: Surface }) {
       <Thread
         surfaceId={props.surface.id}
         placeholder="Leave a comment…"
+        collapsible
+        actions={
+          <>
+            <button
+              class="act icon copy"
+              title="Copy link to this surface"
+              aria-label="Copy link to this surface"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(`${location.origin}/s/${props.surface.id}`);
+                  toast("Link copied");
+                } catch {
+                  toast("Couldn't copy the link");
+                }
+              }}
+            >
+              <LinkIcon />
+            </button>
+            <a
+              class="act icon open"
+              target="_blank"
+              href={`/s/${props.surface.id}`}
+              title="Open in a new tab"
+              aria-label="Open in a new tab"
+            >
+              <OpenIcon />
+            </a>
+            <span class="divider"></span>
+            <button
+              class="act icon del"
+              title="Delete surface"
+              aria-label={`Delete "${props.surface.title}"`}
+              onClick={async () => {
+                if (confirm(`Delete "${props.surface.title}"?`)) {
+                  await api(`/api/surfaces/${props.surface.id}`, { method: "DELETE" });
+                }
+              }}
+            >
+              <TrashIcon />
+            </button>
+          </>
+        }
         send={(text) =>
           sendComment({ surface: props.surface.id, text, author: "user" }, props.surface.id, text)
         }
@@ -203,14 +234,48 @@ function Thread(props: {
   surfaceId: string | null;
   placeholder: string;
   send: (text: string) => Promise<string | null>;
+  // When set, the composer is hidden behind a Comment action and the other
+  // per-card actions (open/delete/…) share the recessed footer bar. The
+  // bar is deliberately darker than the agent surface above it so a user's
+  // comment never reads as part of the agent-rendered UI.
+  collapsible?: boolean;
+  actions?: JSX.Element;
 }) {
+  const [replying, setReplying] = createSignal(false);
   const list = () => comments().filter((c) => c.surfaceId === props.surfaceId);
   return (
     <div class="thread">
-      <div class="cmts">
-        <For each={list()}>{(c) => <CommentRow comment={c} />}</For>
-      </div>
-      <Composer placeholder={props.placeholder} send={props.send} />
+      <Show when={list().length}>
+        <div class="cmts">
+          <For each={list()}>{(c) => <CommentRow comment={c} />}</For>
+        </div>
+      </Show>
+      <Show
+        when={props.collapsible}
+        fallback={<Composer placeholder={props.placeholder} send={props.send} />}
+      >
+        <div class="card-actions">
+          <Show
+            when={replying()}
+            fallback={
+              <div class="actbar">
+                <button class="act comment" onClick={() => setReplying(true)}>
+                  <CommentIcon /> Comment
+                </button>
+                <span class="sp"></span>
+                {props.actions}
+              </div>
+            }
+          >
+            <Composer
+              placeholder={props.placeholder}
+              send={props.send}
+              autofocus
+              onCancel={() => setReplying(false)}
+            />
+          </Show>
+        </div>
+      </Show>
     </div>
   );
 }
@@ -253,7 +318,12 @@ function CommentRow(props: { comment: ViewComment }) {
   );
 }
 
-function Composer(props: { placeholder: string; send: (text: string) => Promise<string | null> }) {
+function Composer(props: {
+  placeholder: string;
+  send: (text: string) => Promise<string | null>;
+  autofocus?: boolean;
+  onCancel?: () => void;
+}) {
   let input!: HTMLInputElement;
   const send = async () => {
     const text = input.value.trim();
@@ -267,6 +337,7 @@ function Composer(props: { placeholder: string; send: (text: string) => Promise<
       toast(`Couldn't post that comment — ${error}. It's back in the box.`);
     }
   };
+  onMount(() => props.autofocus && input.focus());
   return (
     <div class="composer">
       <input
@@ -274,9 +345,17 @@ function Composer(props: { placeholder: string; send: (text: string) => Promise<
         placeholder={props.placeholder}
         onKeyDown={(e) => {
           if (e.key === "Enter") send();
+          // Escape folds the composer back to the action bar — but only when
+          // it's empty, so an in-progress reply can't be lost to a stray key.
+          else if (e.key === "Escape" && !input.value && props.onCancel) props.onCancel();
         }}
       />
       <button onClick={send}>Comment</button>
+      <Show when={props.onCancel}>
+        <button class="ghost" onClick={props.onCancel}>
+          Cancel
+        </button>
+      </Show>
     </div>
   );
 }

@@ -4,6 +4,16 @@ All notable user-visible changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- A surface card's actions now live in a recessed footer bar beneath the
+  rendered surface, a step darker than the surface itself, so the human
+  comment/control zone reads as chrome rather than as part of the
+  agent-generated UI. Leaving a comment is a quiet "Comment" action there that
+  expands the composer inline (Escape or Cancel folds it back); open,
+  copy-link, and delete move down out of the card's top corner into the same
+  bar, with delete fenced off behind a divider and turning red on hover.
+
 ## [0.5.0] - 2026-06-17
 
 ### Added

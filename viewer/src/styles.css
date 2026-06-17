@@ -755,6 +755,78 @@ iframe {
   color: var(--text);
   background: var(--hover);
 }
+.composer .ghost {
+  border: none;
+  color: var(--faint);
+}
+.composer .ghost:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+/* Footer action bar — a recessed well, a step darker than the agent surface
+   above it, so the whole human/control zone reads as chrome rather than as
+   part of the agent-rendered card. Reply is a quiet labelled action here;
+   open/copy/delete share the same row. */
+.card-actions {
+  border-top: 0.5px solid var(--border);
+  background: var(--panel);
+  padding: 5px 8px;
+}
+.actbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 34px;
+}
+.actbar .sp {
+  flex: 1;
+}
+.actbar .divider {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 4px;
+}
+.card-actions .act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font: 12.5px inherit;
+  color: var(--faint);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 0 9px;
+  height: 30px;
+}
+.card-actions .act:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.card-actions .act.icon {
+  width: 30px;
+  padding: 0;
+}
+.card-actions .act svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.card-actions .act.del:hover {
+  color: var(--danger);
+}
+/* The composer takes over the bar when replying; the input claims an accent
+   edge on focus — the one moment the zone announces "this is you". */
+.card-actions .composer {
+  margin-top: 0;
+}
+.card-actions .composer input:focus {
+  border-color: var(--accent);
+}
 .cmt.pending {
   opacity: 0.55;
 }

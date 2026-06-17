@@ -89,6 +89,7 @@ test("comment typed in the composer round-trips to the API", async ({ page, serv
 
   await page.goto(server.url);
   const card = page.locator(".card:not(#sessionThread)");
+  await card.locator(".act.comment").click();
   const input = card.locator(".composer input");
   await input.fill("ship it");
   await input.press("Enter");
@@ -159,6 +160,7 @@ test("a comment's copy button puts an agent-ready paste block on the clipboard",
 
   await page.goto(server.url);
   const card = page.locator(".card:not(#sessionThread)");
+  await card.locator(".act.comment").click();
   const input = card.locator(".composer input");
   await input.fill("tighten the spacing");
   await input.press("Enter");
@@ -189,6 +191,7 @@ test("a failed comment send restores the input instead of losing the message", a
     route.request().method() === "POST" ? route.abort() : route.fallback(),
   );
 
+  await card.locator(".act.comment").click();
   const input = card.locator(".composer input");
   await input.fill("important feedback");
   await input.press("Enter");
@@ -218,6 +221,7 @@ test("a comment echoes immediately, before the SSE round-trip confirms it", asyn
     await route.continue();
   });
 
+  await card.locator(".act.comment").click();
   const input = card.locator(".composer input");
   await input.fill("instant echo");
   await input.press("Enter");
