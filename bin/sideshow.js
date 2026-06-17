@@ -71,6 +71,10 @@ usage:
                                           a checkpoint, e.g. after publishing)
       --session <id>    target session (default: auto)
       --transcript <f>  transcript file (default: newest Claude Code log for cwd)
+      --pad <n>         prompts of context to keep around the session's surfaces
+                        (default 5; the trace is windowed so it explains how
+                        THESE visuals were made, not the whole session)
+      --all             sync the whole transcript, not just the windowed slice
       --reset           replace the session's trace (full re-sync, not just the tail)
       --quiet           print nothing on success
   sideshow comment <text> [options]       reply to the user on a surface
@@ -524,6 +528,31 @@ function buildTraceSteps(text) {
   return steps;
 }
 
+// Restrict a transcript's steps to a window of prompts around this session's
+// surfaces, so each session's trace shows how ITS visuals were made — the
+// prompts/thinking/tools near when they were published — not the whole
+// transcript. `pad` is how many prompts of context to keep on each side.
+function scopeToSurfaces(steps, surfaceTimes, pad) {
+  if (!surfaceTimes.length) return steps;
+  const promptTs = steps
+    .filter((s) => s.kind === "prompt" && s.ts)
+    .map((s) => Date.parse(s.ts))
+    .filter((t) => Number.isFinite(t))
+    .sort((a, b) => a - b);
+  if (!promptTs.length) return steps;
+  const first = surfaceTimes[0];
+  const last = surfaceTimes[surfaceTimes.length - 1];
+  const countAtOrBefore = (t) => promptTs.filter((p) => p <= t).length;
+  const startIdx = Math.max(0, countAtOrBefore(first) - 1 - pad);
+  const endIdx = Math.min(promptTs.length - 1, Math.max(0, countAtOrBefore(last) - 1) + pad);
+  const startTs = promptTs[startIdx];
+  const endTs = endIdx + 1 < promptTs.length ? promptTs[endIdx + 1] : Infinity;
+  return steps.filter((s) => {
+    const t = s.ts ? Date.parse(s.ts) : NaN;
+    return Number.isFinite(t) && t >= startTs && t < endTs;
+  });
+}
+
 const commands = {
   async serve() {
     const { values: flags } = parse({
@@ -855,6 +884,8 @@ const commands = {
       options: {
         session: { type: "string" },
         transcript: { type: "string" },
+        pad: { type: "string" },
+        all: { type: "boolean" },
         quiet: { type: "boolean" },
         reset: { type: "boolean" },
       },
@@ -870,21 +901,38 @@ const commands = {
     }
     const steps = buildTraceSteps(readFileSync(transcript, "utf8"));
 
-    // cursor: steps already sent for this session, kept in the agent's CLI state
+    // Scope to a window of prompts around this session's surfaces (unless --all),
+    // so the trace explains how THESE visuals were made, not the whole session.
+    let scoped = steps;
+    if (!flags.all) {
+      const pad = flags.pad != null ? Math.max(0, parseInt(flags.pad, 10) || 0) : 5;
+      const metas = await api(`/api/sessions/${session}/surfaces`).catch(() => []);
+      const times = (Array.isArray(metas) ? metas : [])
+        .map((m) => Date.parse(m.createdAt))
+        .filter((t) => Number.isFinite(t))
+        .sort((a, b) => a - b);
+      scoped = scopeToSurfaces(steps, times, pad);
+    }
+    const windowed = scoped.length !== steps.length;
+
+    // cursor: steps already sent for this session, kept in the agent's CLI state.
+    // A windowed sync replaces (the span shifts as the session grows).
     const cursors = readState().traceCursors ?? {};
     const prev = cursors[session];
-    const reset = flags.reset || prev == null || steps.length < prev;
-    const toSend = reset ? steps : steps.slice(prev);
+    const reset = flags.reset || windowed || prev == null || scoped.length < prev;
+    const toSend = reset ? scoped : scoped.slice(prev);
     if (toSend.length === 0 && !reset) {
-      if (!flags.quiet) out({ ok: true, added: 0, total: steps.length });
+      if (!flags.quiet) out({ ok: true, added: 0, total: scoped.length });
       return;
     }
     const res = await api(`/api/sessions/${session}/trace`, {
       method: "POST",
       body: JSON.stringify({ steps: toSend, reset }),
     });
-    writeState({ traceCursors: { ...cursors, [session]: steps.length } });
-    if (!flags.quiet) out({ session, added: toSend.length, reset, total: res.count });
+    writeState({ traceCursors: { ...cursors, [session]: scoped.length } });
+    if (!flags.quiet) {
+      out({ session, added: toSend.length, reset, windowed, total: res.count });
+    }
   },
 
   async comment() {
