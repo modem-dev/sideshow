@@ -166,15 +166,20 @@ export interface CommentWait {
   waitSeconds: number;
 }
 
+export interface Feedback {
+  surfaceId: string | null;
+  surfaceTitle: string | null;
+  text: string;
+  at: string;
+}
+
 // Lean comment shape attached to agent-facing responses.
-export const feedbackView = (c: Comment) => ({
+const feedbackView = (c: Comment): Feedback => ({
   surfaceId: c.surfaceId,
   surfaceTitle: c.surfaceTitle,
   text: c.text,
   at: c.createdAt,
 });
-
-export type Feedback = ReturnType<typeof feedbackView>;
 
 export function createApp({
   store,

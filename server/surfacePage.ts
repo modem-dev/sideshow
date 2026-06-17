@@ -1,6 +1,6 @@
 // Origins html parts may load external resources from. Mirrors the allowlist
 // agents already know from Claude's inline widget surface.
-export const CDN_ALLOWLIST = [
+const CDN_ALLOWLIST = [
   "https://cdnjs.cloudflare.com",
   "https://esm.sh",
   "https://cdn.jsdelivr.net",

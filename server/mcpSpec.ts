@@ -51,7 +51,7 @@ const d = {
   terminalCols: "terminal part: optional render width in columns",
 };
 
-export const MCP_PARTS_DESCRIPTION =
+const MCP_PARTS_DESCRIPTION =
   "Ordered parts. html: {kind:'html', html:'<body fragment>'}. markdown: {kind:'markdown', " +
   "markdown:'## prose'} — for explanations, plans, tradeoff write-ups (styled text, not sandboxed; " +
   "embedded raw HTML is escaped — use an html part for live markup). diff: {kind:'diff', " +
@@ -64,7 +64,7 @@ export const MCP_PARTS_DESCRIPTION =
   "cursor-addressing TUIs are not resolved). Optional diff layout " +
   "'unified'|'split'. Combine freely, e.g. [{kind:'html',...},{kind:'image',assetId},{kind:'trace',steps}].";
 
-export const MCP_PART_JSON_SCHEMA = {
+const MCP_PART_JSON_SCHEMA = {
   type: "object",
   properties: {
     kind: { type: "string", enum: ["html", "markdown", "diff", "image", "trace", "terminal"] },
@@ -110,7 +110,7 @@ export const MCP_PART_JSON_SCHEMA = {
   required: ["kind"],
 } as const;
 
-export const MCP_PARTS_JSON_SCHEMA = {
+const MCP_PARTS_JSON_SCHEMA = {
   type: "array",
   description: MCP_PARTS_DESCRIPTION,
   items: MCP_PART_JSON_SCHEMA,
@@ -269,7 +269,7 @@ const traceStepSchema = z.object({
   ts: z.string().optional().describe(d.traceTs),
 });
 
-export const mcpPartSchema = z
+const mcpPartSchema = z
   .object({
     kind: z.enum(["html", "markdown", "diff", "image", "trace", "terminal"]),
     html: z.string().optional().describe(d.partHtml),

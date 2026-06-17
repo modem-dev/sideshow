@@ -10,7 +10,7 @@
 
 // Tuned to be legible on dark terminals (the common case) while staying
 // readable on light ones. One palette: the terminal owns the background.
-export const PALETTE: Record<string, string> = {
+const PALETTE: Record<string, string> = {
   accent: "#38bdf8",
   success: "#4ade80",
   warning: "#fbbf24",

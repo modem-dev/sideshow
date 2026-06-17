@@ -164,24 +164,10 @@ const looseSurfacePart = z.union([
   looseTerminalPart,
 ]);
 
-export const surfacePartsSchema = z.array(
-  z.union([
-    strictHtmlPart,
-    strictMarkdownPart,
-    strictDiffPart,
-    strictImagePart,
-    strictTracePart,
-    strictTerminalPart,
-  ]),
-);
-
 // Runtime SurfacePart parser shared by REST and MCP. REST uses strict mode to
 // reject malformed input before it reaches storage; MCP uses tolerant mode so
 // slightly-off tool calls still publish whatever valid parts they contain.
-export function parseSurfaceParts(
-  raw: unknown,
-  opts: { strict?: boolean } = {},
-): SurfacePartParseResult {
+function parseSurfaceParts(raw: unknown, opts: { strict?: boolean } = {}): SurfacePartParseResult {
   if (!Array.isArray(raw)) return { parts: [], errors: ["parts must be an array"] };
 
   if (opts.strict === true) {

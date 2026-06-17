@@ -310,9 +310,3 @@ export function selectEvictions(
   }
   return evict;
 }
-
-// First html part — the back-compat view used by the legacy snippet routes.
-export const firstHtml = (parts: SurfacePart[]): string => {
-  const p = parts.find((p): p is HtmlPart => p.kind === "html");
-  return p ? p.html : "";
-};

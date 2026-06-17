@@ -8,7 +8,8 @@ import { api, type Comment, type SessionRow, type Surface, type VersionInfo } fr
 // local echo (pending until the POST confirms).
 export type ViewComment = Comment & { pending?: boolean };
 
-export const [sessions, setSessions] = createStore<SessionRow[]>([]);
+const [sessionsStore, setSessionsInternal] = createStore<SessionRow[]>([]);
+export const sessions = sessionsStore;
 
 export interface SessionGroup {
   label: string;
@@ -43,12 +44,17 @@ export function groupSessions(list: readonly SessionRow[], now: Date): SessionGr
   }
   return buckets.filter((b) => b.sessions.length > 0);
 }
-export const [selected, setSelected] = createSignal<string | null>(null);
+const [selectedState, setSelectedInternal] = createSignal<string | null>(null);
+export const selected = selectedState;
 export const [unread, setUnread] = createSignal<ReadonlySet<string>>(new Set<string>());
-export const [surfaces, setSurfaces] = createStore<Surface[]>([]);
-export const [comments, setComments] = createSignal<ViewComment[]>([]);
-export const [streamLoading, setStreamLoading] = createSignal(false);
-export const [live, setLive] = createSignal(false);
+const [surfacesStore, setSurfacesInternal] = createStore<Surface[]>([]);
+export const surfaces = surfacesStore;
+const [commentsState, setCommentsInternal] = createSignal<ViewComment[]>([]);
+export const comments = commentsState;
+const [streamLoadingState, setStreamLoadingInternal] = createSignal(false);
+export const streamLoading = streamLoadingState;
+const [liveState, setLiveInternal] = createSignal(false);
+export const live = liveState;
 export const [navOpen, setNavOpen] = createSignal(false);
 // Surface id the next mounted card should scroll to (set for SSE arrivals
 // landing while the user is near the bottom, not the initial batch of a
@@ -58,15 +64,17 @@ export const [scrollTarget, setScrollTarget] = createSignal<string | null>(null)
 // when the user is reading further up.
 export const [pillTarget, setPillTarget] = createSignal<string | null>(null);
 
-export const [toastText, setToastText] = createSignal("");
-export const [toastShow, setToastShow] = createSignal(false);
+const [toastTextState, setToastTextInternal] = createSignal("");
+export const toastText = toastTextState;
+const [toastShowState, setToastShowInternal] = createSignal(false);
+export const toastShow = toastShowState;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 export function toast(text: string) {
-  setToastText(text);
-  setToastShow(true);
+  setToastTextInternal(text);
+  setToastShowInternal(true);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => setToastShow(false), 4000);
+  toastTimer = setTimeout(() => setToastShowInternal(false), 4000);
 }
 
 function markUnread(sessionId: string) {
@@ -97,17 +105,17 @@ export function updateNotice(): VersionInfo | null {
 }
 
 export async function refreshSessionsQuiet() {
-  setSessions(reconcile(await api<SessionRow[]>("/api/sessions"), { key: "id" }));
+  setSessionsInternal(reconcile(await api<SessionRow[]>("/api/sessions"), { key: "id" }));
 }
 
 export async function refreshSessions() {
   await refreshSessionsQuiet();
-  if (selected() && !sessions.some((s) => s.id === selected())) setSelected(null);
+  if (selected() && !sessions.some((s) => s.id === selected())) setSelectedInternal(null);
   if (!selected() && sessions.length > 0) await select(sessions[0].id);
 }
 
 export async function select(id: string) {
-  setSelected(id);
+  setSelectedInternal(id);
   setUnread((prev) => {
     const next = new Set(prev);
     next.delete(id);
@@ -115,16 +123,16 @@ export async function select(id: string) {
   });
   setPillTarget(null);
   setNavOpen(false);
-  setStreamLoading(true);
-  setSurfaces(reconcile([]));
-  setComments([]);
+  setStreamLoadingInternal(true);
+  setSurfacesInternal(reconcile([]));
+  setCommentsInternal([]);
   const metas = await api<{ id: string }[]>(`/api/sessions/${id}/surfaces`).catch(() => []);
   const details = (
     await Promise.all(metas.map((m) => api<Surface>(`/api/surfaces/${m.id}`).catch(() => null)))
   ).filter((s) => s !== null);
   if (selected() !== id) return; // user switched away mid-load
-  setSurfaces(reconcile(details, { key: "id" }));
-  setStreamLoading(false);
+  setSurfacesInternal(reconcile(details, { key: "id" }));
+  setStreamLoadingInternal(false);
   const res = await api<{ comments: Comment[] }>(`/api/comments?session=${id}`).catch(() => null);
   if (!res || selected() !== id) return;
   mergeComments(res.comments);
@@ -146,12 +154,12 @@ export async function selectAdjacent(delta: 1 | -1) {
 }
 
 // Fetch a surface and insert/update it in the open session's stream.
-export async function upsertSurface(id: string, { scroll = true } = {}) {
+async function upsertSurface(id: string, { scroll = true } = {}) {
   const s = await api<Surface>(`/api/surfaces/${id}`).catch(() => null);
   if (!s || s.sessionId !== selected()) return;
   const idx = surfaces.findIndex((x) => x.id === s.id);
   if (idx >= 0) {
-    setSurfaces(idx, reconcile(s));
+    setSurfacesInternal(idx, reconcile(s));
   } else {
     // Follow new surfaces only when the user is already at the bottom;
     // never yank them away from whatever they're reading mid-scroll.
@@ -159,7 +167,7 @@ export async function upsertSurface(id: string, { scroll = true } = {}) {
       if (nearBottom()) setScrollTarget(s.id);
       else setPillTarget(s.id);
     }
-    setSurfaces(surfaces.length, s);
+    setSurfacesInternal(surfaces.length, s);
   }
 }
 
@@ -168,8 +176,8 @@ export function nearBottom() {
   return !!m && m.scrollHeight - m.scrollTop - m.clientHeight < 200;
 }
 
-export function mergeComments(list: Comment[]) {
-  setComments((prev) => {
+function mergeComments(list: Comment[]) {
+  setCommentsInternal((prev) => {
     const seen = new Set(prev.map((c) => c.id));
     const fresh = list.filter((c) => !seen.has(c.id));
     return fresh.length > 0 ? [...prev, ...fresh] : prev;
@@ -197,20 +205,20 @@ export async function sendComment(
     createdAt: new Date().toISOString(),
     pending: true,
   };
-  setComments((prev) => [...prev, local]);
+  setCommentsInternal((prev) => [...prev, local]);
   try {
     const created = await api<Comment>("/api/comments", {
       method: "POST",
       body: JSON.stringify(body),
     });
-    setComments((prev) => {
+    setCommentsInternal((prev) => {
       // the SSE refetch may have rendered it already; keep one copy
       if (prev.some((c) => c.id === created.id)) return prev.filter((c) => c.id !== local.id);
       return prev.map((c) => (c.id === local.id ? created : c));
     });
     return null;
   } catch (err) {
-    setComments((prev) => prev.filter((c) => c.id !== local.id));
+    setCommentsInternal((prev) => prev.filter((c) => c.id !== local.id));
     return err instanceof Error && err.message ? err.message : "network error";
   }
 }
@@ -226,13 +234,13 @@ export function connect() {
   const es = new EventSource("/api/events");
   let everConnected = false;
   es.onopen = async () => {
-    setLive(true);
+    setLiveInternal(true);
     // events that fired during a gap are gone for good — refetch so the
     // board can't silently go stale while still looking live
     if (everConnected) await resyncSelected();
     everConnected = true;
   };
-  es.onerror = () => setLive(false);
+  es.onerror = () => setLiveInternal(false);
   es.onmessage = async (ev) => {
     const e = JSON.parse(ev.data) as FeedEvent;
     // activity the user isn't looking at — other session or hidden tab —
@@ -246,7 +254,7 @@ export function connect() {
       await refreshSessionsQuiet();
     } else if (e.type === "surface-deleted") {
       const idx = surfaces.findIndex((s) => s.id === e.id);
-      if (idx >= 0) setSurfaces(produce((arr) => arr.splice(idx, 1)));
+      if (idx >= 0) setSurfacesInternal(produce((arr) => arr.splice(idx, 1)));
       await refreshSessionsQuiet();
     } else if (e.type === "comment-created") {
       if (away && e.sessionId) markUnread(e.sessionId);
@@ -267,7 +275,7 @@ async function resyncSelected() {
   if (!before || selected() !== before) return; // select() rebuilt the stream
   const metas = await api<{ id: string }[]>(`/api/sessions/${before}/surfaces`).catch(() => []);
   const ids = new Set(metas.map((m) => m.id));
-  setSurfaces(
+  setSurfacesInternal(
     produce((arr) => {
       for (let i = arr.length - 1; i >= 0; i--) {
         if (!ids.has(arr[i].id)) arr.splice(i, 1);
