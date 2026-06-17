@@ -69,6 +69,53 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     );
   });
 
+  contract("returns detached snapshots instead of live mutable objects", async (store) => {
+    const session = await store.createSession({ agent: "pi", title: "Original" });
+    session.title = "mutated return";
+    assert.equal((await store.getSession(session.id))?.title, "Original");
+
+    const listedSession = (await store.listSessions())[0];
+    listedSession.agent = "mutated list";
+    assert.equal((await store.getSession(session.id))?.agent, "pi");
+
+    const parts = [htmlPart("<p>v1</p>")];
+    const surface = await store.createSurface({ sessionId: session.id, title: "Card", parts });
+    assert.ok(surface);
+    parts[0].html = "<p>mutated input</p>";
+    surface.title = "mutated return";
+    surface.parts[0] = htmlPart("<p>mutated return</p>");
+    assert.equal((await store.getSurface(surface.id))?.title, "Card");
+    assert.deepEqual((await store.getSurface(surface.id))?.parts, [htmlPart("<p>v1</p>")]);
+
+    const patchParts = [htmlPart("<p>v2</p>")];
+    const updated = await store.updateSurface(surface.id, { parts: patchParts });
+    assert.ok(updated);
+    patchParts[0].html = "<p>mutated patch</p>";
+    updated.parts[0] = htmlPart("<p>mutated update return</p>");
+    assert.deepEqual((await store.getSurface(surface.id))?.parts, [htmlPart("<p>v2</p>")]);
+
+    const comment = await store.createComment({
+      sessionId: session.id,
+      author: "user",
+      text: "hi",
+    });
+    assert.ok(comment);
+    comment.text = "mutated return";
+    assert.equal((await store.listComments({ sessionId: session.id }))[0].text, "hi");
+
+    const data = bytes(1, 2, 3);
+    const asset = await store.putAsset({
+      sessionId: session.id,
+      kind: "image",
+      contentType: "image/png",
+      data,
+    });
+    assert.ok(asset);
+    data[0] = 9;
+    asset.data[1] = 9;
+    assert.deepEqual([...(await store.getAsset(asset.id))!.data], [1, 2, 3]);
+  });
+
   contract("tracks the delivered-to-agent comment cursor", async (store) => {
     const session = await store.createSession({ agent: "pi" });
     assert.equal(session.agentSeq, 0);

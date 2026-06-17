@@ -27,6 +27,10 @@ export type * from "./types.ts";
 // it is the live Asset with raw bytes.
 type StoredAsset = Omit<Asset, "data"> & { data: string };
 
+const clone = <T>(value: T): T => structuredClone(value);
+const cloneOrNull = <T>(value: T | null | undefined): T | null =>
+  value == null ? null : clone(value);
+
 interface FileShape {
   sessions: Session[];
   surfaces: Surface[];
@@ -171,12 +175,14 @@ export class JsonFileStore implements Store {
 
   async listSessions() {
     await this.load();
-    return [...this.sessions.values()].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
+    return [...this.sessions.values()]
+      .map(clone)
+      .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
   }
 
   async getSession(id: string) {
     await this.load();
-    return this.sessions.get(id) ?? null;
+    return cloneOrNull(this.sessions.get(id));
   }
 
   async createSession(input: CreateSessionInput) {
@@ -193,7 +199,7 @@ export class JsonFileStore implements Store {
     };
     this.sessions.set(session.id, session);
     await this.persist();
-    return session;
+    return clone(session);
   }
 
   async renameSession(id: string, title: string) {
@@ -202,7 +208,7 @@ export class JsonFileStore implements Store {
     if (!session) return null;
     session.title = title.trim() || null;
     await this.persist();
-    return session;
+    return clone(session);
   }
 
   async removeSession(id: string) {
@@ -244,12 +250,12 @@ export class JsonFileStore implements Store {
     const all = [...this.surfaces.values()].filter(
       (s) => sessionId === undefined || s.sessionId === sessionId,
     );
-    return all.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return all.map(clone).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   async getSurface(id: string) {
     await this.load();
-    return this.surfaces.get(id) ?? null;
+    return cloneOrNull(this.surfaces.get(id));
   }
 
   async createSurface(input: CreateSurfaceInput) {
@@ -260,7 +266,7 @@ export class JsonFileStore implements Store {
       id: newId(),
       sessionId: input.sessionId,
       title: input.title?.trim() || "Untitled",
-      parts: input.parts,
+      parts: clone(input.parts),
       createdAt: now,
       updatedAt: now,
       version: 1,
@@ -269,7 +275,7 @@ export class JsonFileStore implements Store {
     this.surfaces.set(surface.id, surface);
     this.touch(input.sessionId);
     await this.persist();
-    return surface;
+    return clone(surface);
   }
 
   async updateSurface(id: string, patch: UpdateSurfaceInput) {
@@ -279,17 +285,17 @@ export class JsonFileStore implements Store {
     surface.history.push({
       version: surface.version,
       title: surface.title,
-      parts: surface.parts,
+      parts: clone(surface.parts),
       at: surface.updatedAt,
     });
     if (surface.history.length > HISTORY_LIMIT) surface.history.shift();
     if (patch.title !== undefined) surface.title = patch.title.trim() || surface.title;
-    if (patch.parts !== undefined) surface.parts = patch.parts;
+    if (patch.parts !== undefined) surface.parts = clone(patch.parts);
     surface.version += 1;
     surface.updatedAt = new Date().toISOString();
     this.touch(surface.sessionId);
     await this.persist();
-    return surface;
+    return clone(surface);
   }
 
   async removeSurface(id: string) {
@@ -306,12 +312,14 @@ export class JsonFileStore implements Store {
 
   async listComments(query: CommentQuery) {
     await this.load();
-    return this.comments.filter(
-      (c) =>
-        (query.sessionId === undefined || c.sessionId === query.sessionId) &&
-        (query.surfaceId === undefined || c.surfaceId === query.surfaceId) &&
-        (query.afterSeq === undefined || c.seq > query.afterSeq),
-    );
+    return this.comments
+      .filter(
+        (c) =>
+          (query.sessionId === undefined || c.sessionId === query.sessionId) &&
+          (query.surfaceId === undefined || c.surfaceId === query.surfaceId) &&
+          (query.afterSeq === undefined || c.seq > query.afterSeq),
+      )
+      .map(clone);
   }
 
   async createComment(input: CreateCommentInput) {
@@ -331,7 +339,7 @@ export class JsonFileStore implements Store {
     this.comments.push(comment);
     this.touch(input.sessionId);
     await this.persist();
-    return comment;
+    return clone(comment);
   }
 
   // --- assets ---
@@ -356,7 +364,7 @@ export class JsonFileStore implements Store {
       existing.lastAccessedAt = new Date().toISOString();
       this.touch(input.sessionId);
       await this.persist();
-      return existing;
+      return clone(existing);
     }
     const referenced = this.referencedAssetIds();
     const candidates = [...this.assets.values()].map((a) => ({
@@ -376,19 +384,19 @@ export class JsonFileStore implements Store {
       contentType: input.contentType,
       byteLength: input.data.byteLength,
       filename: input.filename ?? null,
-      data: input.data,
+      data: new Uint8Array(input.data),
       createdAt: now,
       lastAccessedAt: now,
     };
     this.assets.set(asset.id, asset);
     this.touch(input.sessionId);
     await this.persist();
-    return asset;
+    return clone(asset);
   }
 
   async getAsset(id: string) {
     await this.load();
-    return this.assets.get(id) ?? null;
+    return cloneOrNull(this.assets.get(id));
   }
 
   async touchAsset(id: string) {
@@ -401,7 +409,7 @@ export class JsonFileStore implements Store {
 
   async listAssets(sessionId: string) {
     await this.load();
-    return [...this.assets.values()].filter((a) => a.sessionId === sessionId);
+    return [...this.assets.values()].filter((a) => a.sessionId === sessionId).map(clone);
   }
 
   async removeAsset(id: string) {
