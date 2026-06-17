@@ -37,7 +37,7 @@ test("snippet published over HTTP appears live via SSE, no reload", async ({ pag
   await publish(server.url, { html: "<h2>It works</h2>", title: "Live test", agent: "e2e" });
 
   // the card streams in over SSE — the page is never reloaded
-  await expect(page.locator(".card:not(#sessionThread) .card-title")).toHaveText("Live test");
+  await expect(page.locator(".card .card-title")).toHaveText("Live test");
   await expect(page.locator("#onboard")).toBeHidden();
   await expect(page.locator(".sess-title")).toContainText("e2e session");
 });
@@ -65,7 +65,7 @@ test("a part kind this viewer doesn't know shows a refresh hint, not a broken di
   await expect(page.locator("#onboard")).toBeVisible();
   await publish(server.url, { html: "<p>x</p>", title: "Future part", agent: "e2e" });
 
-  const card = page.locator(".card:not(#sessionThread):not(#whatsNew)").first();
+  const card = page.locator(".card:not(#whatsNew)").first();
   await expect(card.locator(".part-unsupported")).toBeVisible();
   await expect(card.locator(".diff-error")).toHaveCount(0);
 });
@@ -88,7 +88,7 @@ test("comment typed in the composer round-trips to the API", async ({ page, serv
   const snippet = await publish(server.url, { html: "<p>v1</p>", title: "Doc", agent: "e2e" });
 
   await page.goto(server.url);
-  const card = page.locator(".card:not(#sessionThread)");
+  const card = page.locator(".card");
   await card.locator(".act.comment").click();
   const input = card.locator(".composer input");
   await input.fill("ship it");
@@ -106,45 +106,6 @@ test("comment typed in the composer round-trips to the API", async ({ page, serv
     .toContain("ship it");
 });
 
-test("session thread shows snippet-less comments and messages the agent", async ({
-  page,
-  server,
-}) => {
-  const snippet = await publish(server.url, { html: "<p>x</p>", title: "Doc", agent: "e2e" });
-
-  await page.goto(server.url);
-  const thread = page.locator("#sessionThread");
-  await expect(thread).toBeVisible();
-
-  // an agent comment with no snippet attached (sideshow comment without --snippet)
-  await fetch(`${server.url}/api/comments`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ session: snippet.sessionId, text: "agent note", author: "e2e" }),
-  });
-  await expect(thread.locator(".cmt .txt")).toHaveText("agent note");
-
-  // the user can reply without picking a snippet; it lands as a user comment
-  const input = thread.locator(".composer input");
-  await input.fill("user note");
-  await input.press("Enter");
-  await expect(thread.locator(".cmt .txt")).toHaveText(["agent note", "user note"]);
-  await expect
-    .poll(async () => {
-      const res = await fetch(
-        `${server.url}/api/comments?session=${snippet.sessionId}&author=user`,
-      );
-      const data = (await res.json()) as { comments: { surfaceId: string | null; text: string }[] };
-      return data.comments.filter((c) => !c.surfaceId).map((c) => c.text);
-    })
-    .toContain("user note");
-
-  // snippets published later still appear above the session thread
-  await publish(server.url, { html: "<p>y</p>", title: "Later", session: snippet.sessionId });
-  await expect(page.locator("#stream > .card").last()).toHaveId("sessionThread");
-  await expect(page.locator("#stream > .card")).toHaveCount(3);
-});
-
 test("a comment's copy button puts an agent-ready paste block on the clipboard", async ({
   page,
   server,
@@ -159,7 +120,7 @@ test("a comment's copy button puts an agent-ready paste block on the clipboard",
   }
 
   await page.goto(server.url);
-  const card = page.locator(".card:not(#sessionThread)");
+  const card = page.locator(".card");
   await card.locator(".act.comment").click();
   const input = card.locator(".composer input");
   await input.fill("tighten the spacing");
@@ -186,7 +147,7 @@ test("a failed comment send restores the input instead of losing the message", a
   await publish(server.url, { html: "<p>x</p>", title: "Doc", agent: "e2e" });
 
   await page.goto(server.url);
-  const card = page.locator(".card:not(#sessionThread)");
+  const card = page.locator(".card");
   await page.route("**/api/comments", (route) =>
     route.request().method() === "POST" ? route.abort() : route.fallback(),
   );
@@ -213,7 +174,7 @@ test("a comment echoes immediately, before the SSE round-trip confirms it", asyn
   await publish(server.url, { html: "<p>x</p>", title: "Doc", agent: "e2e" });
 
   await page.goto(server.url);
-  const card = page.locator(".card:not(#sessionThread)");
+  const card = page.locator(".card");
   // hold the POST open so only the optimistic echo can render
   await page.route("**/api/comments", async (route) => {
     if (route.request().method() !== "POST") return route.fallback();
@@ -312,7 +273,7 @@ test("at phone width the sidebar collapses into a drawer and actions stay visibl
   await page.goto(server.url);
 
   // the sidebar is off-canvas and the stream gets the full width
-  const card = page.locator(".card:not(#sessionThread)");
+  const card = page.locator(".card");
   await expect(card).toBeVisible();
   await expect(page.locator("aside")).not.toBeInViewport();
   expect((await card.boundingBox())!.width).toBeGreaterThan(300);

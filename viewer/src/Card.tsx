@@ -29,7 +29,6 @@ import { TracePart } from "./TracePart.tsx";
 import {
   comments,
   scrollTarget,
-  selected,
   sendComment,
   sessions,
   setScrollTarget,
@@ -206,25 +205,6 @@ export function Card(props: { surface: Surface }) {
         send={(text) =>
           sendComment({ surface: props.surface.id, text, author: "user" }, props.surface.id, text)
         }
-      />
-    </div>
-  );
-}
-
-// Comments without a surface (e.g. `sideshow comment` with no --surface)
-// live in a session-level thread at the bottom of the stream, which also
-// lets the user leave a comment without picking a surface.
-export function SessionThread() {
-  return (
-    <div class="card" id="sessionThread">
-      <div class="card-head">
-        <span class="card-title">Session thread</span>
-        <span class="card-meta">not tied to a surface</span>
-      </div>
-      <Thread
-        surfaceId={null}
-        placeholder="Leave a comment…"
-        send={(text) => sendComment({ session: selected(), text, author: "user" }, null, text)}
       />
     </div>
   );

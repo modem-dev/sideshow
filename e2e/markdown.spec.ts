@@ -26,7 +26,7 @@ test("a markdown part renders typed prose with a highlighted code block", async 
   });
 
   await page.goto(server.url);
-  const card = page.locator(".card:not(#sessionThread)");
+  const card = page.locator(".card");
   const md = card.locator(".mdpart");
 
   // structured typography, not a sandboxed iframe

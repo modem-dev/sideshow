@@ -151,9 +151,8 @@ are kept and the user can flip between them.
 
 ## The feedback loop
 
-The user can type comments under any surface, or in the session thread at the
-bottom of the stream. Comments attach to a surface (`surfaceId`); behavior is
-otherwise unchanged. Feedback reaches you three ways:
+The user can type comments under any surface. Comments attach to a surface
+(`surfaceId`). Feedback reaches you three ways:
 
 - **Piggyback (automatic).** Every publish/update/reply response may include a
   `userFeedback` array — comments the user left since your last call. Treat

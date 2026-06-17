@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { api, relTime, sessionLabel, type SessionRow } from "./api.ts";
-import { Card, cardEls, frameForSource, SessionThread } from "./Card.tsx";
+import { Card, cardEls, frameForSource } from "./Card.tsx";
 import { renderNotes } from "./notes.ts";
 import {
   checkVersion,
@@ -334,7 +334,6 @@ function SessionView() {
           </div>
         </Show>
         <For each={surfaces}>{(s) => <Card surface={s} />}</For>
-        <SessionThread />
       </div>
     </div>
   );

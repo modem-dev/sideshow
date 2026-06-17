@@ -15,7 +15,7 @@ test("an image part renders an <img> served from /a/:id", async ({ page, server 
   });
 
   await page.goto(server.url);
-  const img = page.locator(".card:not(#sessionThread) .asset-img");
+  const img = page.locator(".card .asset-img");
   await expect(img).toBeVisible();
   await expect(img).toHaveAttribute("src", `/a/${asset.id}`);
   // the bytes actually loaded (not a broken image)
@@ -42,7 +42,7 @@ test("a trace part renders a step timeline with expandable detail", async ({ pag
   });
 
   await page.goto(server.url);
-  const card = page.locator(".card:not(#sessionThread)");
+  const card = page.locator(".card");
   await expect(card.locator(".trace-title")).toHaveText("What I did");
   await expect(card.locator(".trace-step")).toHaveCount(2);
   await expect(card.locator(".trace-kind").first()).toHaveText("tool");
@@ -72,7 +72,7 @@ test("a trace part backed by an uploaded file offers a download and renders step
   });
 
   await page.goto(server.url);
-  const card = page.locator(".card:not(#sessionThread)");
+  const card = page.locator(".card");
   await expect(card.locator(".trace-dl")).toHaveAttribute("href", `/a/${asset.id}`);
   // steps are fetched from the asset and rendered
   await expect(card.locator(".trace-step")).toHaveCount(2);
@@ -102,7 +102,7 @@ test("an uploaded image embeds by URL inside an html part under the CSP", async 
     (r) => r.url().endsWith(`/a/${asset.id}`) && r.status() === 200,
   );
   await page.goto(server.url);
-  await expect(page.locator(".card:not(#sessionThread) iframe")).toBeVisible();
+  await expect(page.locator(".card iframe")).toBeVisible();
   await assetResponse;
 });
 

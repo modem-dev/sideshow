@@ -336,7 +336,7 @@ function watchLine(c) {
     .trim();
   const where = c.surfaceId
     ? `on “${c.surfaceTitle ?? "a surface"}” (surface ${c.surfaceId})`
-    : "in the session thread";
+    : "on the session";
   return `sideshow comment ${where}: “${text}”`;
 }
 

@@ -21,10 +21,10 @@ consciously, not as a side effect):
   (stdio and streamable HTTP at `/mcp`), raw HTTP. Features should work on
   all three — the CLI and curl tiers are why agents with only a shell can
   use this.
-- Feedback is never silently lost: a user comment renders somewhere in the
-  viewer (card thread or session thread) and reaches the agent (`userFeedback`
-  piggybacked on writes, a blocking wait, or a background watch). Guard this
-  hardest — both halves have regressed before.
+- Feedback is never silently lost: a user comment renders in the viewer (the
+  card's thread) and reaches the agent (`userFeedback` piggybacked on writes, a
+  blocking wait, or a background watch). Guard this hardest — both halves have
+  regressed before.
 
 ## Map
 
@@ -109,8 +109,8 @@ Testing notes:
   conflict with `@types/node`.
 - `JsonFileStore` returns live objects that later mutate — capture fields
   before update calls when asserting against them.
-- The session thread and the update-notes card are also `.card`s: scope
-  snippet-card e2e selectors with `.card:not(#sessionThread):not(#whatsNew)`.
+- The update-notes card is also a `.card`: scope snippet-card e2e selectors
+  with `.card:not(#whatsNew)`.
 
 ## Conventions
 

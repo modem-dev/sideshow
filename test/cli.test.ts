@@ -120,7 +120,7 @@ test("watch streams each new user comment as one line and re-arms", async () => 
       author: "user",
     });
     await waitFor(() => stdout.includes("and ship it"));
-    assert.match(stdout, /sideshow comment in the session thread: “and ship it”/);
+    assert.match(stdout, /sideshow comment on the session: “and ship it”/);
 
     // exactly-once: neither comment is repeated across the re-arming polls
     assert.equal(stdout.match(/tighten the spacing/g)?.length, 1);
