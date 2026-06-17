@@ -113,14 +113,14 @@ test("watch streams each new user comment as one line and re-arms", async () => 
     await waitFor(() => stdout.includes("tighten the spacing"));
     assert.match(stdout, /sideshow comment on “Doc” \(surface .+\): “tighten the spacing”/);
 
-    // a second, session-level comment proves the loop re-armed (not a one-shot)
+    // a second comment proves the loop re-armed (not a one-shot)
     await post(`${server.url}/api/comments`, {
-      session: session.id,
+      surface: snippet.id,
       text: "and ship it",
       author: "user",
     });
     await waitFor(() => stdout.includes("and ship it"));
-    assert.match(stdout, /sideshow comment on the session: “and ship it”/);
+    assert.match(stdout, /sideshow comment on “Doc” \(surface .+\): “and ship it”/);
 
     // exactly-once: neither comment is repeated across the re-arming polls
     assert.equal(stdout.match(/tighten the spacing/g)?.length, 1);

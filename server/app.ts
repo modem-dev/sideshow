@@ -325,21 +325,18 @@ export function createApp({
   async function createComment(input: {
     text: string;
     surface?: string;
-    session?: string;
     author: string;
   }): Promise<
     { comment: Comment; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 }
   > {
-    let sessionId = input.session;
-    if (input.surface) {
-      const surface = await store.getSurface(input.surface);
-      if (!surface) return { error: "surface not found", status: 404 };
-      sessionId = surface.sessionId;
-    }
-    if (!sessionId) return { error: 'provide "surface" or "session" id', status: 400 };
+    // Comments always attach to a surface — a comment with nothing to point at
+    // is just a message to the agent, which is what the agent's own prompt is for.
+    if (!input.surface) return { error: 'provide a "surface" id', status: 400 };
+    const surface = await store.getSurface(input.surface);
+    if (!surface) return { error: "surface not found", status: 404 };
     const comment = await store.createComment({
-      sessionId,
-      surfaceId: input.surface,
+      sessionId: surface.sessionId,
+      surfaceId: surface.id,
       author: input.author,
       text: input.text.trim(),
     });
@@ -579,7 +576,6 @@ export function createApp({
     const result = await createComment({
       text: body.text,
       surface: typeof surface === "string" ? surface : undefined,
-      session: typeof body.session === "string" ? body.session : undefined,
       author: typeof body.author === "string" ? body.author : "user",
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);

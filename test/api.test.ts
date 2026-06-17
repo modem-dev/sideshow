@@ -301,6 +301,19 @@ test("comments attach to snippets and filter by author/after", async () => {
   assert.equal(later.comments.length, 0);
 });
 
+test("a comment must target a surface", async () => {
+  const app = makeApp();
+  const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
+
+  // no surface/snippet id — there is no session-level thread to land in
+  const res = await app.request("/api/comments", json({ session: s.sessionId, text: "general" }));
+  assert.equal(res.status, 400);
+
+  // a surface that doesn't exist is a 404, not a silent session-level comment
+  const ghost = await app.request("/api/comments", json({ snippet: "missing", text: "ghost" }));
+  assert.equal(ghost.status, 404);
+});
+
 test("author=user reads resume from the agent's server-side cursor", async () => {
   const app = makeApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
@@ -584,7 +597,7 @@ test("agent writes piggyback unseen user comments, delivered once", async () => 
 
   // the user comments while the agent works on something else
   await app.request("/api/comments", json({ snippet: s.id, text: "wrong color", author: "user" }));
-  await app.request("/api/comments", json({ session: s.sessionId, text: "also add a key" }));
+  await app.request("/api/comments", json({ snippet: s.id, text: "also add a key" }));
 
   // the agent's next write carries the feedback
   const updated = (await (

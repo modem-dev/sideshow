@@ -62,8 +62,8 @@ usage:
                         publish to create one)
       --after <seq>     re-read comments after this cursor on the first poll
                         (default: resume where the agent left off, server-side)
-  sideshow comment <text> [options]       post a reply comment
-      --surface <id> | --session <id>     attach point (default: auto session)
+  sideshow comment <text> [options]       reply to the user on a surface
+      --surface <id>    surface to attach the comment to (required)
       --author <name>   defaults to agent name
   sideshow list [--session <id>|--all]    list surfaces
   sideshow sessions                       list sessions
@@ -680,23 +680,20 @@ const commands = {
       options: {
         surface: { type: "string" },
         snippet: { type: "string" }, // legacy alias
-        session: { type: "string" },
         author: { type: "string" },
         agent: { type: "string" },
       },
     });
     const text = positionals.join(" ").trim();
-    if (!text) fail("usage: sideshow comment <text> [--surface id]");
+    if (!text) fail("usage: sideshow comment <text> --surface <id>");
     const surface = flags.surface ?? flags.snippet;
-    const session = surface ? undefined : await resolveSession(flags);
-    if (!surface && !session) fail("no active session — pass --surface or --session");
+    if (!surface) fail("a comment must target a surface — pass --surface <id>");
     out(
       await api("/api/comments", {
         method: "POST",
         body: JSON.stringify({
           text,
           surface,
-          session,
           author: flags.author ?? agentName(flags),
         }),
       }),
