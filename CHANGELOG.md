@@ -54,6 +54,10 @@ All notable user-visible changes to this project are documented in this file.
   Earlier) so the freshest work stays on top, and sessions with no surfaces yet
   are dimmed and sunk to the bottom of their group — keeping a long history
   scannable.
+- Session rows now show a small monochrome logo for the agent (Claude, OpenCode,
+  Cursor, Copilot, Gemini, …, with a neutral terminal glyph for others) and
+  carry the surface count as a quiet "(N)" on the title, so the meta line reads
+  simply "logo · agent · time". Logos are inlined and theme-aware.
 - A surface card's open and delete actions are now minimal Lucide icons
   (external-link and trash) instead of text labels; delete turns red on hover.
 - `sideshow-term watch` now starts a local server in the background when needed,
