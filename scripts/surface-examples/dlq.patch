@@ -1,0 +1,15 @@
+diff --git a/server/worker.ts b/server/worker.ts
+index 9c3d8e1..a71f4c2 100644
+--- a/server/worker.ts
++++ b/server/worker.ts
+@@ -1,4 +1,4 @@
+-import { dequeue, ack, requeue } from "./queue.ts";
++import { dequeue, ack, requeue, deadLetter } from "./queue.ts";
+ import { process } from "./job.ts";
+@@ -24,7 +24,7 @@ export async function runWorker() {
+       if (attempt + 1 >= MAX_ATTEMPTS) {
+         console.error("job exhausted retries", job.id, err);
+-        await ack(job); // give up; send to DLQ in a later change
++        await deadLetter(job, err); // park it, never drop it
+         continue;
+       }

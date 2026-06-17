@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="380" viewBox="0 0 760 380">
+  <rect width="760" height="380" fill="#1f1e1b"/>
+  <text x="40" y="48" fill="#f5f3ee" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="500">Dropped jobs per hour</text>
+  <text x="40" y="74" fill="#9b968c" font-family="Inter, system-ui, sans-serif" font-size="14">Before vs after the worker retry policy — lower is better</text>
+
+  <!-- axis -->
+  <line x1="120" y1="110" x2="120" y2="320" stroke="#3a3833" stroke-width="1.5"/>
+  <line x1="120" y1="320" x2="700" y2="320" stroke="#3a3833" stroke-width="1.5"/>
+
+  <!-- gridlines -->
+  <line x1="120" y1="250" x2="700" y2="250" stroke="#2a2925" stroke-width="1"/>
+  <line x1="120" y1="180" x2="700" y2="180" stroke="#2a2925" stroke-width="1"/>
+  <text x="110" y="324" fill="#6f6b62" font-family="Inter, sans-serif" font-size="12" text-anchor="end">0</text>
+  <text x="110" y="254" fill="#6f6b62" font-family="Inter, sans-serif" font-size="12" text-anchor="end">120</text>
+  <text x="110" y="184" fill="#6f6b62" font-family="Inter, sans-serif" font-size="12" text-anchor="end">240</text>
+
+  <!-- before bar: 231 -->
+  <rect x="220" y="118" width="120" height="202" rx="6" fill="#e0865f"/>
+  <text x="280" y="108" fill="#f5f3ee" font-family="Inter, sans-serif" font-size="18" font-weight="500" text-anchor="middle">231</text>
+  <text x="280" y="346" fill="#cfcabf" font-family="Inter, sans-serif" font-size="14" text-anchor="middle">Before</text>
+
+  <!-- after bar: 4 -->
+  <rect x="480" y="317" width="120" height="3" rx="1.5" fill="#7fbf8f"/>
+  <text x="540" y="307" fill="#f5f3ee" font-family="Inter, sans-serif" font-size="18" font-weight="500" text-anchor="middle">4</text>
+  <text x="540" y="346" fill="#cfcabf" font-family="Inter, sans-serif" font-size="14" text-anchor="middle">After</text>
+
+  <text x="540" y="290" fill="#7fbf8f" font-family="Inter, sans-serif" font-size="13" text-anchor="middle">−98%</text>
+</svg>

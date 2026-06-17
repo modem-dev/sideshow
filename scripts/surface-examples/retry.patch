@@ -1,0 +1,40 @@
+diff --git a/server/worker.ts b/server/worker.ts
+index 4f1a2b0..9c3d8e1 100644
+--- a/server/worker.ts
++++ b/server/worker.ts
+@@ -1,18 +1,34 @@
+ import { dequeue, ack, requeue } from "./queue.ts";
+ import { process } from "./job.ts";
+
+-const MAX_ATTEMPTS = 1;
++const MAX_ATTEMPTS = 5;
++const BASE_MS = 200;
++const MAX_MS = 30_000;
++
++// Full-jitter exponential backoff (AWS architecture blog). The jitter — not
++// the exponent — is what prevents a synchronized retry herd.
++function backoff(attempt: number): number {
++  const ceil = Math.min(MAX_MS, BASE_MS * 2 ** attempt);
++  return Math.round(ceil * (0.5 + Math.random() / 2));
++}
+
+ export async function runWorker() {
+   for await (const job of dequeue()) {
++    const attempt = job.attempt ?? 0;
+     try {
+       await process(job);
+       await ack(job);
+     } catch (err) {
+-      // drop on the floor — nothing reprocesses a failed job
+-      console.error("job failed", job.id, err);
++      if (attempt + 1 >= MAX_ATTEMPTS) {
++        console.error("job exhausted retries", job.id, err);
++        await ack(job); // give up; send to DLQ in a later change
++        continue;
++      }
++      const delay = backoff(attempt);
++      console.warn(`job ${job.id} failed, retry ${attempt + 1} in ${delay}ms`);
++      await requeue(job, { attempt: attempt + 1, delay });
+     }
+   }
+ }

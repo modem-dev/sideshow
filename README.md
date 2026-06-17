@@ -112,6 +112,50 @@ The design contract at `/guide` tells agents how to write surfaces that fit the
 viewer: fragment-only HTML, theme CSS variables, dark mode rules, and when to
 reach for each part kind.
 
+## Surface kinds
+
+Every card below is real — published over the same API and captured straight
+from the viewer. Regenerate them with `node scripts/shoot-surfaces.mjs`.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/surfaces/01-html.png" width="100%" alt="html part — an interactive diagram you author">
+      <p><b><code>html</code></b> — markup you author, rendered sandboxed. Shapes and buttons call <code>sendPrompt()</code> to post back to the thread.</p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/surfaces/02-markdown.png" width="100%" alt="markdown part — prose, tables and code, rendered">
+      <p><b><code>markdown</code></b> — prose, tables, and fenced code handed over as text, rendered in the viewer's own typography.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/surfaces/03-diff.png" width="100%" alt="diff part — a patch rendered as code review">
+      <p><b><code>diff</code></b> — a patch rendered natively as a syntax-highlighted code review (unified or split).</p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/surfaces/04-terminal.png" width="100%" alt="terminal part — shell output with ANSI color">
+      <p><b><code>terminal</code></b> — monospace output with ANSI color, in a terminal-window frame.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/surfaces/05-trace.png" width="100%" alt="trace part — an agent run as a step timeline">
+      <p><b><code>trace</code></b> — an agent run as a step timeline, each step expandable to its detail.</p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/surfaces/06-image.png" width="100%" alt="image part — an uploaded, content-addressed asset">
+      <p><b><code>image</code></b> — an uploaded, content-addressed asset (screenshot, generated chart) rendered with a caption.</p>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top">
+      <img src="docs/surfaces/07-combined.png" width="100%" alt="markdown + diff — two parts composed in one card">
+      <p><b>Parts compose.</b> One card can carry several — here a <code>markdown</code> rationale stacked above its <code>diff</code>, so a single surface holds the why and the what.</p>
+    </td>
+  </tr>
+</table>
+
 ## Architecture
 
 - `server/app.ts` — runtime-agnostic Hono app: REST API, SSE live feed,
