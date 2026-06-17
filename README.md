@@ -150,10 +150,13 @@ from the viewer. Regenerate them with `node scripts/shoot-surfaces.mjs`.
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/surfaces/07-combined.png" width="100%" alt="markdown + diff — two parts composed in one card">
+      <img src="docs/surfaces/07-mermaid.png" width="100%" alt="mermaid part — a flowchart rendered from a few lines of text">
+      <p><b><code>mermaid</code></b> — a few lines of diagram source, rendered to an SVG in the sideshow palette. Tag nodes with <code>:::accent</code> to highlight them.</p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/surfaces/08-combined.png" width="100%" alt="markdown + diff — two parts composed in one card">
       <p><b>Parts compose.</b> One card can carry several — here a <code>markdown</code> rationale stacked above its <code>diff</code>, so a single surface holds the why and the what.</p>
     </td>
-    <td width="50%" valign="top"></td>
   </tr>
 </table>
 

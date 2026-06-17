@@ -159,6 +159,11 @@ const cards = [
     ],
   },
   {
+    file: "mermaid",
+    title: "mermaid part — a diagram from a few lines of text",
+    parts: [{ kind: "mermaid", mermaid: read("loop.mmd") }],
+  },
+  {
     file: "combined",
     title: "markdown + diff — two parts composed in one card",
     parts: [
