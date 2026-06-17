@@ -82,6 +82,32 @@ consciously, not as a side effect):
   `npm run dev` runs a Vite watch build alongside the server; the e2e suite
   builds the viewer itself (Playwright global setup).
 
+## Hosted (planned)
+
+`sideshow.sh` would host this same code multi-tenant on Cloudflare — GitHub
+sign-in for humans, per-user revocable Bearer tokens for headless agents. It
+generalizes the "one board per person / single deploy token" stance above
+without forking the core; self-host keeps the single-token tier.
+
+- **Per-user board = one Durable Object.** The only routing change is
+  `idFromName("default") → idFromName(userId)`: each user gets an isolated DO
+  with its own SQLite (sessions, surfaces, comments, assets) and event bus.
+  `SqlStore` is unchanged — the board stays the database and the bus. No tenant
+  columns, no shared bottleneck; scales horizontally.
+- **D1 — the one new store.** A small global directory: GitHub user → board,
+  hashed agent tokens, OAuth login sessions. Read-heavy, isolate-cached on the
+  token hot path.
+- **Workers — the edge.** Identity resolution + routing, the OAuth dance, token
+  mint/revoke, and serving the viewer shell. All new OAuth/routing/directory
+  code lives in `workers/`; `server/` stays runtime-agnostic.
+- **R2 / KV — later, optional.** R2 for cheaper large assets (already
+  content-addressed by SHA-256); KV as a hot token→user cache. Not needed for v1.
+
+Rollout: (1) D1 directory + token model (mint/resolve/revoke, isolate cache);
+(2) per-user routing in `workers/`, generalizing the app's auth seam; (3) GitHub
+OAuth + Bearer-token mint on a "connect agent" page; (4) viewer sign-in/token UX;
+(5) ops.
+
 ## Validation
 
 ```sh
