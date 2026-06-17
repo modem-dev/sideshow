@@ -7,6 +7,8 @@
 // degrades to a best-effort tree plus a list of human-readable `errors`, so a
 // sloppy snippet still renders something useful.
 
+import { decodeHTML } from "entities";
+
 export interface STMLText {
   type: "text";
   value: string;
@@ -26,6 +28,20 @@ export interface ParseResult {
   errors: string[];
 }
 
+export interface ParseOptions {
+  maxInputBytes?: number;
+  maxNodes?: number;
+  maxDepth?: number;
+  maxErrors?: number;
+}
+
+export const DEFAULT_PARSE_LIMITS = {
+  maxInputBytes: 512 * 1024,
+  maxNodes: 5000,
+  maxDepth: 100,
+  maxErrors: 50,
+} as const satisfies Required<ParseOptions>;
+
 // Tags that never have children — they may be written unclosed (`<br>`) or
 // self-closed (`<hr/>`); either way any "</tag>" is tolerated and ignored.
 const VOID_TAGS = new Set(["br", "hr", "rule", "divider", "input", "spacer", "space"]);
@@ -34,28 +50,39 @@ const VOID_TAGS = new Set(["br", "hr", "rule", "divider", "input", "spacer", "sp
 // case preserved. This is what makes <code>, <md> and <ascii> ergonomic.
 const RAW_TAGS = new Set(["code", "pre", "ascii", "bigtext", "banner"]);
 
-const ENTITIES: Record<string, string> = {
-  lt: "<",
-  gt: ">",
-  amp: "&",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-};
-
-// Decode the small entity set STML supports. Numeric (&#65; / &#x41;) included
-// so agents can emit box-drawing or arrow glyphs without pasting raw bytes.
+// Decode named entities with the well-tested `entities` package, but handle
+// numeric entities ourselves so an out-of-range code point stays literal
+// instead of becoming a replacement character or throwing.
 export function decodeEntities(text: string): string {
-  return text.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (whole, body: string) => {
-    if (body[0] === "#") {
-      const code =
-        body[1] === "x" || body[1] === "X"
-          ? parseInt(body.slice(2), 16)
-          : parseInt(body.slice(1), 10);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : whole;
-    }
-    return Object.prototype.hasOwnProperty.call(ENTITIES, body) ? ENTITIES[body] : whole;
+  return text.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]+);/g, (whole, body: string) => {
+    if (body[0] !== "#") return decodeHTML(whole);
+    const code =
+      body[1] === "x" || body[1] === "X"
+        ? parseInt(body.slice(2), 16)
+        : parseInt(body.slice(1), 10);
+    return isValidCodePoint(code) ? String.fromCodePoint(code) : whole;
   });
+}
+
+function isValidCodePoint(code: number): boolean {
+  return Number.isInteger(code) && code >= 0 && code <= 0x10ffff;
+}
+
+// Terminal renderers must never receive arbitrary control sequences from agent
+// markup. Preserve ordinary layout whitespace, but neutralize ESC/C0 controls
+// that could move the cursor, rewrite the screen, or confuse the TUI.
+export function sanitizeTerminalText(text: string): string {
+  let out = "";
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    out +=
+      code === 0x7f ||
+      (code >= 0x80 && code <= 0x9f) ||
+      (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d)
+        ? "�"
+        : ch;
+  }
+  return out;
 }
 
 const isSpace = (ch: string) =>
@@ -64,56 +91,82 @@ const isNameChar = (ch: string) => /[a-zA-Z0-9\-_]/.test(ch);
 // A tag name must start with a letter — so "3<4" and "a < b" stay as text.
 const isTagStart = (ch: string | undefined) => ch !== undefined && /[a-zA-Z]/.test(ch);
 
-export function parse(input: string): ParseResult {
+export function parse(input: string, options: ParseOptions = {}): ParseResult {
+  const limits: Required<ParseOptions> = { ...DEFAULT_PARSE_LIMITS, ...options };
   const errors: string[] = [];
+  const addError = limitedErrorCollector(errors, limits.maxErrors);
   const root: STMLNode[] = [];
   const stack: STMLElement[] = [];
   const top = () => (stack.length > 0 ? stack[stack.length - 1].children : root);
 
+  let source = input;
+  const bytes = utf8ByteLength(source);
+  if (bytes > limits.maxInputBytes) {
+    source = truncateUtf8(source, limits.maxInputBytes);
+    addError(`input truncated at ${limits.maxInputBytes} byte(s)`);
+  }
+
   let i = 0;
-  const n = input.length;
+  const n = source.length;
+  let nodeCount = 0;
+  let nodeLimitReached = false;
+
+  const canAddNode = () => {
+    if (nodeCount < limits.maxNodes) {
+      nodeCount += 1;
+      return true;
+    }
+    if (!nodeLimitReached) {
+      nodeLimitReached = true;
+      addError(`node limit reached at ${limits.maxNodes} node(s); remaining markup ignored`);
+    }
+    return false;
+  };
 
   const pushText = (value: string) => {
-    if (value.length === 0) return;
+    if (value.length === 0 || nodeLimitReached) return;
+    const safe = sanitizeTerminalText(value);
+    if (safe.length === 0) return;
     const siblings = top();
     const last = siblings[siblings.length - 1];
     // Merge adjacent text so a bare "<" doesn't fragment a run into pieces.
-    if (last && last.type === "text") last.value += value;
-    else siblings.push({ type: "text", value });
+    if (last && last.type === "text") last.value += safe;
+    else if (canAddNode()) siblings.push({ type: "text", value: safe });
   };
 
-  while (i < n) {
-    const lt = input.indexOf("<", i);
+  while (i < n && !nodeLimitReached) {
+    const lt = source.indexOf("<", i);
     if (lt === -1) {
-      pushText(input.slice(i));
+      pushText(source.slice(i));
       break;
     }
-    if (lt > i) pushText(input.slice(i, lt));
+    if (lt > i) pushText(source.slice(i, lt));
+    if (nodeLimitReached) break;
     i = lt;
 
     // Comment
-    if (input.startsWith("<!--", i)) {
-      const end = input.indexOf("-->", i + 4);
+    if (source.startsWith("<!--", i)) {
+      const end = source.indexOf("-->", i + 4);
       i = end === -1 ? n : end + 3;
       continue;
     }
 
     // Closing tag
-    if (input[i + 1] === "/") {
+    if (source[i + 1] === "/") {
       let j = i + 2;
       let name = "";
-      while (j < n && isNameChar(input[j])) name += input[j++];
-      while (j < n && input[j] !== ">") j++;
+      while (j < n && isNameChar(source[j])) name += source[j++];
+      while (j < n && source[j] !== ">") j++;
       i = j + 1;
       name = name.toLowerCase();
       // Pop to the nearest matching open element; tolerate stray/mismatched
       // closers rather than discarding the whole tree.
       const idx = findOpen(stack, name);
       if (idx === -1) {
-        errors.push(`stray closing tag </${name}>`);
+        addError(`stray closing tag </${name}>`);
       } else {
         if (idx !== stack.length - 1) {
-          errors.push(`closing </${name}> implicitly closed ${stack.length - 1 - idx} tag(s)`);
+          addError(`closing </${name}> implicitly closed ${stack.length - 1 - idx} tag(s)`);
         }
         stack.length = idx;
       }
@@ -121,35 +174,44 @@ export function parse(input: string): ParseResult {
     }
 
     // Not a real tag (a bare "<", or "<" before a digit) — emit as text.
-    if (!isTagStart(input[i + 1])) {
+    if (!isTagStart(source[i + 1])) {
       pushText("<");
       i += 1;
       continue;
     }
 
     // Opening tag
-    const open = readOpenTag(input, i);
+    const open = readOpenTag(source, i);
     if (!open) {
       pushText("<");
       i += 1;
       continue;
     }
+    i = open.next;
+
+    if (stack.length >= limits.maxDepth) {
+      addError(`depth limit reached at <${open.tag}> (${limits.maxDepth} level(s))`);
+      continue;
+    }
+    if (!canAddNode()) break;
+
     const el: STMLElement = { type: "element", tag: open.tag, attrs: open.attrs, children: [] };
     top().push(el);
-    i = open.next;
 
     if (open.selfClosing || VOID_TAGS.has(open.tag)) continue;
 
     if (RAW_TAGS.has(open.tag)) {
       const close = `</${open.tag}`;
-      const end = indexOfCloser(input, i, close);
-      const raw = input.slice(i, end === -1 ? n : end);
-      if (raw.length > 0) el.children.push({ type: "text", value: raw });
+      const end = indexOfCloser(source, i, close);
+      const raw = source.slice(i, end === -1 ? n : end);
+      if (raw.length > 0 && canAddNode()) {
+        el.children.push({ type: "text", value: sanitizeTerminalText(raw) });
+      }
       if (end === -1) {
-        errors.push(`unclosed <${open.tag}>`);
+        addError(`unclosed <${open.tag}>`);
         i = n;
       } else {
-        const gt = input.indexOf(">", end);
+        const gt = source.indexOf(">", end);
         i = gt === -1 ? n : gt + 1;
       }
       continue;
@@ -159,9 +221,50 @@ export function parse(input: string): ParseResult {
   }
 
   if (stack.length > 0) {
-    errors.push(`unclosed tag(s): ${stack.map((e) => `<${e.tag}>`).join(", ")}`);
+    addError(`unclosed tag(s): ${stack.map((e) => `<${e.tag}>`).join(", ")}`);
   }
   return { nodes: root, errors };
+}
+
+function limitedErrorCollector(errors: string[], maxErrors: number): (message: string) => void {
+  let omitted = false;
+  return (message: string) => {
+    if (errors.length < maxErrors) {
+      errors.push(message);
+      return;
+    }
+    if (!omitted) {
+      omitted = true;
+      if (errors.length === 0) return;
+      errors[errors.length - 1] = `${errors[errors.length - 1]} (further parse errors omitted)`;
+    }
+  };
+}
+
+function utf8ByteLength(text: string): number {
+  let bytes = 0;
+  for (const ch of text) bytes += utf8CharBytes(ch);
+  return bytes;
+}
+
+function truncateUtf8(text: string, maxBytes: number): string {
+  let bytes = 0;
+  let out = "";
+  for (const ch of text) {
+    const next = bytes + utf8CharBytes(ch);
+    if (next > maxBytes) break;
+    bytes = next;
+    out += ch;
+  }
+  return out;
+}
+
+function utf8CharBytes(ch: string): number {
+  const code = ch.codePointAt(0) ?? 0;
+  if (code <= 0x7f) return 1;
+  if (code <= 0x7ff) return 2;
+  if (code <= 0xffff) return 3;
+  return 4;
 }
 
 function findOpen(stack: STMLElement[], name: string): number {
@@ -221,7 +324,7 @@ function readOpenTag(input: string, start: number): OpenTag | null {
         let value = "";
         while (i < n && input[i] !== quote) value += input[i++];
         i++; // closing quote
-        attrs[name] = decodeEntities(value);
+        attrs[name] = sanitizeTerminalText(decodeEntities(value));
       } else {
         let value = "";
         while (
@@ -232,7 +335,7 @@ function readOpenTag(input: string, start: number): OpenTag | null {
         ) {
           value += input[i++];
         }
-        attrs[name] = decodeEntities(value);
+        attrs[name] = sanitizeTerminalText(decodeEntities(value));
       }
     } else {
       // bare boolean attribute

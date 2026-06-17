@@ -57,6 +57,10 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Fixed
 
+- `sideshow-term` now hardens STML parsing/rendering for untrusted markup:
+  entity decoding uses a tested HTML entity library, invalid numeric entities no
+  longer throw, oversized/deep/node-heavy snippets are bounded, terminal control
+  characters are neutralized, and render failures degrade to an in-view error.
 - Local JSON storage now shares a single cold-load promise across concurrent
   first requests, preventing a race that could overwrite persisted board data.
 - The viewer no longer renders a part whose kind it doesn't recognize as a

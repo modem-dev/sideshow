@@ -28,6 +28,7 @@
   "dependencies": {
     "@hono/node-server": "^1.19.14",
     "@opentui/core": "^0.4.1",
+    "entities": "^6.0.1",
     "hono": "^4.12.25",
     "sideshow": "^0.4.0"
   },

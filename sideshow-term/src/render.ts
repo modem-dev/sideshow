@@ -29,7 +29,14 @@ import {
   TextRenderable,
   underline,
 } from "@opentui/core";
-import { decodeEntities, parse, type STMLElement, type STMLNode } from "./parse.ts";
+import {
+  decodeEntities,
+  DEFAULT_PARSE_LIMITS,
+  parse,
+  sanitizeTerminalText,
+  type STMLElement,
+  type STMLNode,
+} from "./parse.ts";
 import { resolveColor } from "./theme.ts";
 
 type Chunk = ReturnType<typeof bold>;
@@ -43,6 +50,8 @@ interface Style {
   dim?: boolean;
   strike?: boolean;
 }
+
+const MAX_RENDER_ERRORS = DEFAULT_PARSE_LIMITS.maxErrors;
 
 const INLINE = new Set([
   "b",
@@ -113,6 +122,14 @@ function inlineStyle(tag: string, attrs: Record<string, string>): Style {
 
 const collapseWs = (s: string) => s.replace(/\s+/g, " ");
 
+function recordRenderError(errors: string[], message: string): void {
+  if (errors.length < MAX_RENDER_ERRORS) {
+    errors.push(message);
+  } else if (errors.length === MAX_RENDER_ERRORS) {
+    errors.push("further render notes omitted");
+  }
+}
+
 function styledChunk(text: string, style: Style, errors: string[]): Chunk {
   let input: string | Chunk = text;
   if (style.bold) input = bold(input);
@@ -123,19 +140,19 @@ function styledChunk(text: string, style: Style, errors: string[]): Chunk {
   if (style.fg) {
     const c = resolveColor(style.fg);
     if (c) input = fg(c)(input);
-    else errors.push(`unknown color "${style.fg}"`);
+    else recordRenderError(errors, `unknown color "${style.fg}"`);
   }
   if (style.bg) {
     const c = resolveColor(style.bg);
     if (c) input = bg(c)(input);
-    else errors.push(`unknown color "${style.bg}"`);
+    else recordRenderError(errors, `unknown color "${style.bg}"`);
   }
   return typeof input === "string" ? stringToStyledText(input).chunks[0] : input;
 }
 
 function inlineChunks(node: STMLNode, style: Style, errors: string[]): Chunk[] {
   if (node.type === "text") {
-    const text = collapseWs(decodeEntities(node.value));
+    const text = collapseWs(sanitizeTerminalText(decodeEntities(node.value)));
     return text === "" ? [] : [styledChunk(text, style, errors)];
   }
   if (node.tag === "br") return [styledChunk("\n", style, errors)];
@@ -247,20 +264,20 @@ function applyBox(
   if (attrs.bg !== undefined) {
     const c = resolveColor(attrs.bg);
     if (c) o.backgroundColor = c;
-    else errors.push(`unknown color "${attrs.bg}"`);
+    else recordRenderError(errors, `unknown color "${attrs.bg}"`);
   }
   if ("border" in attrs || "border-style" in attrs || "border-color" in attrs) {
     o.border = "border" in attrs ? truthyAttr(attrs.border) : true;
     const bs = attrs["border-style"];
     if (bs) {
       if (isValidBorderStyle(bs)) o.borderStyle = bs;
-      else errors.push(`unknown border-style "${bs}"`);
+      else recordRenderError(errors, `unknown border-style "${bs}"`);
     }
     if (o.borderColor === undefined) o.borderColor = resolveColor("muted") ?? undefined;
     if (attrs["border-color"]) {
       const c = resolveColor(attrs["border-color"]);
       if (c) o.borderColor = c;
-      else errors.push(`unknown color "${attrs["border-color"]}"`);
+      else recordRenderError(errors, `unknown color "${attrs["border-color"]}"`);
     }
   }
   if (attrs.title !== undefined) o.title = attrs.title;
@@ -453,7 +470,7 @@ function buildBlock(
     }
 
     default: {
-      errors.push(`unknown tag <${tag}>`);
+      recordRenderError(errors, `unknown tag <${tag}>`);
       const box = new BoxRenderable(ctx, { flexDirection: "column" });
       for (const child of buildNodes(ctx, el.children, style, errors)) box.add(child);
       return box;
@@ -495,10 +512,42 @@ export interface BuildResult {
   errors: string[];
 }
 
+function errorMessage(err: unknown): string {
+  return sanitizeTerminalText(err instanceof Error ? err.message : String(err));
+}
+
+function fallbackDocument(ctx: RenderContext, err: unknown): BuildResult {
+  const root = new BoxRenderable(ctx, {
+    flexDirection: "column",
+    width: "100%",
+    border: true,
+    borderStyle: "single",
+    borderColor: resolveColor("warning") ?? undefined,
+    padding: 1,
+  });
+  root.add(
+    new TextRenderable(ctx, {
+      content: "Unable to render this STML snippet.",
+      fg: resolveColor("warning") ?? undefined,
+    }),
+  );
+  root.add(
+    new TextRenderable(ctx, {
+      content: errorMessage(err),
+      fg: resolveColor("muted") ?? undefined,
+    }),
+  );
+  return { root, errors: [`render failed: ${errorMessage(err)}`] };
+}
+
 // Parse STML markup and build a single root Renderable holding the document.
 export function buildDocument(ctx: RenderContext, markup: string): BuildResult {
-  const { nodes, errors } = parse(markup);
-  const root = new BoxRenderable(ctx, { flexDirection: "column", width: "100%" });
-  for (const child of buildNodes(ctx, nodes, {}, errors)) root.add(child);
-  return { root, errors };
+  try {
+    const { nodes, errors } = parse(markup);
+    const root = new BoxRenderable(ctx, { flexDirection: "column", width: "100%" });
+    for (const child of buildNodes(ctx, nodes, {}, errors)) root.add(child);
+    return { root, errors };
+  } catch (err) {
+    return fallbackDocument(ctx, err);
+  }
 }

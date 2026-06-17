@@ -59,6 +59,20 @@ await check("records a note for a bad color", async () => {
   assert.ok(errors.some((e) => e.includes("unknown color")));
 });
 
+await check("does not emit terminal escape controls from markup", async () => {
+  const { frame, errors } = await renderToString(`<text>safe&#27;[31m text</text>`, { width: 30 });
+  assert.equal(errors.length, 0);
+  assert.equal(frame.includes("\x1b"), false);
+  assert.match(frame, /safe/);
+});
+
+await check("large malformed documents degrade to render notes", async () => {
+  const markup = "<box>".repeat(150);
+  const { frame, errors } = await renderToString(markup, { width: 40 });
+  assert.ok(errors.some((e) => e.includes("depth limit")));
+  assert.doesNotThrow(() => frame.length);
+});
+
 if (failures > 0) {
   console.error(`\n${failures} render check(s) failed`);
   process.exit(1);
