@@ -26,7 +26,13 @@ a `kind`:
   Reach for it when the shape of a system is the point — a flow, a state
   machine, a schema — and you'd rather describe it than draw SVG by hand. Like
   markdown it renders as data, not sandboxed markup (securityLevel `strict`); for
-  bespoke vector art hand-write inline `<svg>` in an `html` part instead.
+  bespoke vector art hand-write inline `<svg>` in an `html` part instead. The
+  viewer themes the diagram in the sideshow palette and font automatically (light
+  and dark) — don't set your own colors. To highlight, two classes are
+  pre-wired to the accent color: in a flowchart, tag nodes with `:::accent`
+  (e.g. `B[Live render]:::accent`) or `class A,B accent`, and recolor an edge by
+  giving it `accentLine` (pair with `linkStyle`). Accents apply to flowcharts;
+  sequence diagrams style actors globally only.
 - **`diff`** — a patch you hand over as _data_; the trusted viewer renders it
   natively as a syntax-highlighted code review (split or unified). Reach for it
   to show a changeset or review code, not to draw.

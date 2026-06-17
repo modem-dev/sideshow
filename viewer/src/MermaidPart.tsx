@@ -13,6 +13,81 @@ darkQuery.addEventListener("change", (e) => setIsDark(e.matches));
 // per render across the whole document, so a module-level counter, not a uuid.
 let seq = 0;
 
+// Mermaid's stock themes ignore our design tokens, so the diagram reads as
+// generic mermaid. Instead drive its `base` theme from the viewer's own CSS
+// custom properties (read live — this part renders in the trusted origin, so
+// getComputedStyle is fine). The vars already flip light/dark, so re-rendering
+// on a scheme change (below) is all that's needed to stay in sync. Returns the
+// `themeVariables` + `themeCSS` mermaid needs to match sideshow's look.
+function sideshowTheme() {
+  const css = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+
+  const text = v("--text", "#1a1915");
+  const muted = v("--muted", "#5f5e56");
+  const border = v("--border-2", "rgba(20,20,10,0.25)");
+  const panel = v("--panel", "#f3f2ec");
+  const surface = v("--surface", "#ffffff");
+  const bg = v("--bg", "#faf9f5");
+  const accent = v("--accent", "#185fa5");
+  const accentBg = v("--accent-bg", "#e6f1fb");
+  // The viewer has no font token — its system stack lives on `body` — so match
+  // the diagram font to whatever the rest of the viewer is actually rendering.
+  const font = getComputedStyle(document.body).fontFamily || "ui-sans-serif, system-ui, sans-serif";
+
+  return {
+    themeVariables: {
+      fontFamily: font,
+      fontSize: "14px",
+      // shared / flowchart
+      primaryColor: panel,
+      primaryBorderColor: border,
+      primaryTextColor: text,
+      secondaryColor: surface,
+      tertiaryColor: bg,
+      mainBkg: panel,
+      nodeBorder: border,
+      lineColor: muted,
+      textColor: text,
+      clusterBkg: bg,
+      clusterBorder: border,
+      edgeLabelBackground: bg,
+      // sequence diagrams have their own palette
+      actorBkg: panel,
+      actorBorder: border,
+      actorTextColor: text,
+      actorLineColor: muted,
+      signalColor: muted,
+      signalTextColor: text,
+      labelBoxBkgColor: surface,
+      labelBoxBorderColor: border,
+      labelTextColor: text,
+      loopTextColor: text,
+      noteBkgColor: accentBg,
+      noteBorderColor: border,
+      noteTextColor: text,
+      sequenceNumberColor: surface,
+    },
+    // Flat-and-clean to match the design language: rounded rects, hairline
+    // strokes, no heavy borders. Plus agent-facing accent classes (see below).
+    themeCSS: `
+      .node rect, .node polygon, rect.actor, .labelBox { rx: 8px; ry: 8px; }
+      .node rect, rect.actor { stroke-width: 1px; }
+      .edgePath .path, .flowchart-link, .actor-line,
+      .messageLine0, .messageLine1 { stroke-width: 1px; }
+
+      /* Agent-applied highlight classes, colored from --accent. Apply in a
+         flowchart with A:::accent (a node) or 'class A,B accent'. 'accent'
+         fills a node with the brand color; 'accentLine' recolors an edge
+         (pair with linkStyle to target a specific link). */
+      .node.accent > rect, .node.accent > polygon, .node.accent > circle,
+      .node.accent > path { fill: ${accentBg}; stroke: ${accent}; }
+      .node.accent .nodeLabel, .node.accent span, .node.accent text { fill: ${accent}; color: ${accent}; }
+      .flowchart-link.accentLine, .edgePath.accentLine > .path { stroke: ${accent}; }
+    `,
+  };
+}
+
 export function MermaidPart(props: { part: MermaidPartData }) {
   const [svg, setSvg] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
@@ -33,11 +108,14 @@ export function MermaidPart(props: { part: MermaidPartData }) {
         // sandbox), so never relax it. suppressErrorRendering keeps a parse
         // failure from injecting mermaid's "bomb" graphic into document.body;
         // we render our own error fallback instead.
+        const { themeVariables, themeCSS } = sideshowTheme();
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: "strict",
           suppressErrorRendering: true,
-          theme: isDark() ? "dark" : "default",
+          theme: "base",
+          themeVariables,
+          themeCSS,
         });
         const { svg: out } = await mermaid.render(`mmd-${seq++}`, src);
         if (!disposed) {
