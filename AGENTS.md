@@ -7,7 +7,7 @@ _use_ a running sideshow lives in `guide/AGENT_SETUP.md`, served at `/setup`.)
 ## What this is and why
 
 A live visual surface for terminal coding agents: agents publish surfaces
-(multi-part cards — html, markdown, diff, terminal, image, trace) over
+(multi-part cards — html, markdown, diff, terminal, image) over
 CLI/MCP/HTTP; the user watches them render in a browser and comments back. The
 two-way loop — publish → live render → comment → revise/reply — is the product.
 When in doubt, optimize for the loop.
