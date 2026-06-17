@@ -1,6 +1,6 @@
 {
   "name": "sideshow",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "A live visual surface for terminal coding agents — agents draw HTML snippets, you watch them in the browser and comment back.",
   "keywords": [
     "agent-tools",

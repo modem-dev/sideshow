@@ -1,5 +1,67 @@
 # Changelog
 
+All notable user-visible changes to this project are documented in this file.
+
+## [Unreleased]
+
+## [0.5.0] - 2026-06-17
+
+### Added
+
+- Surfaces: a published card is now an ordered list of parts, not a single HTML
+  blob. New part kinds render natively in the viewer alongside sandboxed `html`:
+  `diff` (a syntax-highlighted code review from a patch), `markdown` (prose with
+  highlighted fenced code), `terminal` (monospace output with ANSI colors), plus
+  `image` and `trace`. Publish any of them across all three tiers — MCP
+  (`publish_surface`/`update_surface`), `POST /api/surfaces`, and the CLI.
+- Uploads: push images, traces, and files across all three tiers (`POST
+/api/assets`, the `upload_asset` MCP tool, `sideshow upload`/`image`/`trace`).
+  Assets are content-addressed by SHA-256, identical uploads dedupe, and an
+  asset lives as long as any surface references it. Capped at 5 MB each.
+- A Claude Code plugin (`plugin/`, via a repo-hosted marketplace) bundles the
+  MCP server, the skill, and a background monitor — browser comments arrive in
+  the agent as notifications without pasting or re-arming a watcher. Install with
+  `/plugin marketplace add modem-dev/sideshow` then
+  `/plugin install sideshow@sideshow`.
+- `sideshow watch` streams user comments to stdout, re-arming the long-poll
+  forever (exactly-once across watch, wait, and piggyback).
+- A "connect Claude Code" link in the viewer opens an integrations panel with
+  the plugin install commands and caveats.
+- A copy button on each comment puts an agent-ready paste block (surface title +
+  id + comment) on the clipboard.
+- The npm package exposes a stable `sideshow/server` entrypoint so integrations
+  can reuse `createApp`/`JsonFileStore` without importing private internals.
+
+### Changed
+
+- Snippets are now "surfaces" throughout the API (`/api/surfaces`, `surface-*`
+  SSE events, comments keyed by `surfaceId`). The old snippet endpoints and
+  `publish_snippet`/`update_snippet` tools remain as back-compat aliases; stored
+  boards migrate in place on load.
+- The session sidebar groups sessions by recency (Today / Yesterday / Earlier),
+  and sessions with no surfaces yet are dimmed and sunk to the bottom.
+- The viewer is framed around leaving comments rather than messaging an agent —
+  composers read "Leave a comment…", with no delivery receipts or "listening"
+  indicators.
+- A surface card's open and delete actions are now minimal Lucide icons.
+- `sideshow-term` auto-starts a local server when needed (bare `sideshow-term`
+  opens the watcher, default port 4243), supports mouse input, and gains
+  `clear` / `clear --all`.
+
+### Fixed
+
+- `sideshow-term` hardens STML parsing/rendering for untrusted markup (tested
+  entity decoding, bounded size/depth, neutralized control characters, render
+  failures degrade to an in-view error).
+- Local JSON storage shares a single cold-load promise across concurrent first
+  requests, fixing a race that could overwrite persisted board data.
+- The viewer shows a neutral "refresh sideshow to update the viewer" hint for an
+  unrecognized part kind instead of a broken-diff error.
+- Malformed `POST`/`PUT /api/surfaces` part payloads are rejected before they
+  reach storage.
+- `sideshow-term` can be packaged and installed standalone (declared server
+  dependencies, reuses the `sideshow` server core, runs built JavaScript).
+
 ## [0.4.0] - 2026-06-15
 
 ### Added
