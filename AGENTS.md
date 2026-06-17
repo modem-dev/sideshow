@@ -33,9 +33,9 @@ consciously, not as a side effect):
   (`/api/assets`, `/a/:id`), and the shared flow functions both REST and MCP call.
 - `server/types.ts` — data model + `Store` interface; no runtime imports. A
   surface is an ordered list of parts (`html` | `markdown` | `diff` | `terminal`
-  | `image` | `trace`); a snippet is sugar for a single html part.
+  | `image`); a snippet is sugar for a single html part.
   `firstHtml`/`htmlPart` bridge the legacy snippet shape. Assets (uploaded blobs)
-  are a separate entity, referenced by `image`/`trace` parts; `selectEvictions`
+  are a separate entity, referenced by `image` parts; `selectEvictions`
   is the reference-aware LRU policy.
 - `server/public.ts` — the `sideshow/server` package export (`createApp`,
   `JsonFileStore`, types) for embedding the app in a Node process.
@@ -44,7 +44,7 @@ consciously, not as a side effect):
   and both migrate legacy `snippets`/`snippetId` data to surfaces on load.
 - `server/surfacePage.ts` — sandboxed document for one html part: CSP allowlist
   and the postMessage bridge (resize, sendPrompt, openLink). Only html parts
-  reach here — markdown, diff, terminal, image, and trace parts are data the
+  reach here — markdown, diff, terminal, and image parts are data the
   viewer renders natively, never markup in the sandbox.
 - `server/mcpHttp.ts` — stateless MCP at `/mcp`. `mcp/server.ts` — stdio MCP,
   a thin client over the HTTP API (passes response fields through untouched).

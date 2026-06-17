@@ -97,8 +97,8 @@ Code" link (sidebar footer) shows the same steps. The plugin lives in
 - **Session** — one agent conversation. Sessions appear in the viewer sidebar;
   click a title to rename, hover to delete.
 - **Surface** — one published card, built from an ordered list of **parts**.
-  Each part has a kind: `html`, `markdown`, `diff`, `terminal`, `image`, or
-  `trace`. Combine them — e.g. a markdown rationale above a diff. `html` parts
+  Each part has a kind: `html`, `markdown`, `diff`, `terminal`, or `image`.
+  Combine them — e.g. a markdown rationale above a diff. `html` parts
   render in a sandboxed iframe (`sandbox="allow-scripts"`, no same-origin) under
   a CSP that limits external resources to a short CDN allowlist; the other kinds
   are data the trusted viewer renders natively. Updating a surface creates a new
