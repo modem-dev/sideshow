@@ -15,11 +15,17 @@ import {
   type Store,
   type Surface,
   type SurfacePart,
+  type TraceStep,
 } from "./types.ts";
 import { validateSurfaceParts } from "./surfaceParts.ts";
 
 const MAX_SURFACE_BYTES = 2 * 1024 * 1024;
 const MAX_WAIT_SECONDS = 300;
+// Bound the session trace: each step's detail is truncated and the per-session
+// list rolls, so memory stays flat no matter how long the agent runs.
+const MAX_TRACE_STEPS = 2000;
+const MAX_STEP_DETAIL = 4000;
+const MAX_STEP_LABEL = 500;
 
 // Asset serving policy: only raster images are served inline; everything else
 // (incl. svg, json, text, the octet-stream catch-all) is an attachment, so a
@@ -194,6 +200,14 @@ export function createApp({
 }: AppOptions) {
   const app = new Hono();
   const bus = new EventBus();
+
+  // Session-scoped agent trace (POC): the steps the agent took, derived from
+  // its transcript and synced here in batches (see scripts/sync-trace.mjs).
+  // Kept in memory, not in the Store — the transcript is the source of truth,
+  // so a re-sync rebuilds it after a restart. Each step is bounded on ingest
+  // and the per-session list is capped, so a long session can't grow without
+  // bound (mirrors how traces.com truncates and caps).
+  const sessionTrace = new Map<string, TraceStep[]>();
 
   // Cached, fail-silent update lookup: being offline or rate-limited must
   // cost nothing but the absence of the notice. Failures are cached too, so
@@ -487,6 +501,7 @@ export function createApp({
   app.delete("/api/sessions/:id", async (c) => {
     const id = c.req.param("id");
     if (!(await store.removeSession(id))) return c.json({ error: "session not found" }, 404);
+    sessionTrace.delete(id);
     bus.broadcast({ type: "session-deleted", id });
     return c.json({ ok: true });
   });
@@ -499,6 +514,46 @@ export function createApp({
   };
   app.get("/api/sessions/:id/surfaces", listSessionSurfaces);
   app.get("/api/sessions/:id/snippets", listSessionSurfaces); // legacy alias
+
+  // --- session trace (POC, in-memory) ---
+
+  app.get("/api/sessions/:id/trace", async (c) => {
+    const session = await store.getSession(c.req.param("id"));
+    if (!session) return c.json({ error: "session not found" }, 404);
+    return c.json({ steps: sessionTrace.get(session.id) ?? [] });
+  });
+
+  // Append a batch of trace steps (the sync script sends only steps appended
+  // since its cursor — one call per flush, not one per step). `reset: true`
+  // replaces the list, for a full re-sync. Steps are sanitized and bounded.
+  app.post("/api/sessions/:id/trace", async (c) => {
+    const session = await store.getSession(c.req.param("id"));
+    if (!session) return c.json({ error: "session not found" }, 404);
+    const body = await c.req.json().catch(() => null);
+    if (!body || !Array.isArray(body.steps)) {
+      return c.json({ error: 'body must include "steps" array' }, 400);
+    }
+    const clean: TraceStep[] = [];
+    for (const s of body.steps) {
+      if (!s || typeof s.label !== "string") continue;
+      clean.push({
+        label: s.label.slice(0, MAX_STEP_LABEL),
+        ...(typeof s.kind === "string" && { kind: s.kind.slice(0, 40) }),
+        ...(typeof s.detail === "string" && { detail: s.detail.slice(0, MAX_STEP_DETAIL) }),
+        ...(typeof s.ts === "string" && { ts: s.ts }),
+      });
+    }
+    const prior = body.reset === true ? [] : (sessionTrace.get(session.id) ?? []);
+    const merged = prior.concat(clean);
+    // roll the list so a long session keeps only its most recent steps
+    sessionTrace.set(
+      session.id,
+      merged.length > MAX_TRACE_STEPS ? merged.slice(-MAX_TRACE_STEPS) : merged,
+    );
+    const count = sessionTrace.get(session.id)!.length;
+    bus.broadcast({ type: "trace-updated", sessionId: session.id, count });
+    return c.json({ ok: true, added: clean.length, count });
+  });
 
   // --- surfaces ---
 
