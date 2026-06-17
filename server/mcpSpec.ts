@@ -6,7 +6,8 @@ export const MCP_INSTRUCTIONS =
   "sideshow is a live visual surface the user watches in a browser. Publish surfaces to illustrate " +
   "concepts, sketch UI ideas, visualize data, or show a code review while you work. A surface is an " +
   "ordered list of parts: an `html` part is markup you write (a body fragment), a `markdown` part is " +
-  "prose the viewer renders with consistent typography, a `diff` part is a patch the viewer renders as " +
+  "prose the viewer renders with consistent typography, a `mermaid` part is diagram source the viewer " +
+  "renders to an SVG (flowchart, sequence, ERD, …), a `diff` part is a patch the viewer renders as " +
   "a syntax-highlighted split/unified diff. Combine them — e.g. a markdown rationale above a diff part — " +
   "in one card. publish_surface is the general tool; publish_snippet is " +
   "sugar for a single html part. Call get_design_guide once before your first publish. On your first " +
@@ -36,6 +37,8 @@ const d = {
   assetSession: "Session id to attach the asset to",
   partHtml: "html part: body fragment (no doctype/html/head/body)",
   partMarkdown: "markdown part: prose (headings, lists, tables, code, links); raw HTML is escaped",
+  partMermaid:
+    "mermaid part: diagram source (flowchart, sequence, ERD, gantt, …), rendered to SVG by the viewer",
   partPatch: "diff part: a unified/git diff string — the preferred, compact form",
   partFiles: "diff part: before/after pairs — heavier (full contents); prefer patch",
   partAssetId: "image/trace part: id returned by upload_asset",
@@ -54,7 +57,9 @@ const d = {
 const MCP_PARTS_DESCRIPTION =
   "Ordered parts. html: {kind:'html', html:'<body fragment>'}. markdown: {kind:'markdown', " +
   "markdown:'## prose'} — for explanations, plans, tradeoff write-ups (styled text, not sandboxed; " +
-  "embedded raw HTML is escaped — use an html part for live markup). diff: {kind:'diff', " +
+  "embedded raw HTML is escaped — use an html part for live markup). mermaid: {kind:'mermaid', " +
+  "mermaid:'graph TD; A-->B'} — diagram source rendered to SVG (flowchart, sequence, ERD, gantt, …). " +
+  "diff: {kind:'diff', " +
   "patch:'<unified/git diff>'} (preferred, compact) or {kind:'diff', files:[{filename, before, " +
   "after}]} (heavier). image: {kind:'image', assetId:'<from upload_asset>', alt?, caption?} — " +
   "renders an uploaded image; you can also embed the asset URL in an html part instead. trace: " +
@@ -67,9 +72,13 @@ const MCP_PARTS_DESCRIPTION =
 const MCP_PART_JSON_SCHEMA = {
   type: "object",
   properties: {
-    kind: { type: "string", enum: ["html", "markdown", "diff", "image", "trace", "terminal"] },
+    kind: {
+      type: "string",
+      enum: ["html", "markdown", "mermaid", "diff", "image", "trace", "terminal"],
+    },
     html: { type: "string", description: d.partHtml },
     markdown: { type: "string", description: d.partMarkdown },
+    mermaid: { type: "string", description: d.partMermaid },
     patch: { type: "string", description: d.partPatch },
     files: {
       type: "array",
@@ -118,9 +127,9 @@ const MCP_PARTS_JSON_SCHEMA = {
 
 export const MCP_TOOL_DESCRIPTIONS = {
   publishSurfaceHttp:
-    "Publish a surface to the user's sideshow board. A surface is an ordered list of parts (html, markdown, diff, image, and/or trace). Returns the surface id, view URL, and sessionId — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+    "Publish a surface to the user's sideshow board. A surface is an ordered list of parts (html, markdown, mermaid, diff, image, and/or trace). Returns the surface id, view URL, and sessionId — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
   publishSurfaceStdio:
-    "Publish a surface to the user's sideshow board. A surface is an ordered list of parts (html, markdown, diff, image, and/or trace). Returns the surface id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+    "Publish a surface to the user's sideshow board. A surface is an ordered list of parts (html, markdown, mermaid, diff, image, and/or trace). Returns the surface id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
   updateSurface:
     "Revise a surface in place (same card, new version). Prefer this over publishing a near-duplicate. Pass the full replacement parts array. If the result includes userFeedback, read it.",
   publishSnippet:
@@ -271,9 +280,10 @@ const traceStepSchema = z.object({
 
 const mcpPartSchema = z
   .object({
-    kind: z.enum(["html", "markdown", "diff", "image", "trace", "terminal"]),
+    kind: z.enum(["html", "markdown", "mermaid", "diff", "image", "trace", "terminal"]),
     html: z.string().optional().describe(d.partHtml),
     markdown: z.string().optional().describe(d.partMarkdown),
+    mermaid: z.string().optional().describe(d.partMermaid),
     patch: z.string().optional().describe(d.partPatch),
     files: z.array(diffFileSchema).optional().describe(d.partFiles),
     layout: z.enum(["unified", "split"]).optional(),
@@ -286,10 +296,10 @@ const mcpPartSchema = z
     cols: z.number().optional().describe(d.terminalCols),
   })
   .describe(
-    "A surface part: html {kind:'html',html}; markdown {kind:'markdown',markdown} (prose); diff " +
-      "{kind:'diff',patch}; image {kind:'image',assetId} (from upload_asset); trace {kind:'trace',steps} " +
-      "and/or {kind:'trace',assetId}; terminal {kind:'terminal',text} (monospace output; ANSI SGR " +
-      "colors rendered)",
+    "A surface part: html {kind:'html',html}; markdown {kind:'markdown',markdown} (prose); mermaid " +
+      "{kind:'mermaid',mermaid} (diagram source → SVG); diff {kind:'diff',patch}; image " +
+      "{kind:'image',assetId} (from upload_asset); trace {kind:'trace',steps} and/or {kind:'trace',assetId}; " +
+      "terminal {kind:'terminal',text} (monospace output; ANSI SGR colors rendered)",
   );
 
 export const STDIO_MCP_INPUT_SCHEMAS = {

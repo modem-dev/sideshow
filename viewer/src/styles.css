@@ -589,6 +589,33 @@ iframe {
   border-top: 0.5px solid var(--border);
   margin: 1em 0;
 }
+.mermaidpart {
+  border-top: 0.5px solid var(--border);
+  padding: 14px 16px;
+  /* center the diagram; mermaid sizes the SVG to its content */
+  text-align: center;
+  overflow: auto;
+}
+.mermaid-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+.mermaid-error {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--faint);
+  text-align: left;
+}
+.mermaid-error pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  overflow: auto;
+  font: 12px var(--font-mono, ui-monospace, monospace);
+  color: var(--text);
+}
 .tracepart {
   border-top: 0.5px solid var(--border);
   padding: 10px 14px 12px;

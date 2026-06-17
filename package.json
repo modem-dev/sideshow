@@ -79,6 +79,7 @@
     "@types/node": "^25.9.3",
     "lint-staged": "^17.0.7",
     "markdown-it": "^14.2.0",
+    "mermaid": "^11.15.0",
     "oxfmt": "^0.54.0",
     "oxlint": "^1.69.0",
     "shiki": "^4.2.0",

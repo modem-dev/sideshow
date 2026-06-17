@@ -16,6 +16,7 @@ import {
   type DiffPart as DiffPartData,
   type ImagePart as ImagePartData,
   type MarkdownPart as MarkdownPartData,
+  type MermaidPart as MermaidPartData,
   type Surface,
   type TerminalPart as TerminalPartData,
   type TracePart as TracePartData,
@@ -24,6 +25,7 @@ import { DiffPart } from "./DiffPart.tsx";
 import { CommentIcon, LinkIcon, OpenIcon, TrashIcon } from "./icons.tsx";
 import { ImagePart } from "./ImagePart.tsx";
 import { MarkdownPart } from "./MarkdownPart.tsx";
+import { MermaidPart } from "./MermaidPart.tsx";
 import { TerminalPart } from "./TerminalPart.tsx";
 import { TracePart } from "./TracePart.tsx";
 import {
@@ -142,6 +144,9 @@ export function Card(props: { surface: Surface }) {
             </Match>
             <Match when={part().kind === "markdown"}>
               <MarkdownPart part={part() as MarkdownPartData} />
+            </Match>
+            <Match when={part().kind === "mermaid"}>
+              <MermaidPart part={part() as MermaidPartData} />
             </Match>
             <Match when={part().kind === "diff"}>
               <DiffPart part={part() as DiffPartData} />

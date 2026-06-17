@@ -240,6 +240,47 @@ test("publish_surface MCP tool round-trips a terminal part", async () => {
   assert.equal((await app.request(`/s/${payload.id}?part=0`)).status, 404);
 });
 
+test("publishes a mermaid part; /s has no html doc for it", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/surfaces",
+    json({ title: "Flow", parts: [{ kind: "mermaid", mermaid: "graph TD; A-->B" }] }),
+  );
+  assert.equal(res.status, 201);
+  const surface = (await res.json()) as any;
+  assert.deepEqual(surface.kinds, ["mermaid"]);
+
+  const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
+  assert.equal(full.parts[0].kind, "mermaid");
+  assert.equal(full.parts[0].mermaid, "graph TD; A-->B");
+  // mermaid is viewer-rendered data, not a sandboxed html doc
+  assert.equal((await app.request(`/s/${surface.id}?part=0`)).status, 404);
+});
+
+test("publish_surface MCP tool keeps mermaid parts and drops empty ones", async () => {
+  const app = makeApp();
+  const published = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "publish_surface",
+        arguments: {
+          title: "Diagram",
+          parts: [
+            { kind: "mermaid", mermaid: "  " },
+            { kind: "mermaid", mermaid: "graph TD; A-->B" },
+          ],
+        },
+      }),
+    )
+  ).json()) as any;
+  const payload = JSON.parse(published.result.content[0].text);
+  const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
+  assert.equal(full.parts.length, 1);
+  assert.equal(full.parts[0].kind, "mermaid");
+  assert.equal(full.parts[0].mermaid, "graph TD; A-->B");
+});
+
 test("update bumps version and keeps history; old version renderable", async () => {
   const app = makeApp();
   const s = (await (

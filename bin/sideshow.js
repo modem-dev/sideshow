@@ -18,6 +18,7 @@ usage:
   sideshow publish <file|-> [options]     publish an HTML surface (one html part)
       --title <t>       surface title
       --md <file|->     add a markdown part (prose) — combine with html
+      --mermaid <file|-> add a mermaid part (diagram source → SVG) — combine with html
       --diff <file|->   add a diff part from a unified/git patch (combine with html)
       --terminal <file|->  add a terminal part from monospace/ANSI output
       --image <file>    upload an image and append it as an image part
@@ -47,6 +48,9 @@ usage:
       --title <t>       surface title
       --term-title <t>  label shown in the terminal window chrome
       --cols <n>        render width hint, in columns
+      (also: --session, --session-title, --agent, --new-session)
+  sideshow mermaid <file|-> [options]     publish a mermaid surface (diagram → SVG)
+      --title <t>       surface title
       (also: --session, --session-title, --agent, --new-session)
   sideshow update <id> <file|->           revise a surface (new version, same card)
       --title <t>       replace title
@@ -410,6 +414,7 @@ const commands = {
       options: {
         title: { type: "string" },
         md: { type: "string" },
+        mermaid: { type: "string" },
         diff: { type: "string" },
         image: { type: "string" },
         terminal: { type: "string" },
@@ -423,6 +428,9 @@ const commands = {
     const parts = [{ kind: "html", html: readContent(positionals[0]) }];
     if (flags.md !== undefined) {
       parts.push({ kind: "markdown", markdown: readContent(flags.md || "-") });
+    }
+    if (flags.mermaid !== undefined) {
+      parts.push({ kind: "mermaid", mermaid: readContent(flags.mermaid || "-") });
     }
     if (flags.diff !== undefined) {
       parts.push({
@@ -575,6 +583,21 @@ const commands = {
     ];
     const surface = await publishSurface(parts, flags);
     out({ ...surface, url: `${BASE}/s/${surface.id}` });
+  },
+
+  async mermaid() {
+    const { values: flags, positionals } = parse({
+      allowPositionals: true,
+      options: {
+        title: { type: "string" },
+        session: { type: "string" },
+        "session-title": { type: "string" },
+        agent: { type: "string" },
+        "new-session": { type: "boolean" },
+      },
+    });
+    const parts = [{ kind: "mermaid", mermaid: readContent(positionals[0]) }];
+    outSurface(await publishSurface(parts, flags));
   },
 
   async update() {

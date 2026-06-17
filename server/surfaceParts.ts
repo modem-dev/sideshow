@@ -87,6 +87,17 @@ const looseMarkdownPart = z
     message: 'markdown part requires non-empty "markdown"',
   });
 
+const strictMermaidPart = z.object({
+  kind: z.literal("mermaid"),
+  mermaid: requiredString("mermaid"),
+});
+// Loose mode drops a blank mermaid part rather than publishing an empty card.
+const looseMermaidPart = z
+  .object({ kind: z.literal("mermaid"), mermaid: z.string() })
+  .refine((p) => p.mermaid.trim().length > 0, {
+    message: 'mermaid part requires non-empty "mermaid"',
+  });
+
 const strictDiffPart = z
   .object({
     kind: z.literal("diff"),
@@ -158,6 +169,7 @@ const looseTerminalPart = z.object({
 const looseSurfacePart = z.union([
   looseHtmlPart,
   looseMarkdownPart,
+  looseMermaidPart,
   looseDiffPart,
   looseImagePart,
   looseTracePart,
@@ -219,6 +231,8 @@ function schemaForKind(kind: unknown): z.ZodType<SurfacePart> | null {
       return strictHtmlPart;
     case "markdown":
       return strictMarkdownPart;
+    case "mermaid":
+      return strictMermaidPart;
     case "diff":
       return strictDiffPart;
     case "image":

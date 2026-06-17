@@ -21,6 +21,12 @@ a `kind`:
   interleave prose, tables, code, and pictures. Only raw _HTML_ in the source is
   escaped, not rendered — reach for an `html` part when you need live markup
   (interactivity, vector graphics, custom layout), not just to show a picture.
+- **`mermaid`** — diagram source you hand over as _text_; the viewer renders it
+  to an SVG with mermaid (flowcharts, sequence diagrams, ERDs, gantt, state, …).
+  Reach for it when the shape of a system is the point — a flow, a state
+  machine, a schema — and you'd rather describe it than draw SVG by hand. Like
+  markdown it renders as data, not sandboxed markup (securityLevel `strict`); for
+  bespoke vector art hand-write inline `<svg>` in an `html` part instead.
 - **`diff`** — a patch you hand over as _data_; the trusted viewer renders it
   natively as a syntax-highlighted code review (split or unified). Reach for it
   to show a changeset or review code, not to draw.
@@ -39,14 +45,15 @@ a `kind`:
 A surface can combine parts, e.g. `[html, diff]` is a diagram with its code
 review in one card, and `[markdown, diff]` is a written rationale above its
 changeset. Trust differs: html parts are sandboxed because you author the
-markup; markdown/diff/image/trace/terminal parts are rendered by the viewer
-from data — send data, never markup.
+markup; markdown/mermaid/diff/image/trace/terminal parts are rendered by the
+viewer from data — send data, never markup.
 
 A **`SurfacePart`** is one of:
 
 ```
 { "kind": "html", "html": "<p>...</p>" }
 { "kind": "markdown", "markdown": "## Plan\n\n1. ...\n2. ..." }
+{ "kind": "mermaid", "mermaid": "graph TD; A[Start] --> B{Ok?}; B -->|yes| C; B -->|no| D" }
 { "kind": "diff", "patch": "<unified or git diff text>" }                          # preferred — compact
 { "kind": "diff", "files": [{ "filename": "a.ts", "before": "...", "after": "...", "language": "ts" }] }  # fallback
 { "kind": "image", "assetId": "<id from an upload>", "alt": "...", "caption": "..." }
@@ -137,6 +144,7 @@ CLI equivalents:
 ```
 sideshow publish sketch.html --title "Cache layout"                 # html surface
 sideshow markdown plan.md --title "Migration plan"                  # standalone markdown surface
+sideshow mermaid flow.mmd --title "Request flow"                    # standalone mermaid surface
 sideshow diff change.patch --title "Add retry" --layout split       # standalone diff surface
 sideshow publish sketch.html --diff change.patch --title "Retry flow"   # combined [html, diff]
 ```
