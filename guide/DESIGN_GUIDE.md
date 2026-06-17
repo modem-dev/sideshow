@@ -16,8 +16,11 @@ a `kind`:
   consistent typography (headings, lists, tables, links, and syntax-highlighted
   fenced code blocks — tag the fence with a language, e.g. ` ```ts `). Reach for
   it for explanations, plans, and tradeoff write-ups — anything you'd otherwise
-  hand-format in html. Raw HTML in the source is escaped, not rendered, so use an
-  `html` part when you actually need live markup.
+  hand-format in html. Markdown image syntax works too: `![caption](/a/<id>)`
+  embeds an uploaded image (see Uploads below) inline, so one markdown part can
+  interleave prose, tables, code, and pictures. Only raw _HTML_ in the source is
+  escaped, not rendered — reach for an `html` part when you need live markup
+  (interactivity, vector graphics, custom layout), not just to show a picture.
 - **`diff`** — a patch you hand over as _data_; the trusted viewer renders it
   natively as a syntax-highlighted code review (split or unified). Reach for it
   to show a changeset or review code, not to draw.
@@ -67,9 +70,11 @@ MCP  upload_asset  { data: "<base64>", contentType, filename?, kind?, session? }
 CLI  sideshow upload shot.png         # prints { id, url }
 ```
 
-The response carries `{ id, url }`. Then either reference the asset in a part
-(`{ "kind": "image", "assetId": "<id>" }`) **or** embed its `url` inside an html
-part (`<img src="<url>">`). Per-asset limit is 5 MB.
+The response carries `{ id, url }`. Then reference the asset three ways: as an
+`image` part (`{ "kind": "image", "assetId": "<id>" }`) when the picture is the
+surface; inline in a `markdown` part (`![caption](/a/<id>)`) to sit it beside
+prose; or inside an html part (`<img src="<url>">`) when you're drawing. Per-asset
+limit is 5 MB.
 
 An asset's **id is the SHA-256 of its bytes**, so the URL is content-addressed
 and you can know it _before_ (or while) you upload — no need to wait for the
