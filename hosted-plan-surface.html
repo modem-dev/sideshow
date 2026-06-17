@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>sideshow.sh — hosted architecture</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg-0: #0d0e10;
+        --bg-1: #141619;
+        --bg-2: #1c1f24;
+        --tx-0: #e7e9ec;
+        --tx-1: #a3a8b0;
+        --tx-2: #6b7280;
+        --bd: rgba(255, 255, 255, 0.09);
+        --bd-2: rgba(255, 255, 255, 0.16);
+        --blue: #5b9bff;
+        --teal: #2dd4bf;
+        --amber: #f5b452;
+        --coral: #f87171;
+        --green: #4ade80;
+        --gray: #8b93a1;
+        --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg-0);
+        color: var(--tx-0);
+        font-family: var(--font-sans);
+        font-weight: 400;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap { max-width: 860px; margin: 0 auto; padding: 40px 24px 72px; }
+      h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; letter-spacing: -0.01em; }
+      .sub { color: var(--tx-1); font-size: 14px; margin: 0 0 28px; }
+      h2 { font-size: 15px; font-weight: 500; margin: 32px 0 12px; }
+      .card {
+        background: var(--bg-1);
+        border: 1px solid var(--bd);
+        border-radius: 12px;
+        padding: 20px;
+      }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+      .tile {
+        background: var(--bg-1);
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        padding: 14px 16px;
+      }
+      .tile h3 { font-size: 13px; font-weight: 500; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+      .tile p { font-size: 13px; color: var(--tx-1); margin: 0; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+      ul { margin: 8px 0 0; padding-left: 18px; }
+      li { font-size: 13.5px; color: var(--tx-1); margin: 5px 0; }
+      li b { color: var(--tx-0); font-weight: 500; }
+      code, .mono {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        background: var(--bg-2);
+        border: 1px solid var(--bd);
+        border-radius: 5px;
+        padding: 1px 5px;
+        color: var(--tx-0);
+      }
+      .steps { counter-reset: s; list-style: none; padding: 0; margin: 0; }
+      .steps li {
+        position: relative; padding: 10px 0 10px 40px; border-top: 1px solid var(--bd);
+        color: var(--tx-1); font-size: 13.5px;
+      }
+      .steps li:first-child { border-top: none; }
+      .steps li::before {
+        counter-increment: s; content: counter(s);
+        position: absolute; left: 0; top: 9px;
+        width: 26px; height: 26px; border-radius: 50%;
+        display: grid; place-items: center;
+        background: var(--bg-2); border: 1px solid var(--bd-2);
+        color: var(--tx-0); font-size: 12px; font-weight: 500;
+        font-family: var(--font-mono);
+      }
+      .steps li b { color: var(--tx-0); font-weight: 500; }
+      .tag {
+        display: inline-block; font-family: var(--font-mono); font-size: 11px;
+        color: var(--tx-1); border: 1px solid var(--bd); border-radius: 5px;
+        padding: 1px 6px; margin-left: 6px;
+      }
+      .legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 10px 2px 0; }
+      .legend span { font-size: 12px; color: var(--tx-1); display: flex; align-items: center; gap: 7px; }
+      text { font-family: var(--font-sans); }
+      .t { font-size: 13px; fill: var(--tx-0); }
+      .th { font-size: 13px; font-weight: 500; fill: var(--tx-0); }
+      .ts { font-size: 11px; fill: var(--tx-1); }
+      .arr { stroke: var(--gray); stroke-width: 1.3; fill: none; }
+      .note { color: var(--tx-2); font-size: 12px; margin-top: 18px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>sideshow.sh — a hosted, multi-tenant offering</h1>
+      <p class="sub">GitHub sign-in for humans · per-user agent tokens for agents · everything on Cloudflare</p>
+
+      <h2>Request flow</h2>
+      <div class="card">
+        <svg width="100%" viewBox="0 0 820 430" role="img" aria-label="Architecture diagram">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--gray)" />
+            </marker>
+          </defs>
+
+          <!-- clients -->
+          <g>
+            <rect x="70" y="20" width="250" height="56" rx="9" fill="rgba(45,212,191,0.10)" stroke="var(--teal)" />
+            <text class="th" x="195" y="44" text-anchor="middle">Browser — human</text>
+            <text class="ts" x="195" y="62" text-anchor="middle">feed, "connect agent" page</text>
+          </g>
+          <g>
+            <rect x="500" y="20" width="250" height="56" rx="9" fill="rgba(91,155,255,0.10)" stroke="var(--blue)" />
+            <text class="th" x="625" y="44" text-anchor="middle">Agent — headless</text>
+            <text class="ts" x="625" y="62" text-anchor="middle">CLI · MCP · raw HTTP</text>
+          </g>
+
+          <!-- client -> edge -->
+          <line class="arr" x1="195" y1="76" x2="270" y2="150" marker-end="url(#arrow)" />
+          <text class="ts" x="120" y="120" text-anchor="middle">session cookie</text>
+          <text class="ts" x="120" y="134" text-anchor="middle">(GitHub OAuth)</text>
+          <line class="arr" x1="625" y1="76" x2="550" y2="150" marker-end="url(#arrow)" />
+          <text class="ts" x="700" y="120" text-anchor="middle">Authorization:</text>
+          <text class="ts" x="700" y="134" text-anchor="middle">Bearer &lt;agent token&gt;</text>
+
+          <!-- edge worker -->
+          <g>
+            <rect x="190" y="150" width="440" height="64" rx="9" fill="rgba(245,180,82,0.10)" stroke="var(--amber)" />
+            <text class="th" x="410" y="178" text-anchor="middle">Edge Worker</text>
+            <text class="ts" x="410" y="197" text-anchor="middle">resolve identity → userId → route · OAuth callback · mint/revoke tokens</text>
+          </g>
+
+          <!-- directory -->
+          <g>
+            <rect x="660" y="150" width="140" height="64" rx="9" fill="rgba(139,147,161,0.12)" stroke="var(--gray)" />
+            <text class="th" x="730" y="174" text-anchor="middle">D1 directory</text>
+            <text class="ts" x="730" y="191" text-anchor="middle">users · tokens</text>
+            <text class="ts" x="730" y="205" text-anchor="middle">(isolate-cached)</text>
+          </g>
+          <line class="arr" x1="630" y1="182" x2="658" y2="182" marker-start="url(#arrow)" marker-end="url(#arrow)" />
+
+          <!-- edge -> boards -->
+          <line class="arr" x1="410" y1="214" x2="410" y2="252" marker-end="url(#arrow)" />
+          <text class="ts" x="410" y="240" text-anchor="middle" font-family="var(--font-mono)">idFromName(userId)</text>
+
+          <!-- boards -->
+          <g>
+            <rect x="70" y="256" width="220" height="150" rx="9" fill="rgba(74,222,128,0.09)" stroke="var(--green)" />
+            <text class="th" x="180" y="280" text-anchor="middle">Board DO — alice</text>
+            <text class="ts" x="180" y="304" text-anchor="middle">SQLite (sessions, surfaces,</text>
+            <text class="ts" x="180" y="318" text-anchor="middle">comments, assets)</text>
+            <text class="ts" x="180" y="342" text-anchor="middle">in-memory event bus</text>
+            <text class="ts" x="180" y="356" text-anchor="middle">SSE + long-poll</text>
+            <text class="ts" x="180" y="386" text-anchor="middle" font-style="italic">unchanged SqlStore</text>
+          </g>
+          <g>
+            <rect x="300" y="256" width="220" height="150" rx="9" fill="rgba(74,222,128,0.09)" stroke="var(--green)" />
+            <text class="th" x="410" y="280" text-anchor="middle">Board DO — ben</text>
+            <text class="ts" x="410" y="304" text-anchor="middle">one DO = one database</text>
+            <text class="ts" x="410" y="318" text-anchor="middle">= one isolated board</text>
+            <text class="ts" x="410" y="346" text-anchor="middle">no tenant columns,</text>
+            <text class="ts" x="410" y="360" text-anchor="middle">no shared bottleneck</text>
+          </g>
+          <g>
+            <rect x="530" y="256" width="220" height="150" rx="9" fill="rgba(74,222,128,0.06)" stroke="var(--bd-2)" stroke-dasharray="4 4" />
+            <text class="th" x="640" y="280" text-anchor="middle" fill="var(--tx-1)">Board DO — …</text>
+            <text class="ts" x="640" y="304" text-anchor="middle">one per GitHub user,</text>
+            <text class="ts" x="640" y="318" text-anchor="middle">distributed at the edge</text>
+            <text class="ts" x="640" y="346" text-anchor="middle">scales horizontally</text>
+            <text class="ts" x="640" y="360" text-anchor="middle">for free</text>
+          </g>
+
+          <line class="arr" x1="380" y1="252" x2="200" y2="254" marker-end="url(#arrow)" />
+          <line class="arr" x1="440" y1="252" x2="610" y2="254" marker-end="url(#arrow)" />
+        </svg>
+        <div class="legend">
+          <span><span class="dot" style="background:var(--teal)"></span>human / browser</span>
+          <span><span class="dot" style="background:var(--blue)"></span>agent</span>
+          <span><span class="dot" style="background:var(--amber)"></span>edge routing + auth</span>
+          <span><span class="dot" style="background:var(--gray)"></span>global directory</span>
+          <span><span class="dot" style="background:var(--green)"></span>per-user board (Durable Object)</span>
+        </div>
+      </div>
+
+      <h2>The whole stack stays on Cloudflare</h2>
+      <div class="grid2">
+        <div class="tile">
+          <h3><span class="dot" style="background:var(--green)"></span>Durable Objects — per-board data</h3>
+          <p>Sessions, surfaces, comments, assets stay in each user's DO SQLite. <code>SqlStore</code> is unchanged. The board <em>is</em> the database and the event bus.</p>
+        </div>
+        <div class="tile">
+          <h3><span class="dot" style="background:var(--gray)"></span>D1 — the only new store</h3>
+          <p>Small global directory: GitHub user → board, hashed agent tokens, OAuth login sessions. Read-heavy, isolate-cached on the token hot path.</p>
+        </div>
+        <div class="tile">
+          <h3><span class="dot" style="background:var(--blue)"></span>Workers — edge</h3>
+          <p>Identity resolution + routing, the OAuth dance, token mint/revoke, and serving the viewer shell.</p>
+        </div>
+        <div class="tile">
+          <h3><span class="dot" style="background:var(--amber)"></span>R2 / KV — optional, later</h3>
+          <p>R2 for cheaper big assets (already content-addressed by SHA-256). KV as a hot read-cache for token→user. Not needed for v1.</p>
+        </div>
+      </div>
+
+      <h2>What changes vs today</h2>
+      <div class="card">
+        <ul>
+          <li><b>One line of routing.</b> <code>idFromName("default")</code> → <code>idFromName(userId)</code>. Each user gets their own isolated DO.</li>
+          <li><b>Auth generalized.</b> Today's single shared <code>SIDESHOW_TOKEN</code> becomes per-user, revocable agent tokens; self-host keeps the single-token tier.</li>
+          <li><b>Two new auth flows.</b> GitHub OAuth for browsers; mintable Bearer tokens for headless agents (shown on a "connect agent" page).</li>
+          <li><b>Core stays runtime-agnostic.</b> All new OAuth / routing / directory code lives in <code>workers/</code> — <code>server/</code> stays clean.</li>
+        </ul>
+      </div>
+
+      <h2>Rollout</h2>
+      <div class="card">
+        <ol class="steps">
+          <li><b>Directory + token model.</b> <span class="tag">D1</span> users + tokens tables, mint / resolve / revoke, isolate cache.</li>
+          <li><b>Per-user routing.</b> <span class="tag">workers/</span> resolve identity → route to the user's board DO; generalize the app auth seam.</li>
+          <li><b>GitHub OAuth.</b> <span class="tag">edge</span> <span class="mono">/auth/github</span> + callback, signed session cookies.</li>
+          <li><b>Viewer UX.</b> <span class="tag">viewer/</span> sign-in/out, "connect agent" page with copy-paste MCP/CLI config, token management.</li>
+          <li><b>Ops.</b> <span class="tag">deploy</span> sideshow.sh DNS → Worker route, GitHub OAuth app, bindings, account delete, rate limits.</li>
+        </ol>
+      </div>
+
+      <p class="note">Bottom line: it's "GitHub OAuth + a token directory + per-user routing," not a re-architecture — the Durable-Object-per-board model was already latent in the design, so the hard part is done.</p>
+    </div>
+  </body>
+</html>
