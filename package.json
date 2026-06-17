@@ -39,6 +39,9 @@
     },
     "./*": "./*"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "vite build && (vite build --watch & node --watch server/index.ts)",
     "start": "vite build && node server/index.ts",
@@ -50,6 +53,9 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint . --deny-warnings",
     "lint:fix": "oxlint . --fix",
+    "changeset": "changeset",
+    "changeset:status": "changeset status",
+    "release:version": "changeset version",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.workers.json --noEmit && tsc -p tsconfig.viewer.json --noEmit",
     "build": "tsc -p tsconfig.build.json && vite build",
     "deploy": "npm run build:viewer && wrangler deploy",
@@ -66,6 +72,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "@cloudflare/workers-types": "^4.20260611.1",
     "@playwright/test": "^1.60.0",
     "@types/markdown-it": "^14.1.2",

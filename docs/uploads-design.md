@@ -308,7 +308,7 @@ three tiers" stance.
   (served assets now embeddable by URL, not only `https:`/`data:`).
 - `guide/AGENT_SETUP.md` / `AGENTS.md` map: mention `/api/assets`, `/a/:id`,
   `upload_asset`, and the new CLI verbs.
-- `CHANGELOG.md` under `[Unreleased] / Added`.
+- A Changesets release-note fragment (`npm run changeset`).
 
 ## Tests
 

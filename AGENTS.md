@@ -110,9 +110,11 @@ Testing notes:
 ## Conventions
 
 - Conventional Commits: `type(scope): description`.
-- `CHANGELOG.md` under `[Unreleased]` (`Added`/`Changed`/`Fixed`), user-visible
-  changes only; append to existing subsections, don't duplicate them.
-- Release: move unreleased entries into a new version section, bump
-  `package.json`, commit `chore(release): X.Y.Z`, tag `vX.Y.Z`, create the
-  GitHub release with that section as notes, then `npm publish` (manual —
-  the maintainer runs it; requires 2FA).
+- Changesets drive release notes. For user-visible changes run
+  `npm run changeset` and select `patch`/`minor`/`major`; for maintenance-only
+  PRs run `npm run changeset -- --empty`. Do not edit `CHANGELOG.md` for normal
+  PRs — `npm run release:version` updates it during release prep.
+- Release: run `npm run release:version`, commit `chore(release): X.Y.Z`, tag
+  `vX.Y.Z`, and push the tag. The release workflow verifies the tag matches
+  `package.json`, publishes npm with provenance, and creates the GitHub release
+  from that changelog section. See `docs/releasing.md`.
