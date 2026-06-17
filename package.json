@@ -32,6 +32,13 @@
     "skills/"
   ],
   "type": "module",
+  "exports": {
+    "./server": {
+      "types": "./dist/server/public.d.ts",
+      "import": "./dist/server/public.js"
+    },
+    "./*": "./*"
+  },
   "scripts": {
     "dev": "vite build && (vite build --watch & node --watch server/index.ts)",
     "start": "vite build && node server/index.ts",

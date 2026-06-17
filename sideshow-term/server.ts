@@ -14,8 +14,21 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createApp } from "sideshow/dist/server/app.js";
-import { JsonFileStore } from "sideshow/dist/server/storage.js";
+const { createApp, JsonFileStore } = await loadSideshowServerCore();
+
+async function loadSideshowServerCore() {
+  try {
+    return await import("sideshow/server");
+  } catch {
+    // Compatibility for sideshow 0.4.0, which did not expose the stable
+    // `sideshow/server` entrypoint yet. New installs should resolve above.
+    const [{ createApp }, { JsonFileStore }] = await Promise.all([
+      import("sideshow/dist/server/app.js"),
+      import("sideshow/dist/server/storage.js"),
+    ]);
+    return { createApp, JsonFileStore };
+  }
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = basename(here) === "dist" ? dirname(here) : here;

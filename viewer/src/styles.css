@@ -10,6 +10,7 @@
   --accent: #185fa5;
   --accent-bg: #e6f1fb;
   --hover: rgba(20, 20, 10, 0.05);
+  --danger: #c0392b;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -24,6 +25,7 @@
     --accent: #85b7eb;
     --accent-bg: rgba(55, 138, 221, 0.16);
     --hover: rgba(255, 255, 250, 0.06);
+    --danger: #e8776b;
   }
 }
 * {
@@ -343,6 +345,24 @@ select.vbadge {
 .card-head .act:hover {
   color: var(--text);
   background: var(--hover);
+}
+/* Icon-only actions (open/delete): square hit area, centered glyph. Unlike the
+   text actions, these stay visible at all times — they're subtle enough not to
+   need the hover reveal. */
+.card-head .act.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  opacity: 1;
+}
+.card-head .act.icon svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+.card-head .act.icon.del:hover {
+  color: var(--danger);
 }
 iframe {
   display: block;

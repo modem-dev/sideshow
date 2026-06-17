@@ -13,6 +13,9 @@ All notable user-visible changes to this project are documented in this file.
   over MCP and `POST /api/surfaces`, plus the CLI (`sideshow markdown`, and
   `--md` on `sideshow publish`). Rendered as data, not sandboxed markup: raw
   HTML in the source is escaped, so reach for an `html` part for live markup.
+- The npm package now exposes a stable `sideshow/server` entrypoint for
+  integrations such as `sideshow-term` to reuse `createApp` and `JsonFileStore`
+  without importing private `dist/server/*` internals.
 - Surfaces: a published card is now an ordered list of parts, not a single
   HTML blob. A `diff` part renders a unified/git patch as a syntax-highlighted
   split/unified code review (via @pierre/diffs) directly in the viewer; an
@@ -38,6 +41,8 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Changed
 
+- A surface card's open and delete actions are now minimal Lucide icons
+  (external-link and trash) instead of text labels; delete turns red on hover.
 - `sideshow-term watch` now starts a local server in the background when needed,
   and bare `sideshow-term` opens the watcher. Terminal servers default to port
   4243, with `--port` for choosing another local port. The watcher supports
@@ -52,6 +57,8 @@ All notable user-visible changes to this project are documented in this file.
 
 ### Fixed
 
+- Local JSON storage now shares a single cold-load promise across concurrent
+  first requests, preventing a race that could overwrite persisted board data.
 - The viewer no longer renders a part whose kind it doesn't recognize as a
   broken diff ("Couldn't render diff — No diff content"). An unknown kind —
   what a long-open browser tab sees after a new part type ships — now shows a

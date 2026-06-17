@@ -97,6 +97,7 @@ export class JsonFileStore implements Store {
   private assets = new Map<string, Asset>();
   private lastSeq = 0;
   private loaded = false;
+  private loadPromise: Promise<void> | null = null;
   private writeQueue: Promise<void> = Promise.resolve();
   private filePath: string;
 
@@ -106,7 +107,14 @@ export class JsonFileStore implements Store {
 
   private async load() {
     if (this.loaded) return;
-    this.loaded = true;
+    this.loadPromise ??= this.loadFromDisk().catch((err) => {
+      this.loadPromise = null;
+      throw err;
+    });
+    await this.loadPromise;
+  }
+
+  private async loadFromDisk() {
     try {
       const raw = await readFile(this.filePath, "utf8");
       const data = JSON.parse(raw) as LegacyShape;
@@ -132,6 +140,7 @@ export class JsonFileStore implements Store {
     } catch (err: any) {
       if (err?.code !== "ENOENT") throw err;
     }
+    this.loaded = true;
   }
 
   private persist() {
