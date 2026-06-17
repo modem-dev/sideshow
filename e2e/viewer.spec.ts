@@ -17,17 +17,34 @@ test("the sidebar groups sessions by recency and sinks empty ones to the bottom"
   // both were created just now, so they share one recency group
   await expect(page.locator(".sess-group").first()).toHaveText("Today");
 
-  // the empty session is marked vacant, sinks below the one with work, and
-  // reads "no surfaces yet" instead of a count
+  // the empty session is marked vacant and sinks below the one with work
   const rows = page.locator("#sessionList .sess");
   await expect(rows).toHaveCount(2);
-  // the session with work is on top even though the empty one is more recent
-  await expect(rows.nth(0)).toContainText("1 surface");
+  // the session with work is on top even though the empty one is more recent;
+  // its count rides the title as "(1)"
+  await expect(rows.nth(0).locator(".sess-count")).toHaveText("(1)");
   await expect(rows.nth(0)).not.toHaveClass(/vacant/);
-  // the empty session sinks below, marked vacant, reading "no surfaces yet"
+  // the empty session sinks below, marked vacant, with no count on its title
   await expect(rows.nth(1)).toHaveClass(/vacant/);
   await expect(rows.nth(1)).toContainText("Empty one");
-  await expect(rows.nth(1)).toContainText("no surfaces yet");
+  await expect(rows.nth(1).locator(".sess-count")).toHaveCount(0);
+});
+
+test("session rows show the agent's logo, with a fallback for unknown agents", async ({
+  page,
+  server,
+}) => {
+  await publish(server.url, { html: "<p>x</p>", title: "A", agent: "claude" });
+  await publish(server.url, { html: "<p>y</p>", title: "B", agent: "some-new-agent" });
+
+  await page.goto(server.url);
+
+  // every row carries an inline agent mark in its meta — a known brand glyph
+  // or the neutral fallback for an unrecognized agent
+  const rows = page.locator("#sessionList .sess");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0).locator(".sess-meta svg.agent-mark")).toBeVisible();
+  await expect(rows.nth(1).locator(".sess-meta svg.agent-mark")).toBeVisible();
 });
 
 test("snippet published over HTTP appears live via SSE, no reload", async ({ page, server }) => {
@@ -248,19 +265,19 @@ test("Cmd+Option+Up/Down switches between sessions, wrapping at the ends", async
 
   await page.goto(server.url);
   // the newest session sits at the top of the list and is selected on load
-  await expect(page.locator(".sess.sel .sess-title")).toHaveText("two session");
+  await expect(page.locator(".sess.sel .sess-title")).toContainText("two session");
 
   // Down moves to the next (older) session down the list
   await page.keyboard.press("Meta+Alt+ArrowDown");
-  await expect(page.locator(".sess.sel .sess-title")).toHaveText("one session");
+  await expect(page.locator(".sess.sel .sess-title")).toContainText("one session");
 
   // Down again wraps back to the top
   await page.keyboard.press("Meta+Alt+ArrowDown");
-  await expect(page.locator(".sess.sel .sess-title")).toHaveText("two session");
+  await expect(page.locator(".sess.sel .sess-title")).toContainText("two session");
 
   // Up wraps from the top back to the bottom
   await page.keyboard.press("Meta+Alt+ArrowUp");
-  await expect(page.locator(".sess.sel .sess-title")).toHaveText("one session");
+  await expect(page.locator(".sess.sel .sess-title")).toContainText("one session");
 });
 
 test("at phone width the sidebar collapses into a drawer and actions stay visible", async ({

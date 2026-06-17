@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { AgentMark } from "./agentMarks.tsx";
 import { api, relTime, sessionLabel, type SessionRow } from "./api.ts";
 import { Card, cardEls, frameForSource } from "./Card.tsx";
 import { renderNotes } from "./notes.ts";
@@ -297,13 +298,15 @@ function SessionItem(props: { session: SessionRow }) {
         }
       }}
     >
-      <div class="sess-title">{label()}</div>
+      <div class="sess-title">
+        {label()}
+        <Show when={props.session.surfaceCount > 0}>
+          <span class="sess-count"> ({props.session.surfaceCount})</span>
+        </Show>
+      </div>
       <div class="sess-meta">
-        {props.session.agent} ·{" "}
-        {props.session.surfaceCount === 0
-          ? "no surfaces yet"
-          : `${props.session.surfaceCount} surface${props.session.surfaceCount === 1 ? "" : "s"}`}{" "}
-        · {relTime(props.session.lastActiveAt)}
+        <AgentMark agent={props.session.agent} />
+        {props.session.agent} · {relTime(props.session.lastActiveAt)}
       </div>
       <span class="dot"></span>
       <button

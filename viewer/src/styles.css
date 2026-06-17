@@ -141,10 +141,26 @@ aside {
   text-overflow: ellipsis;
   padding-right: 18px;
 }
+/* Surface count as a quiet parenthetical on the title. */
+.sess-count {
+  font-weight: 400;
+  color: var(--faint);
+}
 .sess-meta {
+  display: flex;
+  align-items: center;
   font-size: 12px;
   color: var(--faint);
   margin-top: 1px;
+}
+/* Per-agent logo before the agent name — slightly stronger than the meta text,
+   inherits currentColor so it stays monochrome and theme-aware. */
+.agent-mark {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-right: 5px;
+  color: var(--muted);
 }
 .sess .dot {
   position: absolute;
