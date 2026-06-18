@@ -55,6 +55,21 @@ If the `sideshow` CLI is installed, these are equivalent and easier:
 --title "..."` (standalone diff), `sideshow publish file.html --diff change.patch`
 (combined), `sideshow wait`, `sideshow guide` (session handling is automatic).
 
+**Share how the visuals were made (Claude Code).** The viewer has a Timeline
+that overlays your trace — the prompts, reasoning, and commands around a
+session's surfaces — beside the surfaces themselves, so the user can see how the
+visuals got generated. Make it hands-off with a one-time install:
+
+    sideshow install-hook
+
+That registers a Claude Code Stop hook (in `.claude/settings.local.json`) which
+runs `sideshow trace-sync` after every turn — reading your own transcript,
+windowing it to the prompts around this session's surfaces, and posting that
+slice. It never blocks your turn and no-ops when the cwd has no sideshow
+session. Without the hook, sync at a checkpoint yourself: `sideshow trace-sync`
+(after publishing). Trace capture reads Claude Code's transcript, so it is
+Claude Code-only; everything else above works on any agent.
+
 If this surface is a deployed instance that requires a token, add
 `-H "Authorization: Bearer $SIDESHOW_TOKEN"` to every curl call — or set
 `SIDESHOW_URL` and `SIDESHOW_TOKEN` in your environment and use the CLI,

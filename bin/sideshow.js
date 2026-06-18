@@ -10,6 +10,9 @@ import { parseArgs } from "node:util";
 const BASE = (process.env.SIDESHOW_URL ?? "http://localhost:4242").replace(/\/$/, "");
 const TOKEN = process.env.SIDESHOW_TOKEN;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+// This script's own path — used to register the Stop hook so it works whether
+// or not `sideshow` is on PATH (a fresh clone, an npx run, a global install).
+const SELF = fileURLToPath(import.meta.url);
 
 const HELP = `sideshow — a live visual surface for terminal coding agents
 
@@ -66,9 +69,17 @@ usage:
                         publish to create one)
       --after <seq>     re-read comments after this cursor on the first poll
                         (default: resume where the agent left off, server-side)
-  sideshow trace-sync [options]           sync your step trace from the session
-                                          transcript onto the timeline (run it at
-                                          a checkpoint, e.g. after publishing)
+  sideshow install-hook [options]         register a Claude Code Stop hook so the
+                                          trace syncs itself after every turn —
+                                          hands-off, no agent effort (Claude Code)
+      --shared          write .claude/settings.json (committed) instead of the
+                        default .claude/settings.local.json (gitignored, personal)
+      --user            write ~/.claude/settings.json (all projects)
+      --print           print the hook JSON snippet instead of writing settings
+  sideshow trace-sync [options]           manually sync your step trace from the
+                                          session transcript onto the timeline —
+                                          the fallback when the hook isn't set up
+                                          (run after publishing)
       --session <id>    target session (default: auto)
       --transcript <f>  transcript file (default: newest Claude Code log for cwd)
       --pad <n>         prompts of context to keep around the session's surfaces
@@ -116,6 +127,22 @@ async function api(path, init = {}) {
   }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) fail(body.error ?? `${res.status} ${res.statusText}`);
+  return body;
+}
+
+// Like api(), but throws instead of exiting the process — for callers that must
+// stay alive on failure (the Stop hook must never kill the agent's turn).
+async function fetchJson(path, init = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(TOKEN ? { authorization: `Bearer ${TOKEN}` } : {}),
+      ...init.headers,
+    },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
   return body;
 }
 
@@ -235,14 +262,13 @@ async function resolveSession(flags, { create = false } = {}) {
 // `agentPid()` can hash to a different key. Fall back to asking the server for
 // the most recently active session whose cwd matches ours. Uses raw fetch (not
 // `api()`) so a transient failure returns null instead of exiting the process.
-async function resolveSessionByCwd() {
+async function resolveSessionByCwd(cwd = process.cwd()) {
   try {
     const res = await fetch(`${BASE}/api/sessions`, {
       headers: TOKEN ? { authorization: `Bearer ${TOKEN}` } : {},
     });
     if (!res.ok) return null;
     const sessions = await res.json();
-    const cwd = process.cwd();
     return (
       sessions
         .filter((s) => s.cwd === cwd)
@@ -550,6 +576,51 @@ function scopeToSurfaces(steps, surfaceTimes, pad) {
   return steps.filter((s) => {
     const t = s.ts ? Date.parse(s.ts) : NaN;
     return Number.isFinite(t) && t >= startTs && t < endTs;
+  });
+}
+
+// Core trace sync, shared by the `trace-sync` command and the `hook`. Reads the
+// transcript, windows it around the session's surfaces (unless `all`), and POSTs
+// the slice. Uses fetchJson (throws, never exits) so the hook can swallow
+// failures. A windowed sync always replaces — the span shifts as the session
+// grows, so the per-session cursor only matters for un-windowed (`all`) syncs.
+async function syncTrace({ session, transcript, pad = 5, all = false, reset = false }) {
+  const steps = buildTraceSteps(readFileSync(transcript, "utf8"));
+  let scoped = steps;
+  if (!all) {
+    const metas = await fetchJson(`/api/sessions/${session}/surfaces`).catch(() => []);
+    const times = (Array.isArray(metas) ? metas : [])
+      .map((m) => Date.parse(m.createdAt))
+      .filter((t) => Number.isFinite(t))
+      .sort((a, b) => a - b);
+    scoped = scopeToSurfaces(steps, times, pad);
+  }
+  const windowed = scoped.length !== steps.length;
+  const cursors = readState().traceCursors ?? {};
+  const prev = cursors[session];
+  const doReset = reset || windowed || prev == null || scoped.length < prev;
+  const toSend = doReset ? scoped : scoped.slice(prev);
+  if (toSend.length === 0 && !doReset) {
+    return { session, added: 0, reset: false, windowed, total: scoped.length };
+  }
+  const res = await fetchJson(`/api/sessions/${session}/trace`, {
+    method: "POST",
+    body: JSON.stringify({ steps: toSend, reset: doReset }),
+  });
+  writeState({ traceCursors: { ...cursors, [session]: scoped.length } });
+  return { session, added: toSend.length, reset: doReset, windowed, total: res.count };
+}
+
+// Read all of stdin (the JSON payload a Claude Code hook delivers). Resolves to
+// "" when there's no piped input (e.g. a TTY) so callers can no-op cleanly.
+function readStdin() {
+  return new Promise((resolve) => {
+    if (process.stdin.isTTY) return resolve("");
+    let data = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (c) => (data += c));
+    process.stdin.on("end", () => resolve(data));
+    process.stdin.on("error", () => resolve(data));
   });
 }
 
@@ -899,40 +970,90 @@ const commands = {
         `no transcript found (looked under ~/.claude/projects for ${process.cwd()}) — pass --transcript <file>`,
       );
     }
-    const steps = buildTraceSteps(readFileSync(transcript, "utf8"));
-
-    // Scope to a window of prompts around this session's surfaces (unless --all),
-    // so the trace explains how THESE visuals were made, not the whole session.
-    let scoped = steps;
-    if (!flags.all) {
-      const pad = flags.pad != null ? Math.max(0, parseInt(flags.pad, 10) || 0) : 5;
-      const metas = await api(`/api/sessions/${session}/surfaces`).catch(() => []);
-      const times = (Array.isArray(metas) ? metas : [])
-        .map((m) => Date.parse(m.createdAt))
-        .filter((t) => Number.isFinite(t))
-        .sort((a, b) => a - b);
-      scoped = scopeToSurfaces(steps, times, pad);
+    const pad = flags.pad != null ? Math.max(0, parseInt(flags.pad, 10) || 0) : 5;
+    let result;
+    try {
+      result = await syncTrace({
+        session,
+        transcript,
+        pad,
+        all: flags.all,
+        reset: flags.reset,
+      });
+    } catch (err) {
+      fail(err.message);
     }
-    const windowed = scoped.length !== steps.length;
+    if (!flags.quiet) out(result);
+  },
 
-    // cursor: steps already sent for this session, kept in the agent's CLI state.
-    // A windowed sync replaces (the span shifts as the session grows).
-    const cursors = readState().traceCursors ?? {};
-    const prev = cursors[session];
-    const reset = flags.reset || windowed || prev == null || scoped.length < prev;
-    const toSend = reset ? scoped : scoped.slice(prev);
-    if (toSend.length === 0 && !reset) {
-      if (!flags.quiet) out({ ok: true, added: 0, total: scoped.length });
+  // Internal: run from a Claude Code Stop hook. Reads the hook payload on stdin
+  // (transcript_path, cwd) and syncs the trace for whichever sideshow session
+  // owns that cwd. Claude Code hands us the exact transcript, so this never has
+  // to guess. Must NEVER disturb the agent — every failure path is swallowed and
+  // the process exits 0 with no stdout (a Stop hook's stdout is parsed as JSON).
+  async hook() {
+    try {
+      const raw = await readStdin();
+      const payload = raw ? JSON.parse(raw) : {};
+      const transcript = payload.transcript_path;
+      const cwd = payload.cwd || process.cwd();
+      if (!transcript || !existsSync(transcript)) return;
+      const session = process.env.SIDESHOW_SESSION ?? (await resolveSessionByCwd(cwd));
+      if (!session) return; // no sideshow session for this cwd — nothing to trace
+      await syncTrace({ session, transcript });
+    } catch {
+      // A trace hook must never interfere with the agent — stay silent.
+    }
+  },
+
+  // Register the Stop hook in Claude Code settings so the trace syncs itself
+  // after every turn. Writes .claude/settings.local.json by default (gitignored,
+  // personal); --shared targets the committed .claude/settings.json; --user the
+  // global ~/.claude/settings.json. Idempotent. --print just emits the snippet.
+  async "install-hook"() {
+    const { values: flags } = parse({
+      options: {
+        print: { type: "boolean" },
+        shared: { type: "boolean" },
+        user: { type: "boolean" },
+        event: { type: "string" },
+      },
+    });
+    const event = flags.event ?? "Stop";
+    const command = `${SELF} hook`;
+    const entry = { hooks: [{ type: "command", command }] };
+    if (flags.print) {
+      out({ hooks: { [event]: [entry] } });
       return;
     }
-    const res = await api(`/api/sessions/${session}/trace`, {
-      method: "POST",
-      body: JSON.stringify({ steps: toSend, reset }),
-    });
-    writeState({ traceCursors: { ...cursors, [session]: scoped.length } });
-    if (!flags.quiet) {
-      out({ session, added: toSend.length, reset, windowed, total: res.count });
+    const file = flags.user
+      ? join(homedir(), ".claude", "settings.json")
+      : flags.shared
+        ? join(process.cwd(), ".claude", "settings.json")
+        : join(process.cwd(), ".claude", "settings.local.json");
+    let settings = {};
+    try {
+      settings = JSON.parse(readFileSync(file, "utf8"));
+    } catch {
+      // missing or unparseable — start fresh
     }
+    settings.hooks ??= {};
+    settings.hooks[event] ??= [];
+    // Match our specific `sideshow[.js] hook` invocation — NOT the feedback
+    // hook (`sideshow-stop-hook.mjs check|watch`), which also contains both
+    // "sideshow" and "hook" but ends in a different verb.
+    const isOurs = (cmd) => typeof cmd === "string" && /sideshow(\.js)?["']?\s+hook\b/.test(cmd);
+    const already = settings.hooks[event].some((g) =>
+      (g.hooks ?? []).some((h) => isOurs(h.command)),
+    );
+    if (already) {
+      out({ ok: true, file, event, status: "already-installed" });
+      return;
+    }
+    settings.hooks[event].push(entry);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify(settings, null, 2) + "\n");
+    out({ ok: true, file, event, command, status: "installed" });
   },
 
   async comment() {
