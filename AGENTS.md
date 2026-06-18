@@ -46,6 +46,11 @@ consciously, not as a side effect):
   and the postMessage bridge (resize, sendPrompt, openLink). Only html parts
   reach here — markdown, diff, terminal, and image parts are data the
   viewer renders natively, never markup in the sandbox.
+- `server/themes.ts` — theme registry (github/gruvbox/one), runtime-agnostic so
+  both server and viewer import it. One `Palette` per light/dark per theme; the
+  viewer-chrome vars and the html-part `--color-*` tokens are both _derived_
+  from it, so they can't drift. Persisted per board (`Store.getSetting`),
+  switched at `/api/theme`.
 - `server/mcpHttp.ts` — stateless MCP at `/mcp`. `mcp/server.ts` — stdio MCP,
   a thin client over the HTTP API (passes response fields through untouched).
 - `viewer/` — the viewer: Solid + TypeScript in `viewer/src/`, built by Vite
@@ -82,6 +87,13 @@ consciously, not as a side effect):
 - `SqlStore` schema changes need in-place migration — deployed Durable
   Objects can't be reset. Follow the `pragma_table_info` probe pattern in its
   constructor.
+- A theme switch must re-theme all four layers or it looks broken. Server-side
+  html parts are injected at `/s/:id` (so the viewer keys each iframe `src` on
+  `activeTheme()` to reload them); client-side, `viewer/src/theme.ts` swaps the
+  chrome `<style>`, and `MarkdownPart`/`DiffPart`/`MermaidPart` read
+  `activeTheme()` reactively (shiki + mermaid bake colors in, so they re-render;
+  the terminal is intentionally theme-independent). Add presets to the registry,
+  not per-component.
 - The server reads `viewer/dist/index.html` and `guide/` files at boot —
   rebuild (`npm run build:viewer`) and restart to see viewer changes.
   `npm run dev` runs a Vite watch build alongside the server; the e2e suite
