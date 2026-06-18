@@ -87,6 +87,18 @@ function tokenVars(p: Palette): Record<string, string> {
   };
 }
 
+// Terminal chrome. Always sourced from the theme's DARK palette (a terminal
+// reads as a terminal — ANSI output assumes a dark backdrop — so it stays dark
+// in light mode too), but tinted to the theme so it doesn't look foreign.
+function termVars(dark: Palette): Record<string, string> {
+  return {
+    "term-bg": dark.bg,
+    "term-bar": dark.panel,
+    "term-fg": dark.text,
+    "term-title": dark.muted,
+  };
+}
+
 const block = (vars: Record<string, string>) =>
   Object.entries(vars)
     .map(([k, v]) => `--${k}: ${v};`)
@@ -98,9 +110,11 @@ function schemeCss(light: Record<string, string>, dark: Record<string, string>):
   return `:root{${block(light)}}@media (prefers-color-scheme: dark){:root{${block(dark)}}}`;
 }
 
-// Viewer chrome palette CSS (injected into the viewer document head).
+// Viewer chrome palette CSS (injected into the viewer document head). The
+// scheme-flipping chrome vars, plus the terminal vars which are scheme-
+// independent (always the dark palette) so they sit outside the media query.
 export function viewerThemeCss(t: Theme): string {
-  return schemeCss(viewerVars(t.light), viewerVars(t.dark));
+  return `${schemeCss(viewerVars(t.light), viewerVars(t.dark))}:root{${block(termVars(t.dark))}}`;
 }
 
 // Html-part token CSS (injected into each sandboxed surface iframe).

@@ -13,9 +13,10 @@
   --accent-bg: #ddf4ff;
   --hover: #eaeef2;
   --danger: #cf222e;
-  /* Terminal chrome — intentionally constant (not flipped by color scheme):
-     a terminal window reads as a terminal regardless of viewer theme. Themeable
-     here so a board can retint it without touching the renderer. */
+  /* Terminal chrome — fallback values for the pre-theme paint. The active theme
+     overrides these from its DARK palette (see themes.ts termVars), so the
+     terminal adopts the theme's hue but stays dark in both color schemes: a
+     terminal reads as a terminal, and ANSI output assumes a dark backdrop. */
   --term-bg: #1e1e1e;
   --term-bar: #2a2a2a;
   --term-fg: #e6e6e6;
