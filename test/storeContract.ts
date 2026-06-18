@@ -442,6 +442,48 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.deepEqual(await store.listComments({ sessionId: "missing" }), []);
   });
 
+  // --- trace ---
+
+  contract("stores, replaces, and reads back a session trace", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    assert.deepEqual(await store.listTrace(session.id), []);
+
+    const steps = [
+      { kind: "prompt", label: "do the thing", ts: "2026-06-17T10:00:00Z" },
+      { kind: "read", label: "Read app.ts", detail: "...", ts: "2026-06-17T10:00:01Z" },
+      { label: "bare label only" }, // kind/detail/ts absent — must round-trip absent
+    ];
+    await store.setTrace(session.id, steps);
+    assert.deepEqual(await store.listTrace(session.id), steps);
+
+    // setTrace replaces (it never appends)
+    await store.setTrace(session.id, [{ kind: "run", label: "npm test" }]);
+    assert.deepEqual(await store.listTrace(session.id), [{ kind: "run", label: "npm test" }]);
+
+    // empty clears it
+    await store.setTrace(session.id, []);
+    assert.deepEqual(await store.listTrace(session.id), []);
+
+    // unknown session reads as empty
+    assert.deepEqual(await store.listTrace("missing"), []);
+  });
+
+  contract("trace is detached and per-session; removeSession cascades it", async (store) => {
+    const a = await store.createSession({ agent: "a" });
+    const b = await store.createSession({ agent: "b" });
+    const input = [{ kind: "prompt", label: "a-step" }];
+    await store.setTrace(a.id, input);
+    await store.setTrace(b.id, [{ kind: "prompt", label: "b-step" }]);
+
+    // mutating the input array must not affect stored state
+    input.push({ kind: "run", label: "sneaky" });
+    assert.deepEqual(await store.listTrace(a.id), [{ kind: "prompt", label: "a-step" }]);
+
+    await store.removeSession(a.id);
+    assert.deepEqual(await store.listTrace(a.id), []);
+    assert.deepEqual(await store.listTrace(b.id), [{ kind: "prompt", label: "b-step" }]);
+  });
+
   // --- assets ---
 
   contract("stores and reads back asset bytes; missing session is null", async (store) => {

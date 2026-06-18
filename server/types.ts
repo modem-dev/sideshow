@@ -234,6 +234,12 @@ export interface Store {
   listComments(query: CommentQuery): Promise<Comment[]>;
   createComment(input: CreateCommentInput): Promise<Comment | null>;
 
+  // Session-scoped agent trace: the steps that produced a session's surfaces,
+  // synced from the transcript. setTrace replaces the whole list (windowed
+  // syncs re-send the full slice); removeSession cascades it.
+  listTrace(sessionId: string): Promise<TraceStep[]>;
+  setTrace(sessionId: string, steps: TraceStep[]): Promise<void>;
+
   // Assets. putAsset evicts to stay under MAX_BOARD_ASSET_BYTES (see
   // selectEvictions) and returns null only if the session is missing.
   putAsset(input: CreateAssetInput): Promise<Asset | null>;

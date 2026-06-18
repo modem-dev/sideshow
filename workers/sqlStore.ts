@@ -18,6 +18,7 @@ import {
   type Surface,
   type SurfacePart,
   type SurfaceVersion,
+  type TraceStep,
   type UpdateSurfaceInput,
 } from "../server/types.ts";
 
@@ -51,6 +52,11 @@ export class SqlStore implements Store {
       );
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY, value TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS trace_steps (
+        sessionId TEXT NOT NULL, seq INTEGER NOT NULL, kind TEXT,
+        label TEXT NOT NULL, detail TEXT, ts TEXT,
+        PRIMARY KEY (sessionId, seq)
       );
     `);
     // Boards created before agentSeq existed need the column added; SQLite
@@ -213,6 +219,7 @@ export class SqlStore implements Store {
     if (!(await this.getSession(id))) return false;
     this.sql.exec("DELETE FROM comments WHERE sessionId = ?", id);
     this.sql.exec("DELETE FROM surfaces WHERE sessionId = ?", id);
+    this.sql.exec("DELETE FROM trace_steps WHERE sessionId = ?", id);
     // Surfaces are gone, so referencedAssetIds now reflects survivors only:
     // drop this session's own assets except any a surviving surface still
     // points at (assets are content-addressed and may be shared across sessions).
@@ -388,6 +395,42 @@ export class SqlStore implements Store {
       text: input.text,
       createdAt,
     };
+  }
+
+  // --- trace ---
+
+  private rowToTraceStep(r: Record<string, SqlStorageValue>): TraceStep {
+    const step: TraceStep = { label: r.label as string };
+    if (r.kind != null) step.kind = r.kind as string;
+    if (r.detail != null) step.detail = r.detail as string;
+    if (r.ts != null) step.ts = r.ts as string;
+    return step;
+  }
+
+  async listTrace(sessionId: string) {
+    return this.sql
+      .exec(
+        "SELECT kind, label, detail, ts FROM trace_steps WHERE sessionId = ? ORDER BY seq ASC",
+        sessionId,
+      )
+      .toArray()
+      .map((r) => this.rowToTraceStep(r));
+  }
+
+  async setTrace(sessionId: string, steps: TraceStep[]) {
+    this.sql.exec("DELETE FROM trace_steps WHERE sessionId = ?", sessionId);
+    let seq = 0;
+    for (const s of steps) {
+      this.sql.exec(
+        "INSERT INTO trace_steps (sessionId, seq, kind, label, detail, ts) VALUES (?, ?, ?, ?, ?, ?)",
+        sessionId,
+        seq++,
+        s.kind ?? null,
+        s.label,
+        s.detail ?? null,
+        s.ts ?? null,
+      );
+    }
   }
 
   // --- assets ---

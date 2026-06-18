@@ -18,6 +18,7 @@ import {
   type Session,
   type Store,
   type Surface,
+  type TraceStep,
   type UpdateSurfaceInput,
 } from "./types.ts";
 
@@ -36,6 +37,7 @@ interface FileShape {
   surfaces: Surface[];
   comments: Comment[];
   assets: StoredAsset[];
+  trace: Record<string, TraceStep[]>;
   lastSeq: number;
   settings: Record<string, string>;
 }
@@ -100,6 +102,7 @@ export class JsonFileStore implements Store {
   private surfaces = new Map<string, Surface>();
   private comments: Comment[] = [];
   private assets = new Map<string, Asset>();
+  private trace = new Map<string, TraceStep[]>();
   private lastSeq = 0;
   private settings = new Map<string, string>();
   private loaded = false;
@@ -142,6 +145,7 @@ export class JsonFileStore implements Store {
           lastAccessedAt: a.lastAccessedAt ?? a.createdAt,
         });
       }
+      for (const [sid, steps] of Object.entries(data.trace ?? {})) this.trace.set(sid, steps);
       this.lastSeq = data.lastSeq ?? 0;
       for (const [k, v] of Object.entries(data.settings ?? {})) this.settings.set(k, v);
     } catch (err: any) {
@@ -160,6 +164,7 @@ export class JsonFileStore implements Store {
           ...a,
           data: Buffer.from(a.data).toString("base64"),
         })),
+        trace: Object.fromEntries(this.trace),
         lastSeq: this.lastSeq,
         settings: Object.fromEntries(this.settings),
       } satisfies FileShape,
@@ -222,6 +227,7 @@ export class JsonFileStore implements Store {
       if (surface.sessionId === id) this.surfaces.delete(sid);
     }
     this.comments = this.comments.filter((c) => c.sessionId !== id);
+    this.trace.delete(id);
     // Assets are content-addressed and may be referenced across sessions, so a
     // session only takes its OWN assets down with it, and only those no live
     // surface still points at (referencedAssetIds is computed after the above
@@ -357,6 +363,20 @@ export class JsonFileStore implements Store {
     this.touch(input.sessionId);
     await this.persist();
     return clone(comment);
+  }
+
+  // --- trace ---
+
+  async listTrace(sessionId: string) {
+    await this.load();
+    return clone(this.trace.get(sessionId) ?? []);
+  }
+
+  async setTrace(sessionId: string, steps: TraceStep[]) {
+    await this.load();
+    if (steps.length === 0) this.trace.delete(sessionId);
+    else this.trace.set(sessionId, clone(steps));
+    await this.persist();
   }
 
   // --- assets ---

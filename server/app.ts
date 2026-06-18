@@ -201,14 +201,6 @@ export function createApp({
   const app = new Hono();
   const bus = new EventBus();
 
-  // Session-scoped agent trace (POC): the steps the agent took, derived from
-  // its transcript and synced here in batches (see scripts/sync-trace.mjs).
-  // Kept in memory, not in the Store — the transcript is the source of truth,
-  // so a re-sync rebuilds it after a restart. Each step is bounded on ingest
-  // and the per-session list is capped, so a long session can't grow without
-  // bound (mirrors how traces.com truncates and caps).
-  const sessionTrace = new Map<string, TraceStep[]>();
-
   // Cached, fail-silent update lookup: being offline or rate-limited must
   // cost nothing but the absence of the notice. Failures are cached too, so
   // a dead network doesn't retry on every viewer load.
@@ -501,7 +493,6 @@ export function createApp({
   app.delete("/api/sessions/:id", async (c) => {
     const id = c.req.param("id");
     if (!(await store.removeSession(id))) return c.json({ error: "session not found" }, 404);
-    sessionTrace.delete(id);
     bus.broadcast({ type: "session-deleted", id });
     return c.json({ ok: true });
   });
@@ -515,17 +506,17 @@ export function createApp({
   app.get("/api/sessions/:id/surfaces", listSessionSurfaces);
   app.get("/api/sessions/:id/snippets", listSessionSurfaces); // legacy alias
 
-  // --- session trace (POC, in-memory) ---
+  // --- session trace ---
 
   app.get("/api/sessions/:id/trace", async (c) => {
     const session = await store.getSession(c.req.param("id"));
     if (!session) return c.json({ error: "session not found" }, 404);
-    return c.json({ steps: sessionTrace.get(session.id) ?? [] });
+    return c.json({ steps: await store.listTrace(session.id) });
   });
 
-  // Append a batch of trace steps (the sync script sends only steps appended
-  // since its cursor — one call per flush, not one per step). `reset: true`
-  // replaces the list, for a full re-sync. Steps are sanitized and bounded.
+  // Ingest a batch of trace steps (the sync sends a windowed slice, or the tail
+  // since a cursor). `reset: true` replaces the list, for a full re-sync. Steps
+  // are sanitized and the per-session list is capped.
   app.post("/api/sessions/:id/trace", async (c) => {
     const session = await store.getSession(c.req.param("id"));
     if (!session) return c.json({ error: "session not found" }, 404);
@@ -543,16 +534,13 @@ export function createApp({
         ...(typeof s.ts === "string" && { ts: s.ts }),
       });
     }
-    const prior = body.reset === true ? [] : (sessionTrace.get(session.id) ?? []);
+    const prior = body.reset === true ? [] : await store.listTrace(session.id);
     const merged = prior.concat(clean);
     // roll the list so a long session keeps only its most recent steps
-    sessionTrace.set(
-      session.id,
-      merged.length > MAX_TRACE_STEPS ? merged.slice(-MAX_TRACE_STEPS) : merged,
-    );
-    const count = sessionTrace.get(session.id)!.length;
-    bus.broadcast({ type: "trace-updated", sessionId: session.id, count });
-    return c.json({ ok: true, added: clean.length, count });
+    const bounded = merged.length > MAX_TRACE_STEPS ? merged.slice(-MAX_TRACE_STEPS) : merged;
+    await store.setTrace(session.id, bounded);
+    bus.broadcast({ type: "trace-updated", sessionId: session.id, count: bounded.length });
+    return c.json({ ok: true, added: clean.length, count: bounded.length });
   });
 
   // --- surfaces ---
