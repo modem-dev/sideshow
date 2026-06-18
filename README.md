@@ -3,24 +3,36 @@
 [![CI](https://github.com/modem-dev/sideshow/actions/workflows/ci.yml/badge.svg)](https://github.com/modem-dev/sideshow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A live visual surface for terminal coding agents.
+**A live visual surface for your terminal coding agent.**
 
-Let agents say it in more than text — HTML diagrams and UI sketches, rendered
-markdown, syntax-highlighted diffs, terminal output, images. sideshow is a
-small server with a browser viewer: agents publish **surfaces** from the
-terminal, they render live, and you comment back. Your comments reach the agent.
+Your agent works in a wall of text. sideshow gives it a screen. It publishes
+**surfaces** — diagrams, UI sketches, rendered markdown, syntax-highlighted
+diffs, terminal output, images — and they render live in your browser while it
+works. You comment back, and your comments reach the agent. Publish, render,
+comment, revise: a two-way loop, right next to the conversation.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/sideshow-dark.png">
   <img alt="The sideshow viewer: agent sessions in a sidebar, a published JWT-flow diagram with a comment thread between the user and claude-code, and an interactive backoff explainer below" src="docs/sideshow-light.png">
 </picture>
 
-An agent sketched a sequence diagram during an auth refactor; the user asked a
-question under it, and the agent replied and revised.
-
-The loop — publish, render, comment, revise:
-
 ![Animated demo: an agent publishes a diagram that appears live in the viewer, the user types a question under it, and the agent revises the snippet to a second version and replies in the thread](docs/sideshow-demo.gif)
+
+## Why
+
+- **See what your agent means.** An architecture it's proposing, a flow it's
+  tracing, a UI it's about to build — shown, not described in a paragraph you
+  have to picture in your head.
+- **Cheaper than a wall of HTML.** A diagram is a few lines of mermaid; a code
+  review is a patch; an explanation is markdown. The agent hands over compact
+  source and the viewer does the rendering — so it spends tokens on the idea,
+  not on hand-writing SVG or pasting output into chat that you then burn context
+  reading back.
+- **Comment instead of re-prompting.** Click a card, leave a note. The agent
+  reads it and revises — no copy-pasting screenshots or re-describing what you
+  meant.
+- **Works with the agent you already use.** Any agent with a shell can drive it
+  over `curl`; richer tiers exist for CLI, MCP, Pi, and Claude Code.
 
 ## Quick start
 
@@ -31,107 +43,32 @@ npm install
 npx sideshow serve --open   # viewer on http://localhost:4242
 ```
 
-Then point your agent at the surface:
+Then point your agent at the surface — paste the setup block into its
+instructions:
 
 ```sh
 curl -s http://localhost:4242/setup >> AGENTS.md
 ```
 
-That block teaches any agent with a shell (pi, opencode, amp, codex, Claude
-Code) to publish surfaces and poll for comments over curl.
+That teaches any agent with a shell (Pi, opencode, amp, codex, Claude Code) to
+publish surfaces and read your comments. Ask it to "sketch this on sideshow" and
+watch the card appear.
 
 No agent handy? `npx sideshow demo` seeds two example sessions to look around.
 
-## Connecting agents
+**Going further:** richer integration tiers (CLI, MCP, the Pi extension, and the
+Claude Code skill + plugin) are in **[docs/connecting-agents.md](docs/connecting-agents.md)**.
 
-Pick whichever tier the agent supports — each one covers the full loop.
+## What your agent can show
 
-**Shell.** The `sideshow` CLI has no dependencies and groups sessions for you:
-
-```sh
-sideshow publish sketch.html --title "Cache layout"
-sideshow diff change.patch --title "Refactor"   # or markdown / image / terminal
-sideshow wait                                   # block until the user comments
-```
-
-**Pi extension.** Pi users can install the package directly. It adds native
-`sideshow_*` tools for publishing/updating surfaces, uploading assets, waiting
-for feedback, and replying in browser threads:
-
-```sh
-pi install npm:sideshow
-# or try it for one run:
-pi -e npm:sideshow
-```
-
-**MCP.** Tools: `publish_surface`, `update_surface`, `publish_snippet`,
-`update_snippet`, `wait_for_feedback`, `reply_to_user`, `list_surfaces`,
-`upload_asset`, `get_design_guide`. Connect over stdio or straight to the
-server at `/mcp`:
-
-```sh
-claude mcp add --scope user sideshow -- npx -y sideshow mcp
-# or, no local process:
-claude mcp add --scope user --transport http sideshow http://localhost:4242/mcp
-```
-
-**Plain HTTP.** `POST /api/surfaces`, `PUT /api/surfaces/:id`, `POST /api/assets`
-for blob uploads, and `GET /api/comments?wait=60` for long-polling. The legacy
-`/api/snippets` endpoints still work as html-only aliases. Documented at `/guide`.
-
-MCP agents get usage instructions automatically; everything else uses the
-`/setup` block above. Claude Code users can also install the skill in
-`skills/sideshow/` (`cp -r skills/sideshow ~/.claude/skills/`).
-
-### Claude Code plugin
-
-Claude Code users can install a plugin that bundles all three at once — the
-MCP server, the skill, and a **background monitor** that streams your browser
-comments to the agent as notifications, so feedback arrives without pasting or
-re-arming a watcher:
-
-```text
-/plugin marketplace add modem-dev/sideshow
-/plugin install sideshow@sideshow
-```
-
-On install it asks for your **Sideshow URL** (default `http://localhost:4242`,
-or your deployed instance) and an optional token. The monitor runs
-`sideshow watch` against your board; comments are delivered to the agent
-exactly once. Requires Claude Code ≥ 2.1.105. The viewer's "connect Claude
-Code" link (sidebar footer) shows the same steps. The plugin lives in
-[`plugin/`](plugin/).
-
-## Concepts
-
-- **Session** — one agent conversation. Sessions appear in the viewer sidebar;
-  click a title to rename, hover to delete.
-- **Surface** — one published card, built from an ordered list of **parts**.
-  Each part has a kind: `html`, `markdown`, `diff`, `terminal`, or `image`.
-  Combine them — e.g. a markdown rationale above a diff. `html` parts
-  render in a sandboxed iframe (`sandbox="allow-scripts"`, no same-origin) under
-  a CSP that limits external resources to a short CDN allowlist; the other kinds
-  are data the trusted viewer renders natively. Updating a surface creates a new
-  version; old versions stay viewable. A _snippet_ is sugar for a single `html`
-  part.
-- **Comment thread** — every surface has one. You write in the browser; agents
-  read via long-poll (`sideshow wait` or `wait_for_feedback`) and reply. An
-  `html` part can also call `sendPrompt('...')` to post to its own thread.
-
-The design contract at `/guide` tells agents how to write surfaces that fit the
-viewer: fragment-only HTML, theme CSS variables, dark mode rules, and when to
-reach for each part kind.
-
-## Surface kinds
-
-Every card below is real — published over the same API and captured straight
-from the viewer. Regenerate them with `node scripts/shoot-surfaces.mjs`.
+Every card below is real — published over the API and captured straight from the
+viewer. A surface is an ordered list of **parts**; one card can carry several.
 
 <table>
   <tr>
     <td width="50%" valign="top">
       <img src="docs/surfaces/01-html.png" width="100%" alt="html part — an interactive diagram you author">
-      <p><b><code>html</code></b> — markup you author, rendered sandboxed. Shapes and buttons call <code>sendPrompt()</code> to post back to the thread.</p>
+      <p><b><code>html</code></b> — markup the agent authors, rendered sandboxed. Shapes and buttons can call <code>sendPrompt()</code> to post back to the thread.</p>
     </td>
     <td width="50%" valign="top">
       <img src="docs/surfaces/02-markdown.png" width="100%" alt="markdown part — prose, tables and code, rendered">
@@ -170,62 +107,21 @@ from the viewer. Regenerate them with `node scripts/shoot-surfaces.mjs`.
   </tr>
 </table>
 
-## Architecture
+## Run it anywhere
 
-- `server/app.ts` — runtime-agnostic Hono app: REST API, SSE live feed,
-  long-poll comments, surface renderer, asset upload/serve.
-- `server/types.ts` — data model (surfaces, parts, assets) and the `Store`
-  interface.
-- `server/storage.ts` — `JsonFileStore` (local Node); `workers/sqlStore.ts` is
-  the Durable Object SQLite store. Both pass the same store contract.
-- `server/surfacePage.ts` — the sandboxed document and postMessage bridge for an
-  `html` part. `server/mcpHttp.ts` — stateless MCP at `/mcp`.
-- `viewer/` — the viewer (Solid), Vite-built into a single self-contained
-  `viewer/dist/index.html`.
-- `bin/sideshow.js` — CLI, Node built-ins only.
-- `mcp/server.ts` — stdio MCP server, a thin client over the HTTP API.
-- `workers/` — Cloudflare entry point and SQLite store.
-- `server/public.ts` — the `sideshow/server` package export, for embedding the
-  app in your own Node process.
+sideshow runs locally as a small Node server, or on Cloudflare Workers when your
+agent and your browser live on different machines (or you want the viewer on your
+phone). See **[docs/deploying.md](docs/deploying.md)**.
 
-## Deploying to Cloudflare
+## Docs
 
-The same app runs on Cloudflare Workers — for when agents run on a different
-machine than the browser, or you want the viewer on your phone.
-
-```sh
-npx wrangler login
-npx wrangler secret put SIDESHOW_TOKEN   # any long random string
-npm run deploy                           # https://sideshow.<account>.workers.dev
-```
-
-A deployed instance requires the token on every request. Open the viewer once
-as `/?key=<token>` to set a cookie. Agents need two environment variables; the
-CLI and stdio MCP pick them up automatically:
-
-```sh
-export SIDESHOW_URL=https://sideshow.<account>.workers.dev
-export SIDESHOW_TOKEN=<token>
-```
-
-Remote agents can connect MCP straight to the deployment:
-
-```sh
-claude mcp add --transport http sideshow https://sideshow.<account>.workers.dev/mcp \
-  --header "Authorization: Bearer $SIDESHOW_TOKEN"
-```
-
-The whole app runs inside a single Durable Object with SQLite storage. One
-instance per board keeps the in-memory event bus authoritative, so SSE and
-long-polling behave the same as the local server.
-
-## Terminal surface (experimental)
-
-[`sideshow-term/`](sideshow-term/) is an early **alpha** sibling that renders to
-a TUI instead of the browser: agents publish STML (a small HTML-like markup) and
-you watch it render live in a spare terminal. It ships as its own package and
-requires [Bun](https://bun.sh) for the viewer. APIs are unstable — see
-[`sideshow-term/README.md`](sideshow-term/README.md).
+- **[Connecting agents](docs/connecting-agents.md)** — every integration tier in
+  detail: CLI, MCP, Pi, plain HTTP, and the Claude Code skill + plugin.
+- **[Deploying to Cloudflare](docs/deploying.md)** — run a shared, tokened
+  instance.
+- **[AGENTS.md](AGENTS.md)** — architecture and contributor guide.
+- **Terminal surface (alpha).** [`sideshow-term/`](sideshow-term/) is an early
+  sibling that renders to a TUI instead of the browser. APIs are unstable.
 
 ## Development
 
@@ -239,9 +135,9 @@ npm run format       # oxfmt
 
 The server and CLI have no build step — TypeScript runs directly on Node via
 native type-stripping, and the npm package ships compiled JS built on prepack.
-The viewer (`viewer/src/`, Solid) is the exception: Vite builds it into a
-single self-contained `viewer/dist/index.html` (`npm run build:viewer`). See
-[AGENTS.md](AGENTS.md) for architecture rules.
+The viewer (`viewer/src/`, Solid) is Vite-built into a single self-contained
+`viewer/dist/index.html` (`npm run build:viewer`). See
+[AGENTS.md](AGENTS.md) for the full architecture and rules.
 
 ## License
 
