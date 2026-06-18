@@ -23,11 +23,9 @@ comment, revise: a two-way loop, right next to the conversation.
 - **See what your agent means.** An architecture it's proposing, a flow it's
   tracing, a UI it's about to build — shown, not described in a paragraph you
   have to picture in your head.
-- **Cheaper than raw HTML.** The agent writes an HTML surface as a bare body
-  fragment against the viewer's theme — no document boilerplate, no styling
-  scaffolding — so even the primary kind costs fewer tokens than hand-rolling a
-  page. Purpose-built kinds (markdown, diff, terminal, mermaid) trim it further
-  for the common cases.
+- **Faster, and fewer tokens.** sideshow surfaces are optimized for LLMs, so the
+  agent produces higher-fidelity diagrams and visualizations faster and using
+  fewer tokens.
 - **Comment instead of re-prompting.** Click a card, leave a note. The agent
   reads it and revises — no copy-pasting screenshots or re-describing what you
   meant.
