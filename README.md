@@ -23,11 +23,10 @@ comment, revise: a two-way loop, right next to the conversation.
 - **See what your agent means.** An architecture it's proposing, a flow it's
   tracing, a UI it's about to build — shown, not described in a paragraph you
   have to picture in your head.
-- **Cheaper than a wall of HTML.** A diagram is a few lines of mermaid; a code
-  review is a patch; an explanation is markdown. The agent hands over compact
-  source and the viewer does the rendering — so it spends tokens on the idea,
-  not on hand-writing SVG or pasting output into chat that you then burn context
-  reading back.
+- **Cheaper than hand-written HTML.** Surfaces are purpose-built part kinds —
+  mermaid, markdown, diff, terminal — so the agent hands over compact source and
+  the viewer renders it, spending far fewer tokens than generating raw HTML for
+  every output.
 - **Comment instead of re-prompting.** Click a card, leave a note. The agent
   reads it and revises — no copy-pasting screenshots or re-describing what you
   meant.
