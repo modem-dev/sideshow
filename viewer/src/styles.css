@@ -1,31 +1,41 @@
 :root {
-  --bg: #faf9f5;
-  --panel: #f3f2ec;
+  /* GitHub Primer (light) — cool blue-grays so the viewer chrome reads as one
+     surface with the github-light/github-dark code + diff themes. */
+  --bg: #f6f8fa;
+  --panel: #eaeef2;
   --surface: #ffffff;
-  --text: #1a1915;
-  --muted: #5f5e56;
-  --faint: #8e8d83;
-  --border: rgba(20, 20, 10, 0.12);
-  --border-2: rgba(20, 20, 10, 0.25);
-  --accent: #185fa5;
-  --accent-bg: #e6f1fb;
-  --hover: rgba(20, 20, 10, 0.05);
-  --danger: #c0392b;
+  --text: #1f2328;
+  --muted: #59636e;
+  --faint: #818b98;
+  --border: #d1d9e0;
+  --border-2: #afb8c1;
+  --accent: #0969da;
+  --accent-bg: #ddf4ff;
+  --hover: #eaeef2;
+  --danger: #cf222e;
+  /* Terminal chrome — intentionally constant (not flipped by color scheme):
+     a terminal window reads as a terminal regardless of viewer theme. Themeable
+     here so a board can retint it without touching the renderer. */
+  --term-bg: #1e1e1e;
+  --term-bar: #2a2a2a;
+  --term-fg: #e6e6e6;
+  --term-title: #9aa0a6;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1f1e1b;
-    --panel: #1a1917;
-    --surface: #2a2925;
-    --text: #eceadf;
-    --muted: #b3b1a4;
-    --faint: #8a887c;
-    --border: rgba(255, 255, 250, 0.12);
-    --border-2: rgba(255, 255, 250, 0.25);
-    --accent: #85b7eb;
-    --accent-bg: rgba(55, 138, 221, 0.16);
-    --hover: rgba(255, 255, 250, 0.06);
-    --danger: #e8776b;
+    /* GitHub Primer (dark) — matches github-dark code/diff backgrounds. */
+    --bg: #0d1117;
+    --panel: #161b22;
+    --surface: #1c2128;
+    --text: #e6edf3;
+    --muted: #9198a1;
+    --faint: #6e7681;
+    --border: #30363d;
+    --border-2: #444c56;
+    --accent: #2f81f7;
+    --accent-bg: rgba(56, 139, 253, 0.15);
+    --hover: rgba(177, 186, 196, 0.12);
+    --danger: #f85149;
   }
 }
 * {
@@ -186,6 +196,24 @@ aside {
 }
 .aside-foot a:hover {
   color: var(--text);
+}
+.theme-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.theme-picker label {
+  color: var(--muted);
+}
+.theme-picker select {
+  flex: 1;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 0.5px solid var(--border-2);
+  border-radius: 6px;
+  padding: 4px 6px;
 }
 
 /* update notice: sidebar banner + release-notes card (#whatsNew) */
@@ -431,14 +459,14 @@ iframe {
    this base palette. */
 .terminalpart {
   border-top: 0.5px solid var(--border);
-  background: #1e1e1e;
+  background: var(--term-bg);
 }
 .term-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 7px 12px;
-  background: #2a2a2a;
+  background: var(--term-bar);
   border-bottom: 0.5px solid #000;
 }
 .term-dots {
@@ -462,7 +490,7 @@ iframe {
 }
 .term-title {
   font-size: 11.5px;
-  color: #9aa0a6;
+  color: var(--term-title);
   font-family: ui-monospace, monospace;
 }
 .term-body {
@@ -470,7 +498,7 @@ iframe {
   padding: 12px 14px;
   overflow-x: auto;
   white-space: pre;
-  color: #e6e6e6;
+  color: var(--term-fg);
   font:
     12.5px/1.5 ui-monospace,
     "SF Mono",

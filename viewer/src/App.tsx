@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show }
 import { api, relTime, sessionLabel, type SessionRow } from "./api.ts";
 import { Card, cardEls, frameForSource, SessionThread } from "./Card.tsx";
 import { renderNotes } from "./notes.ts";
+import { activeTheme, initTheme, setTheme, themeOptions } from "./theme.ts";
 import {
   checkVersion,
   connect,
@@ -48,6 +49,7 @@ export default function App() {
     refreshSessions();
     connect();
     checkVersion();
+    void initTheme();
     const timer = setInterval(() => {
       if (sessions.length > 0) refreshSessionsQuiet();
     }, 45_000);
@@ -127,6 +129,7 @@ export default function App() {
             </For>
           </div>
           <div class="aside-foot">
+            <ThemePicker />
             <a href="/guide" target="_blank">
               design guide
             </a>{" "}
@@ -456,6 +459,23 @@ function ConnectModal(props: { onClose: () => void }) {
           Code has no browser-to-terminal handoff yet.
         </p>
       </div>
+    </div>
+  );
+}
+
+// Board-level theme selector. Persists via PUT /api/theme; the choice re-themes
+// chrome, markdown/diff syntax, and html surface parts together (see theme.ts).
+function ThemePicker() {
+  return (
+    <div class="theme-picker">
+      <label for="themeSel">theme</label>
+      <select
+        id="themeSel"
+        value={activeTheme()}
+        onChange={(e) => void setTheme(e.currentTarget.value)}
+      >
+        <For each={themeOptions()}>{(t) => <option value={t.id}>{t.label}</option>}</For>
+      </select>
     </div>
   );
 }

@@ -220,6 +220,11 @@ export interface Store {
   // Advance the delivered-to-agent comment cursor (never moves backwards).
   markAgentSeen(sessionId: string, seq: number): Promise<void>;
 
+  // Board-level key/value settings (e.g. the selected theme id). Returns null
+  // for an unset key.
+  getSetting(key: string): Promise<string | null>;
+  setSetting(key: string, value: string): Promise<void>;
+
   listSurfaces(sessionId?: string): Promise<Surface[]>;
   getSurface(id: string): Promise<Surface | null>;
   createSurface(input: CreateSurfaceInput): Promise<Surface | null>;

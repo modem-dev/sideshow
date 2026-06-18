@@ -1,13 +1,23 @@
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import MarkdownIt from "markdown-it";
 import type { Highlighter } from "shiki";
 import type { MarkdownPart as MarkdownPartData } from "./api.ts";
+import { THEMES as REGISTRY, themeById } from "../../server/themes.ts";
+import { activeTheme } from "./theme.ts";
 
 // Dual-theme highlighting: shiki emits both themes inline (color +
 // --shiki-dark), and a prefers-color-scheme CSS rule (styles.css) flips
 // between them — so a code block never needs re-rendering when the OS theme
-// changes. These match DiffPart's github-light/github-dark.
-const THEMES = { light: "github-light", dark: "github-dark" } as const;
+// changes. Which light/dark PAIR is used follows the board theme (DiffPart
+// uses the same pair so code blocks and diffs read as one syntax theme).
+
+// Every shiki theme any registry theme might select — preloaded once so a
+// theme switch is just a re-highlight, no async load.
+const ALL_THEMES = [...new Set(REGISTRY.flatMap((t) => [t.shiki.light, t.shiki.dark]))];
+
+// The active light/dark shiki pair, read by the (synchronous) highlight hook.
+// Updated reactively from activeTheme() in the component below.
+let currentThemes = { light: REGISTRY[0].shiki.light, dark: REGISTRY[0].shiki.dark };
 
 // One lazily-created highlighter shared across all markdown parts. Built on
 // shiki's JavaScript regex engine (no oniguruma WASM) to match DiffPart's
@@ -23,7 +33,7 @@ function getHighlighter(): Promise<Highlighter> {
         import("shiki/engine/javascript"),
       ]);
       highlighter = await createHighlighter({
-        themes: [THEMES.light, THEMES.dark],
+        themes: ALL_THEMES,
         langs: [],
         engine: createJavaScriptRegexEngine({ forgiving: true }),
       });
@@ -43,7 +53,7 @@ const md = new MarkdownIt({
   highlight: (code, lang) => {
     if (highlighter && lang) {
       try {
-        return highlighter.codeToHtml(code, { lang, themes: THEMES });
+        return highlighter.codeToHtml(code, { lang, themes: currentThemes });
       } catch {
         // lang not loaded or unsupported — fall through to plain escaping
       }
@@ -77,6 +87,13 @@ function fenceLangs(src: string): string[] {
 export function MarkdownPart(props: { part: MarkdownPartData }) {
   const [html, setHtml] = createSignal("");
   const render = () => setHtml(md.render(props.part.markdown ?? ""));
+
+  // Re-highlight when the board theme changes: point the highlight hook at the
+  // new shiki pair, then re-render. All pairs are preloaded, so this is sync.
+  createEffect(() => {
+    currentThemes = themeById(activeTheme()).shiki;
+    render();
+  });
 
   onMount(() => {
     let disposed = false;

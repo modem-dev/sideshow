@@ -4,6 +4,7 @@ import { streamSSE } from "hono/streaming";
 import { EventBus } from "./events.ts";
 import { registerMcp } from "./mcpHttp.ts";
 import { renderHtmlPage } from "./surfacePage.ts";
+import { DEFAULT_THEME_ID, themeById, themeOptions } from "./themes.ts";
 import {
   type Asset,
   type AssetKind,
@@ -437,6 +438,24 @@ export function createApp({
   app.get("/guide", (c) => c.text(withOrigin(guideMarkdown, c)));
   app.get("/setup", (c) => c.text(withOrigin(setupText, c)));
 
+  // --- theme (one board-level setting) ---
+
+  app.get("/api/theme", async (c) => {
+    const id = (await store.getSetting("theme")) ?? DEFAULT_THEME_ID;
+    return c.json({ id, themes: themeOptions() });
+  });
+
+  app.put("/api/theme", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const id = body && typeof body.id === "string" ? body.id : null;
+    if (!id || !themeOptions().some((t) => t.id === id)) {
+      return c.json({ error: "unknown theme id" }, 400);
+    }
+    await store.setSetting("theme", id);
+    bus.broadcast({ type: "theme-changed", id });
+    return c.json({ id });
+  });
+
   // --- sessions ---
 
   app.get("/api/sessions", async (c) => {
@@ -637,7 +656,17 @@ export function createApp({
     const part = parts[idx];
     if (!part || part.kind !== "html") return c.text("No html part at that index", 404);
     c.header("X-Content-Type-Options", "nosniff");
-    return c.html(renderHtmlPage({ title, html: part.html, origin: new URL(c.req.url).origin }));
+    // Theme: an explicit ?theme= (the viewer keys iframe srcs by it so a switch
+    // reloads the frame) wins; otherwise the persisted board theme; else default.
+    const themeId = c.req.query("theme") ?? (await store.getSetting("theme")) ?? DEFAULT_THEME_ID;
+    return c.html(
+      renderHtmlPage({
+        title,
+        html: part.html,
+        origin: new URL(c.req.url).origin,
+        theme: themeById(themeId),
+      }),
+    );
   });
 
   // --- assets (agent-uploaded images, traces, files) ---

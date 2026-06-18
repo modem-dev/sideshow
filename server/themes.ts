@@ -1,0 +1,226 @@
+// Theme registry — the single source of truth for the board's palette, shared
+// by the server (html-part token injection in surfacePage) and the viewer
+// (chrome palette + shiki theme for markdown/diff). Runtime-agnostic: no node
+// imports, so it bundles into the viewer (vite) and typechecks against workers.
+//
+// A theme is authored as ONE palette object per color scheme; the viewer-var
+// set (--bg, --accent, …) and the html-token set (--color-* injected into the
+// sandboxed iframe) are both DERIVED from it, so the two palettes can never
+// drift. Mermaid follows the viewer vars (see MermaidPart); the terminal is
+// intentionally theme-independent (always a dark terminal window).
+
+export interface Accent {
+  // Background fill, text/icon color, and border for a semantic state.
+  bg: string;
+  text: string;
+  border: string;
+}
+
+export interface Palette {
+  bg: string; // app background (deepest chrome)
+  panel: string; // raised panel / code-block background
+  surface: string; // card / html-part body background
+  text: string; // primary text
+  muted: string; // secondary text
+  faint: string; // tertiary text (captions, hints)
+  border: string; // default hairline border
+  border2: string; // stronger border
+  hover: string; // hover wash
+  info: Accent; // also the accent color (links, focus)
+  success: Accent;
+  warning: Accent;
+  danger: Accent;
+}
+
+export interface Theme {
+  id: string;
+  label: string;
+  // Shiki theme names (bundled) for markdown code + diffs, by color scheme.
+  shiki: { light: string; dark: string };
+  light: Palette;
+  dark: Palette;
+}
+
+// Viewer chrome variables (styles.css names). Accent maps to the info state.
+function viewerVars(p: Palette): Record<string, string> {
+  return {
+    bg: p.bg,
+    panel: p.panel,
+    surface: p.surface,
+    text: p.text,
+    muted: p.muted,
+    faint: p.faint,
+    border: p.border,
+    "border-2": p.border2,
+    accent: p.info.text,
+    "accent-bg": p.info.bg,
+    hover: p.hover,
+    danger: p.danger.text,
+  };
+}
+
+// Html-part design tokens (surfacePage names — the agent-facing contract).
+// Same variable NAMES across every theme; only the values change.
+function tokenVars(p: Palette): Record<string, string> {
+  return {
+    "color-background-primary": p.surface,
+    "color-background-secondary": p.panel,
+    "color-background-tertiary": p.bg,
+    "color-background-info": p.info.bg,
+    "color-background-success": p.success.bg,
+    "color-background-warning": p.warning.bg,
+    "color-background-danger": p.danger.bg,
+    "color-text-primary": p.text,
+    "color-text-secondary": p.muted,
+    "color-text-tertiary": p.faint,
+    "color-text-info": p.info.text,
+    "color-text-success": p.success.text,
+    "color-text-warning": p.warning.text,
+    "color-text-danger": p.danger.text,
+    "color-border-primary": p.border2,
+    "color-border-secondary": p.border,
+    "color-border-tertiary": p.border,
+    "color-border-info": p.info.border,
+    "color-border-success": p.success.border,
+    "color-border-warning": p.warning.border,
+    "color-border-danger": p.danger.border,
+  };
+}
+
+const block = (vars: Record<string, string>) =>
+  Object.entries(vars)
+    .map(([k, v]) => `--${k}: ${v};`)
+    .join("");
+
+// `:root` light + a `prefers-color-scheme: dark` override — emitted as a
+// <style> so the automatic OS light/dark flip keeps working with no JS.
+function schemeCss(light: Record<string, string>, dark: Record<string, string>): string {
+  return `:root{${block(light)}}@media (prefers-color-scheme: dark){:root{${block(dark)}}}`;
+}
+
+// Viewer chrome palette CSS (injected into the viewer document head).
+export function viewerThemeCss(t: Theme): string {
+  return schemeCss(viewerVars(t.light), viewerVars(t.dark));
+}
+
+// Html-part token CSS (injected into each sandboxed surface iframe).
+export function tokenThemeCss(t: Theme): string {
+  return schemeCss(tokenVars(t.light), tokenVars(t.dark));
+}
+
+export const THEMES: Theme[] = [
+  {
+    id: "github",
+    label: "GitHub",
+    shiki: { light: "github-light", dark: "github-dark" },
+    light: {
+      bg: "#f6f8fa",
+      panel: "#eaeef2",
+      surface: "#ffffff",
+      text: "#1f2328",
+      muted: "#59636e",
+      faint: "#818b98",
+      border: "#d1d9e0",
+      border2: "#afb8c1",
+      hover: "#eaeef2",
+      info: { bg: "#ddf4ff", text: "#0969da", border: "#54aeff" },
+      success: { bg: "#dafbe1", text: "#1a7f37", border: "#4ac26b" },
+      warning: { bg: "#fff8c5", text: "#9a6700", border: "#d4a72c" },
+      danger: { bg: "#ffebe9", text: "#cf222e", border: "#ff8182" },
+    },
+    dark: {
+      bg: "#0d1117",
+      panel: "#161b22",
+      surface: "#1c2128",
+      text: "#e6edf3",
+      muted: "#9198a1",
+      faint: "#6e7681",
+      border: "#30363d",
+      border2: "#444c56",
+      hover: "rgba(177, 186, 196, 0.12)",
+      info: { bg: "rgba(56, 139, 253, 0.15)", text: "#4493f8", border: "#54aeff" },
+      success: { bg: "rgba(63, 185, 80, 0.15)", text: "#3fb950", border: "#4ac26b" },
+      warning: { bg: "rgba(210, 153, 34, 0.15)", text: "#d29922", border: "#d4a72c" },
+      danger: { bg: "rgba(248, 81, 73, 0.15)", text: "#ff7b72", border: "#ff8182" },
+    },
+  },
+  {
+    id: "gruvbox",
+    label: "Gruvbox",
+    shiki: { light: "gruvbox-light-hard", dark: "gruvbox-dark-hard" },
+    light: {
+      bg: "#f9f5d7",
+      panel: "#ebdbb2",
+      surface: "#fbf1c7",
+      text: "#3c3836",
+      muted: "#665c54",
+      faint: "#928374",
+      border: "#d5c4a1",
+      border2: "#bdae93",
+      hover: "#ebdbb2",
+      info: { bg: "#d7e5e8", text: "#076678", border: "#458588" },
+      success: { bg: "#e8ecc8", text: "#79740e", border: "#98971a" },
+      warning: { bg: "#f5e6c8", text: "#b57614", border: "#d79921" },
+      danger: { bg: "#fbe3d8", text: "#9d0006", border: "#cc241d" },
+    },
+    dark: {
+      bg: "#1d2021",
+      panel: "#282828",
+      surface: "#32302f",
+      text: "#ebdbb2",
+      muted: "#a89984",
+      faint: "#928374",
+      border: "#504945",
+      border2: "#665c54",
+      hover: "#3c3836",
+      info: { bg: "rgba(131, 165, 152, 0.18)", text: "#83a598", border: "#458588" },
+      success: { bg: "rgba(184, 187, 38, 0.18)", text: "#b8bb26", border: "#98971a" },
+      warning: { bg: "rgba(250, 189, 47, 0.18)", text: "#fabd2f", border: "#d79921" },
+      danger: { bg: "rgba(251, 73, 52, 0.18)", text: "#fb4934", border: "#cc241d" },
+    },
+  },
+  {
+    id: "one",
+    label: "One",
+    shiki: { light: "one-light", dark: "one-dark-pro" },
+    light: {
+      bg: "#fafafa",
+      panel: "#f0f0f1",
+      surface: "#ffffff",
+      text: "#383a42",
+      muted: "#696c77",
+      faint: "#a0a1a7",
+      border: "#d4d4d6",
+      border2: "#b9b9bd",
+      hover: "#f0f0f1",
+      info: { bg: "#e6effd", text: "#4078f2", border: "#88aef8" },
+      success: { bg: "#e8f3e8", text: "#50a14f", border: "#97c997" },
+      warning: { bg: "#faf0dd", text: "#986801", border: "#d9a441" },
+      danger: { bg: "#fce8e8", text: "#e45649", border: "#ef9a92" },
+    },
+    dark: {
+      bg: "#282c34",
+      panel: "#21252b",
+      surface: "#2f343d",
+      text: "#abb2bf",
+      muted: "#828997",
+      faint: "#5c6370",
+      border: "#3e4451",
+      border2: "#545b66",
+      hover: "#2c313a",
+      info: { bg: "rgba(97, 175, 239, 0.16)", text: "#61afef", border: "#61afef" },
+      success: { bg: "rgba(152, 195, 121, 0.16)", text: "#98c379", border: "#98c379" },
+      warning: { bg: "rgba(229, 192, 123, 0.16)", text: "#e5c07b", border: "#e5c07b" },
+      danger: { bg: "rgba(224, 108, 117, 0.16)", text: "#e06c75", border: "#e06c75" },
+    },
+  },
+];
+
+export const DEFAULT_THEME_ID = "github";
+
+export function themeById(id: string | null | undefined): Theme {
+  return THEMES.find((t) => t.id === id) ?? THEMES[0];
+}
+
+// Compact descriptor for the picker (avoids shipping full palettes to list).
+export const themeOptions = () => THEMES.map((t) => ({ id: t.id, label: t.label }));

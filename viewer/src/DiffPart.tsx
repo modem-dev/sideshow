@@ -11,6 +11,15 @@ import {
   type SupportedLanguages,
 } from "@pierre/diffs";
 import type { DiffPart as DiffPartData } from "./api.ts";
+import { themeById } from "../../server/themes.ts";
+import { activeTheme } from "./theme.ts";
+
+// The shiki light/dark pair follows the board theme (kept identical to
+// MarkdownPart so a diff and a fenced code block read as one syntax theme).
+const shikiPair = () => {
+  const t = themeById(activeTheme());
+  return { dark: t.shiki.dark, light: t.shiki.light };
+};
 
 // The viewer theme is purely prefers-color-scheme driven (see styles.css), so
 // the diff follows the OS/browser scheme and re-renders when it flips.
@@ -74,8 +83,9 @@ export function DiffPart(props: { part: DiffPartData }) {
           setError("No diff content.");
           return;
         }
+        const shiki = shikiPair();
         await preloadHighlighter({
-          themes: ["github-dark", "github-light"],
+          themes: [shiki.dark, shiki.light],
           langs: langs as SupportedLanguages[],
           preferredHighlighter: "shiki-js",
         });
@@ -91,7 +101,7 @@ export function DiffPart(props: { part: DiffPartData }) {
         // does not inject them, so the diff must be driven through CodeView.
         cv = new CodeView({
           diffStyle: props.part.layout ?? "unified",
-          theme: { dark: "github-dark", light: "github-light" },
+          theme: { dark: shiki.dark, light: shiki.light },
           themeType: isDark() ? "dark" : "light",
           preferredHighlighter: "shiki-js",
         });
@@ -105,18 +115,30 @@ export function DiffPart(props: { part: DiffPartData }) {
 
     void setup();
 
-    // Re-theme in place when the color scheme flips.
+    // Re-theme in place when the color scheme flips OR the board theme changes.
+    // A board-theme switch needs the new shiki pair loaded first; the scheme
+    // flip reuses already-loaded themes, but preloadHighlighter is idempotent.
     createEffect(() => {
       const dark = isDark();
+      const shiki = shikiPair();
       if (!cv) return;
-      cv.setOptions({
-        diffStyle: props.part.layout ?? "unified",
-        theme: { dark: "github-dark", light: "github-light" },
-        themeType: dark ? "dark" : "light",
-        preferredHighlighter: "shiki-js",
-      });
-      cv.onThemeChange();
-      cv.render(true);
+      const current = cv;
+      void (async () => {
+        await preloadHighlighter({
+          themes: [shiki.dark, shiki.light],
+          langs: [],
+          preferredHighlighter: "shiki-js",
+        });
+        if (disposed || current !== cv) return;
+        current.setOptions({
+          diffStyle: props.part.layout ?? "unified",
+          theme: { dark: shiki.dark, light: shiki.light },
+          themeType: dark ? "dark" : "light",
+          preferredHighlighter: "shiki-js",
+        });
+        current.onThemeChange();
+        current.render(true);
+      })();
     });
 
     onCleanup(() => {

@@ -31,6 +31,15 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.equal(await store.getSession("missing"), null);
   });
 
+  contract("settings: unset key is null; set round-trips and overwrites", async (store) => {
+    assert.equal(await store.getSetting("theme"), null);
+    await store.setSetting("theme", "gruvbox");
+    assert.equal(await store.getSetting("theme"), "gruvbox");
+    await store.setSetting("theme", "one");
+    assert.equal(await store.getSetting("theme"), "one");
+    assert.equal(await store.getSetting("other"), null);
+  });
+
   contract("renames sessions; blank title clears it; unknown id is null", async (store) => {
     const session = await store.createSession({ agent: "pi", title: "Old" });
     const renamed = await store.renameSession(session.id, "  New  ");

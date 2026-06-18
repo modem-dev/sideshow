@@ -3,6 +3,7 @@
 import { createSignal } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import { api, type Comment, type SessionRow, type Surface, type VersionInfo } from "./api.ts";
+import { applyTheme } from "./theme.ts";
 
 // A comment as the viewer renders it: server comments plus the optimistic
 // local echo (pending until the POST confirms).
@@ -246,7 +247,9 @@ export function connect() {
     // activity the user isn't looking at — other session or hidden tab —
     // marks the session unread, which also badges the tab title
     const away = e.sessionId != null && (e.sessionId !== selected() || document.hidden);
-    if (e.type.startsWith("session-")) {
+    if (e.type === "theme-changed") {
+      applyTheme(e.id);
+    } else if (e.type.startsWith("session-")) {
       await refreshSessions();
     } else if (e.type === "surface-created" || e.type === "surface-updated") {
       if (away && e.sessionId) markUnread(e.sessionId);

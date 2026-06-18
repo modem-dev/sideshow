@@ -1,3 +1,5 @@
+import { type Theme, themeById, tokenThemeCss } from "./themes.ts";
+
 // Origins html parts may load external resources from. Mirrors the allowlist
 // agents already know from Claude's inline widget surface.
 const CDN_ALLOWLIST = [
@@ -27,8 +29,10 @@ function buildCsp(origin: string): string {
   ].join("; ");
 }
 
-// Design tokens exposed to snippets. Names match Claude's widget surface so
-// agents can reuse the same muscle memory. Both modes are always defined.
+// Static design tokens exposed to snippets — fonts and radii. The COLOR tokens
+// (--color-*) are theme-dependent and injected separately by renderHtmlPage via
+// tokenThemeCss(theme); names match Claude's widget surface either way so agents
+// reuse the same muscle memory.
 const TOKENS_CSS = `
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -37,48 +41,6 @@ const TOKENS_CSS = `
   --border-radius-md: 8px;
   --border-radius-lg: 12px;
   --border-radius-xl: 16px;
-  --color-background-primary: #ffffff;
-  --color-background-secondary: #f5f4ed;
-  --color-background-tertiary: #faf9f5;
-  --color-background-info: #e6f1fb;
-  --color-background-danger: #fcebeb;
-  --color-background-success: #eaf3de;
-  --color-background-warning: #faeeda;
-  --color-text-primary: #1a1915;
-  --color-text-secondary: #5f5e56;
-  --color-text-tertiary: #8e8d83;
-  --color-text-info: #185fa5;
-  --color-text-danger: #a32d2d;
-  --color-text-success: #3b6d11;
-  --color-text-warning: #854f0b;
-  --color-border-primary: rgba(20, 20, 10, 0.4);
-  --color-border-secondary: rgba(20, 20, 10, 0.25);
-  --color-border-tertiary: rgba(20, 20, 10, 0.12);
-  --color-border-info: #378add;
-  --color-border-danger: #e24b4a;
-  --color-border-success: #97c459;
-  --color-border-warning: #ef9f27;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-background-primary: #2a2925;
-    --color-background-secondary: #21201c;
-    --color-background-tertiary: #1b1a17;
-    --color-background-info: rgba(55, 138, 221, 0.18);
-    --color-background-danger: rgba(226, 75, 74, 0.18);
-    --color-background-success: rgba(151, 196, 89, 0.18);
-    --color-background-warning: rgba(239, 159, 39, 0.18);
-    --color-text-primary: #eceadf;
-    --color-text-secondary: #b3b1a4;
-    --color-text-tertiary: #8a887c;
-    --color-text-info: #85b7eb;
-    --color-text-danger: #f09595;
-    --color-text-success: #c0dd97;
-    --color-text-warning: #fac775;
-    --color-border-primary: rgba(255, 255, 250, 0.4);
-    --color-border-secondary: rgba(255, 255, 250, 0.25);
-    --color-border-tertiary: rgba(255, 255, 250, 0.12);
-  }
 }
 html { box-sizing: border-box; scrollbar-width: none; }
 html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; }
@@ -214,8 +176,17 @@ if (window.ResizeObserver) {
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-// Wrap one html part in the themed, sandboxed document the iframe loads.
-export function renderHtmlPage(doc: { title: string; html: string; origin: string }): string {
+// Wrap one html part in the themed, sandboxed document the iframe loads. The
+// board's color tokens (theme-dependent) are injected first so the static base
+// + kit resolve against them; `theme` defaults to the github preset.
+export function renderHtmlPage(doc: {
+  title: string;
+  html: string;
+  origin: string;
+  theme?: Theme | string;
+}): string {
+  const theme =
+    typeof doc.theme === "string" || doc.theme == null ? themeById(doc.theme) : doc.theme;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -223,7 +194,7 @@ export function renderHtmlPage(doc: { title: string; html: string; origin: strin
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${buildCsp(doc.origin)}">
 <title>${escapeHtml(doc.title)}</title>
-<style>${TOKENS_CSS}${KIT_CSS}</style>
+<style>${tokenThemeCss(theme)}${TOKENS_CSS}${KIT_CSS}</style>
 </head>
 <body>
 ${SVG_DEFS}

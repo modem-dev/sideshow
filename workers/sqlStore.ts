@@ -49,6 +49,9 @@ export class SqlStore implements Store {
         contentType TEXT NOT NULL, byteLength INTEGER NOT NULL, filename TEXT,
         data BLOB NOT NULL, createdAt TEXT NOT NULL, lastAccessedAt TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY, value TEXT NOT NULL
+      );
     `);
     // Boards created before agentSeq existed need the column added; SQLite
     // has no ADD COLUMN IF NOT EXISTS, so probe and patch.
@@ -236,6 +239,21 @@ export class SqlStore implements Store {
       seq,
       sessionId,
       seq,
+    );
+  }
+
+  // --- settings ---
+
+  async getSetting(key: string) {
+    const rows = this.sql.exec("SELECT value FROM settings WHERE key = ?", key).toArray();
+    return rows.length ? (rows[0].value as string) : null;
+  }
+
+  async setSetting(key: string, value: string) {
+    this.sql.exec(
+      "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      key,
+      value,
     );
   }
 

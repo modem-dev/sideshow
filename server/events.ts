@@ -8,7 +8,9 @@ export type FeedEvent =
       sessionId: string;
       surfaceId: string | null;
       seq: number;
-    };
+    }
+  // Board theme changed; `id` is the new theme id. Other open tabs re-theme.
+  | { type: "theme-changed"; id: string };
 
 type Listener = (event: FeedEvent) => void;
 
