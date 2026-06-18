@@ -1,10 +1,11 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import type { MermaidPart as MermaidPartData } from "./api.ts";
+import { activeTheme } from "./theme.ts";
 
 // Mermaid bakes theme colors into the SVG at render time (unlike shiki's
 // dual-theme output, which a CSS rule can flip), so the diagram must be
-// re-rendered when the OS color scheme changes. Reuse the same
-// prefers-color-scheme signal pattern DiffPart uses.
+// re-rendered when the OS color scheme changes OR the board theme switches.
+// Reuse the same prefers-color-scheme signal pattern DiffPart uses.
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 const [isDark, setIsDark] = createSignal(darkQuery.matches);
 darkQuery.addEventListener("change", (e) => setIsDark(e.matches));
@@ -130,11 +131,15 @@ export function MermaidPart(props: { part: MermaidPartData }) {
       }
     };
 
-    // Initial paint, plus a re-render whenever the color scheme flips: the
-    // effect reads isDark() synchronously (so it's tracked), then renders with
-    // the matching mermaid theme. The first run does the initial paint.
+    // Initial paint, plus a re-render whenever the color scheme flips or the
+    // board theme changes: the effect reads both signals synchronously (so
+    // they're tracked), then renders with the current palette. applyTheme
+    // injects the chrome vars before activeTheme() updates, so the
+    // getComputedStyle in sideshowTheme() already sees the new values. The
+    // first run does the initial paint.
     createEffect(() => {
       isDark();
+      activeTheme();
       void render();
     });
   });
