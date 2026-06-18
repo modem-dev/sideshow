@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -24,7 +27,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm install -g npm@11.17.0
+      - run: npm ci --ignore-scripts
+      - run: npm run security:audit
 
       - run: npm run format:check
       - run: npm run lint
@@ -40,7 +45,7 @@ jobs:
       - name: Pack and smoke-test the CLI
         run: |
           npm pack
-          npm install -g ./sideshow-*.tgz
+          npm install -g --ignore-scripts ./sideshow-*.tgz
           sideshow help
           SIDESHOW_DATA=/tmp/sideshow.json PORT=4242 sideshow serve &
           for i in $(seq 1 20); do curl -sf localhost:4242/api/sessions > /dev/null && break; sleep 0.5; done
@@ -57,7 +62,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm install -g npm@11.17.0
+      - run: npm ci --ignore-scripts
+      - run: npm run security:audit
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:e2e
 
@@ -75,12 +82,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm install -g npm@11.17.0
+      - run: npm ci --ignore-scripts
+      - run: npm run security:audit
       - run: npm test
       - run: npm pack
       - name: Install packed CLI
         shell: bash
-        run: npm install -g ./sideshow-*.tgz
+        run: npm install -g --ignore-scripts ./sideshow-*.tgz
       - run: sideshow help
         shell: bash
       - name: Smoke-test server and publish round trip

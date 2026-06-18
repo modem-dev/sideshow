@@ -63,7 +63,8 @@
     "deploy": "npm run build:viewer && wrangler deploy",
     "dev:cloud": "npm run build:viewer && wrangler dev",
     "prepack": "npm run build",
-    "prepare": "simple-git-hooks && npm run build:viewer"
+    "prepare": "simple-git-hooks && npm run build:viewer",
+    "security:audit": "npm audit --audit-level=high"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
@@ -91,7 +92,11 @@
     "vite": "^8.0.16",
     "vite-plugin-singlefile": "^2.3.3",
     "vite-plugin-solid": "^2.11.12",
-    "wrangler": "^4.99.0"
+    "wrangler": "^4.101.0"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1",
+    "ws": "^8.21.0"
   },
   "simple-git-hooks": {
     "pre-commit": "npx lint-staged"
@@ -108,6 +113,7 @@
   "engines": {
     "node": ">=22.18"
   },
+  "packageManager": "npm@11.17.0",
   "pi": {
     "extensions": [
       "./extensions"

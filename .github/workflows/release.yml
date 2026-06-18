@@ -20,6 +20,9 @@ on:
 env:
   SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
 
+permissions:
+  contents: read
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -38,8 +41,14 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Use npm with dependency-age gates
+        run: npm install -g npm@11.17.0
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Audit dependencies
+        run: npm run security:audit
 
       - name: Verify tag matches package version
         if: github.event_name == 'push'
@@ -62,7 +71,7 @@ jobs:
 
       - name: Smoke-test packed CLI
         run: |
-          npm install -g ./sideshow-*.tgz
+          npm install -g --ignore-scripts ./sideshow-*.tgz
           sideshow help
 
   publish:
@@ -86,8 +95,14 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Use npm with dependency-age gates
+        run: npm install -g npm@11.17.0
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Audit dependencies
+        run: npm run security:audit
 
       - name: Verify tag matches package version
         if: github.event_name == 'push'
