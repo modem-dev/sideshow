@@ -3,6 +3,8 @@ import { basename, resolve } from "node:path";
 
 const DEFAULT_BASE_URL = "http://localhost:4242";
 const MAX_WAIT_SECONDS = 300;
+const TRACE_MAX_DETAIL = 1800;
+const TRACE_MAX_LABEL = 140;
 
 const CONTENT_TYPES = {
   png: "image/png",
@@ -187,6 +189,167 @@ function feedbackSummary(feedback) {
     .join("\n")}`;
 }
 
+const truncStr = (value, max) => {
+  const text = String(value ?? "");
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+};
+
+function contentText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((block) => {
+      if (typeof block === "string") return block;
+      if (block?.type === "text" && typeof block.text === "string") return block.text;
+      return "";
+    })
+    .join("");
+}
+
+function entryTimestamp(entry, message) {
+  if (typeof message?.timestamp === "number") return new Date(message.timestamp).toISOString();
+  return typeof entry?.timestamp === "string" ? entry.timestamp : undefined;
+}
+
+function baseName(path) {
+  return typeof path === "string" ? path.split(/[\\/]/).pop() || path : "";
+}
+
+function summarizePiTool(name, args) {
+  if (name === "read") return { kind: "read", label: `Read ${baseName(args?.path)}` };
+  if (["edit", "write"].includes(name))
+    return { kind: "edit", label: `Edit ${baseName(args?.path)}` };
+  if (name === "bash") return { kind: "run", label: args?.command ?? "command" };
+  if (name === "web_fetch") return { kind: "web", label: `Fetch ${args?.url ?? ""}` };
+  if (name === "web_search")
+    return { kind: "web", label: `Search ${JSON.stringify(args?.query ?? "")}` };
+  if (name === "subagent")
+    return { kind: "agent", label: args?.agent ?? args?.action ?? "Subagent" };
+  if (name?.startsWith("sideshow_"))
+    return { kind: "sideshow", label: name.replace(/^sideshow_/, "") };
+  return { kind: (name || "tool").toLowerCase().slice(0, 20), label: name || "tool" };
+}
+
+function buildPiTraceSteps(ctx) {
+  const steps = [];
+  const pending = new Map();
+  for (const entry of ctx.sessionManager.getBranch()) {
+    const message = entry?.type === "message" ? entry.message : undefined;
+    if (!message) continue;
+    const ts = entryTimestamp(entry, message);
+
+    if (message.role === "user") {
+      const prompt = contentText(message.content).trim();
+      if (prompt) {
+        steps.push({
+          kind: "prompt",
+          label: truncStr(prompt.split("\n")[0], TRACE_MAX_LABEL),
+          detail: truncStr(prompt, TRACE_MAX_DETAIL),
+          ts,
+        });
+      }
+      continue;
+    }
+
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      for (const block of message.content) {
+        if (block?.type === "thinking" && typeof block.thinking === "string") {
+          const thought = block.thinking.trim();
+          if (thought) {
+            steps.push({
+              kind: "think",
+              label: truncStr(thought.split("\n")[0], TRACE_MAX_LABEL),
+              ts,
+            });
+          }
+        } else if (block?.type === "text" && typeof block.text === "string") {
+          const say = block.text.trim();
+          if (say) {
+            steps.push({
+              kind: "say",
+              label: truncStr(say.split("\n")[0], TRACE_MAX_LABEL),
+              detail: truncStr(say, TRACE_MAX_DETAIL),
+              ts,
+            });
+          }
+        } else if (block?.type === "toolCall") {
+          const { kind, label } = summarizePiTool(block.name, block.arguments);
+          steps.push({
+            kind,
+            label: truncStr(label, TRACE_MAX_LABEL),
+            detail: truncStr(JSON.stringify(block.arguments ?? {}), TRACE_MAX_DETAIL),
+            ts,
+          });
+          if (block.id) pending.set(block.id, steps.length - 1);
+        }
+      }
+      continue;
+    }
+
+    if (message.role === "toolResult") {
+      const idx = pending.get(message.toolCallId);
+      if (idx != null) {
+        const output = truncStr(contentText(message.content), 1200).trim();
+        if (output)
+          steps[idx].detail = truncStr(`${steps[idx].detail}\n\n→ ${output}`, TRACE_MAX_DETAIL);
+        pending.delete(message.toolCallId);
+      }
+      continue;
+    }
+
+    if (message.role === "bashExecution") {
+      steps.push({
+        kind: "run",
+        label: truncStr(message.command ?? "shell command", TRACE_MAX_LABEL),
+        detail: truncStr(message.output ?? "", TRACE_MAX_DETAIL),
+        ts,
+      });
+    }
+  }
+  return steps;
+}
+
+function scopeToSurfaces(steps, surfaceTimes, pad = 5) {
+  if (!surfaceTimes.length) return steps;
+  const promptTs = steps
+    .filter((step) => step.kind === "prompt" && step.ts)
+    .map((step) => Date.parse(step.ts))
+    .filter((time) => Number.isFinite(time))
+    .sort((a, b) => a - b);
+  if (!promptTs.length) return steps;
+  const first = surfaceTimes[0];
+  const last = surfaceTimes[surfaceTimes.length - 1];
+  const countAtOrBefore = (time) => promptTs.filter((prompt) => prompt <= time).length;
+  const startIdx = Math.max(0, countAtOrBefore(first) - 1 - pad);
+  const endIdx = Math.min(promptTs.length - 1, Math.max(0, countAtOrBefore(last) - 1) + pad);
+  const startTs = promptTs[startIdx];
+  const endTs = endIdx + 1 < promptTs.length ? promptTs[endIdx + 1] : Infinity;
+  return steps.filter((step) => {
+    const time = step.ts ? Date.parse(step.ts) : NaN;
+    return Number.isFinite(time) && time >= startTs && time < endTs;
+  });
+}
+
+async function syncPiTrace(state, ctx, { all = false, pad = 5 } = {}) {
+  if (!state.sessionId) return { skipped: true, reason: "no-session" };
+  let steps = buildPiTraceSteps(ctx);
+  if (!all) {
+    const surfaces = await requestJson(
+      `/api/sessions/${encodeURIComponent(state.sessionId)}/surfaces`,
+    );
+    const surfaceTimes = (Array.isArray(surfaces) ? surfaces : [])
+      .map((surface) => Date.parse(surface.createdAt))
+      .filter((time) => Number.isFinite(time))
+      .sort((a, b) => a - b);
+    steps = scopeToSurfaces(steps, surfaceTimes, pad);
+  }
+  const result = await requestJson(`/api/sessions/${encodeURIComponent(state.sessionId)}/trace`, {
+    method: "POST",
+    body: JSON.stringify({ steps, reset: true }),
+  });
+  return { ...result, sent: steps.length, sessionId: state.sessionId };
+}
+
 function reconstructSession(ctx) {
   let sessionId = process.env.SIDESHOW_SESSION || undefined;
   for (const entry of ctx.sessionManager.getBranch()) {
@@ -216,14 +379,43 @@ export default function sideshowExtension(pi) {
     );
   });
 
+  pi.on("turn_end", async (_event, ctx) => {
+    if (!state.sessionId) return;
+    try {
+      await syncPiTrace(state, ctx);
+    } catch {
+      // Trace sync should never interfere with the agent turn.
+    }
+  });
+
   pi.registerCommand("sideshow", {
     description:
-      "Show sideshow extension status or reset its remembered session: /sideshow [reset]",
+      "Show sideshow extension status, reset its remembered session, or sync trace: /sideshow [reset|trace-sync]",
     handler: async (args, ctx) => {
-      if (args.trim() === "reset") {
+      const command = args.trim();
+      if (command === "reset") {
         state.sessionId = process.env.SIDESHOW_SESSION || undefined;
         ctx.ui.setStatus("sideshow", `sideshow ${baseUrl().replace(/^https?:\/\//, "")}`);
         ctx.ui.notify("Reset remembered sideshow session", "info");
+        return;
+      }
+      if (command === "trace-sync") {
+        if (!state.sessionId) {
+          ctx.ui.notify(
+            "No sideshow session yet. Publish first or set SIDESHOW_SESSION.",
+            "warning",
+          );
+          return;
+        }
+        try {
+          const result = await syncPiTrace(state, ctx);
+          ctx.ui.notify(
+            `Synced ${result.sent ?? 0} trace step(s) to sideshow session ${state.sessionId}`,
+            "info",
+          );
+        } catch (error) {
+          ctx.ui.notify(`Sideshow trace sync failed: ${error.message}`, "error");
+        }
         return;
       }
       ctx.ui.notify(
