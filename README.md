@@ -11,12 +11,19 @@ diffs, terminal output, images — and they render live in your browser while it
 works. You comment back, and your comments reach the agent. Publish, render,
 comment, revise: a two-way loop, right next to the conversation.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/sideshow-dark.png">
-  <img alt="The sideshow viewer: agent sessions in a sidebar, a published JWT-flow diagram with a comment thread between the user and claude-code, and an interactive backoff explainer below" src="docs/sideshow-light.png">
-</picture>
-
-![Animated demo: an agent publishes a diagram that appears live in the viewer, the user types a question under it, and the agent revises the snippet to a second version and replies in the thread](docs/sideshow-demo.gif)
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/sideshow-dark.png">
+        <img width="100%" alt="The sideshow viewer: agent sessions in a sidebar, a published JWT-flow diagram with a comment thread between the user and claude-code, and an interactive backoff explainer below" src="docs/sideshow-light.png">
+      </picture>
+    </td>
+    <td width="50%" valign="top">
+      <img width="100%" alt="Animated demo: an agent publishes a diagram that appears live in the viewer, the user types a question under it, and the agent revises the snippet to a second version and replies in the thread" src="docs/sideshow-demo.gif">
+    </td>
+  </tr>
+</table>
 
 ## Why
 
