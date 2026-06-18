@@ -54,6 +54,10 @@ That teaches any agent with a shell (Pi, opencode, amp, codex, Claude Code) to
 publish surfaces and read your comments. Ask it to "sketch this on sideshow" and
 watch the card appear.
 
+The running viewer has the same handoff built in: its sidebar footer carries an
+**agent setup** link (the block above) and a **Connect Claude Code** button, so
+you can grab it without leaving the browser.
+
 No agent handy? `npx sideshow demo` seeds two example sessions to look around.
 
 **Going further:** richer integration tiers (CLI, MCP, the Pi extension, and the
