@@ -1,5 +1,0 @@
----
-"sideshow": minor
----
-
-Add a pickable board theme. A theme selector in the sidebar switches the whole board at once — viewer chrome, markdown code and diff syntax (shiki), html surface-part tokens, mermaid diagrams, and the terminal window — between seven presets: GitHub, Gruvbox, One, Solarized, Catppuccin, Rosé Pine, and Everforest. Each theme is authored as one palette per light/dark in a shared registry (`server/themes.ts`); the chrome variables and the agent-facing `--color-*` tokens are both derived from it, so the two palettes can't drift, and every preset supports both light and dark via `prefers-color-scheme`. The terminal tints to the theme's dark palette but stays dark (ANSI assumes a dark backdrop). The choice persists per board (new `getSetting`/`setSetting` store methods, backed by JsonFileStore and SqlStore) and propagates to other open tabs over a `theme-changed` event. The agent-facing token contract is unchanged — the same variable names resolve to the selected theme's values, so existing html snippets re-theme for free. Default is GitHub.

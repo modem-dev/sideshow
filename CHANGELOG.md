@@ -1,18 +1,32 @@
 # Changelog
 
-All notable user-visible changes to this project are documented in this file.
+## 0.6.0
 
-## [Unreleased]
+Sideshow 0.6 focuses on richer surfaces, safer rendering, and better agent setup.
 
-### Changed
+### Highlights
 
-- A surface card's actions now live in a recessed footer bar beneath the
-  rendered surface, a step darker than the surface itself, so the human
-  comment/control zone reads as chrome rather than as part of the
-  agent-generated UI. Leaving a comment is a quiet "Comment" action there that
-  expands the composer inline (Escape or Cancel folds it back); open,
-  copy-link, and delete move down out of the card's top corner into the same
-  bar, with delete fenced off behind a divider and turning red on hover.
+- **Timeline traces.** Sessions can show the prompts, reasoning, and commands behind a surface. Claude Code users can install the Stop hook with `sideshow install-hook`, or run `sideshow trace-sync` manually.
+- **Themes.** The board now has seven light/dark theme presets — GitHub, Gruvbox, One, Solarized, Catppuccin, Rosé Pine, and Everforest — applied across viewer chrome, html tokens, markdown/diff highlighting, mermaid, and terminal parts.
+- **Mermaid parts.** Agents can publish Mermaid diagrams directly with `sideshow mermaid`, `--mermaid`, MCP, or HTTP.
+- **HTML kits.** Opt-in `issues` and `slides` kits give agents ready-made, theme-aware building blocks for issue trees, status boards, and decks. Discover them with `sideshow kits` or `GET /api/kits`.
+- **Deep links.** Viewer URLs now track the current session and surface (`/session/:id`, `/session/:id/s/:surfaceId`), including back/forward navigation.
+- **Pi extension.** Installing the package in Pi adds native `sideshow_*` tools for publishing, updating, uploading assets, waiting for feedback, replying, listing surfaces, and fetching the guide.
+
+### Agent and viewer polish
+
+- Added `/agent-howto` and `sideshow agent-howto`; the bundled skill/setup block is now a small bootstrap that asks the running server for current Sideshow guidance.
+- Changed the default local server from `http://localhost:4242` to `http://localhost:8228`.
+- Sidebar sessions now show agent logos, a surface count, and cleaner metadata.
+- The card comment footer is flatter and quieter.
+- Comments now always attach to a surface; `sideshow comment` requires `--surface`.
+- The agent design guide is shorter and frames kits/theme tokens as optional scaffolding, not a required house style.
+
+### Safety and reliability
+
+- Markdown, Mermaid, diff, terminal parts, and comment text now render inside opaque-origin sandboxed iframes, matching html parts and reducing the impact of sanitizer regressions.
+- The viewer only accepts host-affecting `postMessage` events from frames it embedded.
+- Added focused unit and e2e coverage for sandbox isolation, themes, kits, trace ingest, and cross-channel feedback delivery.
 
 ## [0.5.0] - 2026-06-17
 

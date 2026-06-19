@@ -37,7 +37,7 @@ jobs:
       - run: npm test
 
       - name: Release-note changeset
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/')
         run: |
           git fetch origin main
           npm run changeset:status -- --since=origin/main
