@@ -991,3 +991,50 @@ test("asset routes require auth when a token is set", async () => {
   );
   assert.equal((await app.request("/a/anything")).status, 401);
 });
+
+// --- URL routing: /session/:id and /session/:id/s/:surfaceId ---
+
+test("/session/:id serves the viewer HTML", async () => {
+  const app = makeApp();
+  // create a session with a surface so the id is valid
+  const s = (await (
+    await app.request("/api/snippets", json({ html: "<p>x</p>", agent: "pi" }))
+  ).json()) as any;
+  const res = await app.request(`/session/${s.sessionId}`);
+  assert.equal(res.status, 200);
+  assert.ok(res.headers.get("content-type")?.includes("text/html"));
+  const body = await res.text();
+  assert.ok(body.includes("viewer"), "should serve the viewer document");
+});
+
+test("/session/:id/s/:surfaceId serves the viewer HTML", async () => {
+  const app = makeApp();
+  const s = (await (
+    await app.request("/api/snippets", json({ html: "<p>x</p>", agent: "pi" }))
+  ).json()) as any;
+  const res = await app.request(`/session/${s.sessionId}/s/${s.id}`);
+  assert.equal(res.status, 200);
+  assert.ok(res.headers.get("content-type")?.includes("text/html"));
+  const body = await res.text();
+  assert.ok(body.includes("viewer"), "should serve the viewer document");
+});
+
+test("/session/:id serves viewer even for nonexistent session ids", async () => {
+  const app = makeApp();
+  // the SPA handles resolution; the server just serves the HTML
+  const res = await app.request("/session/deadbeef");
+  assert.equal(res.status, 200);
+  assert.ok(res.headers.get("content-type")?.includes("text/html"));
+});
+
+test("/session routes require auth when a token is set", async () => {
+  const app = makeApp("secret");
+  assert.equal((await app.request("/session/abc123")).status, 401);
+  assert.equal((await app.request("/session/abc123/s/def456")).status, 401);
+  // with auth they serve the viewer
+  const authed = await app.request("/session/abc123", {
+    headers: { authorization: "Bearer secret" },
+  });
+  assert.equal(authed.status, 200);
+  assert.ok((await authed.text()).includes("viewer"));
+});

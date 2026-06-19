@@ -451,6 +451,8 @@ export function createApp({
     text.replaceAll(LOCAL_ORIGIN, new URL(c.req.url).origin);
 
   app.get("/", (c) => c.html(withOrigin(viewerHtml, c)));
+  app.get("/session/:id", (c) => c.html(withOrigin(viewerHtml, c)));
+  app.get("/session/:id/s/:surfaceId", (c) => c.html(withOrigin(viewerHtml, c)));
   app.get("/guide", (c) => c.text(withOrigin(guideMarkdown, c)));
   app.get("/setup", (c) => c.text(withOrigin(setupText, c)));
   app.get("/agent-howto", (c) => c.text(withOrigin(agentHowtoText, c)));
