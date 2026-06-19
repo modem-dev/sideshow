@@ -145,6 +145,20 @@ test("renderSandboxedPart uses a tighter CSP than html parts: no connect-src, no
   assert.ok(d["img-src"]?.includes(ORIGIN), "origin allowed for images");
 });
 
+test("html parts keep their CDN allowlist (rich-part tightening did not leak)", () => {
+  const html = cspDirectives(renderHtmlPage({ title: "t", html: "<b>x</b>", origin: ORIGIN }));
+  const rich = cspDirectives(renderSandboxedPart({ body: "x", css: "", origin: ORIGIN }));
+  // rich parts lock script-src to the inline bridge alone; html parts add the
+  // CDN sources on top, so html's source list is strictly larger. (Asserting on
+  // the count rather than a host literal keeps this off the URL-substring path.)
+  assert.deepEqual(rich["script-src"], ["'unsafe-inline'"], "rich = inline bridge only");
+  assert.ok(
+    html["script-src"].length > rich["script-src"].length,
+    "html parts keep extra (CDN) script sources",
+  );
+  assert.ok("connect-src" in html, "html parts still have connect-src");
+});
+
 test("escapeHtml neutralizes markup metacharacters", () => {
   assert.equal(
     escapeHtml(`<img src=x onerror="alert(1)">`),
