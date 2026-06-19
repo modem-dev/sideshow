@@ -47,12 +47,12 @@ jobs:
           npm pack
           npm install -g --ignore-scripts ./sideshow-*.tgz
           sideshow help
-          SIDESHOW_DATA=/tmp/sideshow.json PORT=4242 sideshow serve &
-          for i in $(seq 1 20); do curl -sf localhost:4242/api/sessions > /dev/null && break; sleep 0.5; done
+          SIDESHOW_DATA=/tmp/sideshow.json sideshow serve &
+          for i in $(seq 1 20); do curl -sf localhost:8228/api/sessions > /dev/null && break; sleep 0.5; done
           echo '<p>ci smoke</p>' | sideshow publish - --title "CI smoke" --agent ci | tee /tmp/out.json
           grep -q '"sessionId"' /tmp/out.json
           sideshow demo | grep -q "Seeded 2 demo sessions"
-          curl -sf localhost:4242/guide > /dev/null
+          curl -sf localhost:8228/guide > /dev/null
 
   e2e:
     runs-on: ubuntu-latest
@@ -95,8 +95,8 @@ jobs:
       - name: Smoke-test server and publish round trip
         shell: bash
         run: |
-          SIDESHOW_DATA="$RUNNER_TEMP/sideshow.json" PORT=4242 sideshow serve &
-          for i in $(seq 1 20); do curl -sf localhost:4242/api/sessions > /dev/null && break; sleep 0.5; done
+          SIDESHOW_DATA="$RUNNER_TEMP/sideshow.json" sideshow serve &
+          for i in $(seq 1 20); do curl -sf localhost:8228/api/sessions > /dev/null && break; sleep 0.5; done
           echo '<p>ci smoke</p>' | sideshow publish - --title "CI smoke" --agent ci | tee "$RUNNER_TEMP/out.json"
           grep -q '"sessionId"' "$RUNNER_TEMP/out.json"
-          curl -sf localhost:4242/guide > /dev/null
+          curl -sf localhost:8228/guide > /dev/null

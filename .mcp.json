@@ -4,7 +4,7 @@
       "command": "node",
       "args": ["mcp/server.ts"],
       "env": {
-        "SIDESHOW_URL": "http://localhost:4242"
+        "SIDESHOW_URL": "http://localhost:8228"
       }
     }
   }

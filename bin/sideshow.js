@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-const BASE = (process.env.SIDESHOW_URL ?? "http://localhost:4242").replace(/\/$/, "");
+const BASE = (process.env.SIDESHOW_URL ?? "http://localhost:8228").replace(/\/$/, "");
 const TOKEN = process.env.SIDESHOW_TOKEN;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // This script's own path — used to register the Stop hook so it works whether
@@ -96,10 +96,11 @@ usage:
   sideshow demo                           seed two example sessions to explore the viewer
   sideshow guide                          print the design contract for surfaces
   sideshow setup                          print the AGENTS.md integration block
+  sideshow agent-howto             print current agent how-to
   sideshow mcp                            run the stdio MCP server (for agent configs)
 
 environment:
-  SIDESHOW_URL      server base URL (default http://localhost:4242; set to a
+  SIDESHOW_URL      server base URL (default http://localhost:8228; set to a
                     deployed instance, e.g. https://sideshow.you.workers.dev)
   SIDESHOW_TOKEN    bearer token for a deployed instance
   SIDESHOW_SESSION  fixed session id (overrides auto-detection)
@@ -629,7 +630,7 @@ const commands = {
     const { values: flags } = parse({
       options: { port: { type: "string" }, open: { type: "boolean" } },
     });
-    const port = flags.port ?? process.env.PORT ?? "4242";
+    const port = flags.port ?? process.env.PORT ?? "8228";
     const child = spawn(process.execPath, [entrypoint("server", "index.ts")], {
       stdio: "inherit",
       env: { ...process.env, PORT: port },
@@ -1144,6 +1145,11 @@ const commands = {
   async setup() {
     parse();
     console.log(await fetchTextWithFallback("/setup", join(ROOT, "guide", "AGENT_SETUP.md")));
+  },
+
+  async "agent-howto"() {
+    parse();
+    console.log(await fetchTextWithFallback("/agent-howto", join(ROOT, "guide", "AGENT_HOWTO.md")));
   },
 };
 
