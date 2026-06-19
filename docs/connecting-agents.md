@@ -8,12 +8,13 @@ The fastest path for any agent with a shell is to paste the setup block into its
 instructions:
 
 ```sh
-curl -s http://localhost:4242/setup >> AGENTS.md
+curl -s http://localhost:8228/setup >> AGENTS.md
 ```
 
-That block teaches any agent (Pi, opencode, amp, codex, Claude Code) to publish
-surfaces and poll for comments over plain `curl`. The sections below are the
-underlying tiers it builds on.
+That block is intentionally small: it tells any agent (Pi, opencode, amp,
+codex, Claude Code) to fetch the current instructions from the running server at
+`/agent-howto` (or `sideshow agent-howto`). The sections below are
+the underlying tiers those live instructions build on.
 
 ## Shell (CLI)
 
@@ -24,6 +25,7 @@ one session for you:
 sideshow publish sketch.html --title "Cache layout"
 sideshow diff change.patch --title "Refactor"   # or markdown / image / terminal
 sideshow wait                                   # block until the user comments
+sideshow agent-howto                     # print current agent how-to
 sideshow guide                                  # print the design contract
 ```
 
@@ -48,7 +50,7 @@ Tools: `publish_surface`, `update_surface`, `publish_snippet`, `update_snippet`,
 ```sh
 claude mcp add --scope user sideshow -- npx -y sideshow mcp
 # or, no local process:
-claude mcp add --scope user --transport http sideshow http://localhost:4242/mcp
+claude mcp add --scope user --transport http sideshow http://localhost:8228/mcp
 ```
 
 MCP agents get the usage instructions automatically.
@@ -80,7 +82,7 @@ watcher:
 /plugin install sideshow@sideshow
 ```
 
-On install it asks for your **Sideshow URL** (default `http://localhost:4242`, or
+On install it asks for your **Sideshow URL** (default `http://localhost:8228`, or
 your deployed instance) and an optional token. The monitor runs `sideshow watch`
 against your board; comments are delivered to the agent exactly once. Requires
 Claude Code ≥ 2.1.105. The viewer's "connect Claude Code" link (sidebar footer)
@@ -88,7 +90,9 @@ shows the same steps. The plugin lives in [`../plugin/`](../plugin/).
 
 ## The design contract
 
-The contract at `/guide` tells agents how to write surfaces that fit the viewer:
-fragment-only HTML, theme CSS variables, dark mode rules, and when to reach for
-each part kind. Agents should fetch it once before their first publish
-(`sideshow guide`, `get_design_guide`, or `curl -s …/guide`).
+`/agent-howto` is the current operational playbook for agents: publishing,
+feedback, CLI/MCP/curl choices, and gotchas. The contract at `/guide` is the
+lower-level design reference: fragment-only HTML, theme CSS variables, dark mode
+rules, and when to reach for each part kind. Agents should fetch the instructions
+first, then fetch the guide once before their first publish (`sideshow guide`,
+`get_design_guide`, or `curl -s …/guide`).

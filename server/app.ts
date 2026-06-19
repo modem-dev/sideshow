@@ -74,15 +74,17 @@ function decodeBase64(b64: string): Uint8Array {
 }
 // Docs and onboarding snippets are written against the local default; serve
 // them with the real origin so a deployed instance shows copy-pasteable URLs.
-const LOCAL_ORIGIN = "http://localhost:4242";
+const LOCAL_ORIGIN = "http://localhost:8228";
 
 export interface AppOptions {
   store: Store;
   viewerHtml: string;
   guideMarkdown: string;
   setupText: string;
-  // When set (cloud deployments), every route except /guide and /setup
-  // requires it: Authorization bearer, ?key= query, or the cookie it sets.
+  agentHowtoText?: string;
+  // When set (cloud deployments), every route except /guide, /setup, and
+  // /agent-howto requires it: Authorization bearer, ?key= query, or
+  // the cookie it sets.
   authToken?: string;
   // Update notice: the running version and the upgrade hint that fits this
   // deployment (npm install vs redeploy). Without `version`, /api/version
@@ -193,6 +195,7 @@ export function createApp({
   viewerHtml,
   guideMarkdown,
   setupText,
+  agentHowtoText = setupText,
   authToken,
   version,
   upgradeCommand,
@@ -410,7 +413,7 @@ export function createApp({
   app.use("*", async (c, next) => {
     if (!authToken) return next();
     const path = new URL(c.req.url).pathname;
-    if (path === "/guide" || path === "/setup") return next();
+    if (path === "/guide" || path === "/setup" || path === "/agent-howto") return next();
 
     const bearer = c.req.header("authorization");
     if (bearer === `Bearer ${authToken}`) return next();
@@ -440,6 +443,7 @@ export function createApp({
   app.get("/", (c) => c.html(withOrigin(viewerHtml, c)));
   app.get("/guide", (c) => c.text(withOrigin(guideMarkdown, c)));
   app.get("/setup", (c) => c.text(withOrigin(setupText, c)));
+  app.get("/agent-howto", (c) => c.text(withOrigin(agentHowtoText, c)));
 
   // --- theme (one board-level setting) ---
 

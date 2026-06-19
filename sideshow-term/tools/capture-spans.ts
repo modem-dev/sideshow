@@ -89,7 +89,7 @@ function buildViewer(r: typeof renderer) {
 
   rootCol.add(
     new TextRenderable(r, {
-      content: "sideshow-term  ·  http://localhost:4242  ·  3 snippets",
+      content: "sideshow-term  ·  http://localhost:8228  ·  3 snippets",
       paddingLeft: 1,
       height: 1,
       fg: heading,

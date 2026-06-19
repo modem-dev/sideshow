@@ -14,6 +14,7 @@ function makeApp(authToken?: string) {
     viewerHtml: "<html>viewer</html>",
     guideMarkdown: "# guide",
     setupText: "# setup",
+    agentHowtoText: "# agent how-to",
     authToken,
   });
 }
@@ -407,6 +408,7 @@ function makeVersionApp(version?: string, latest?: { version: string; notes?: st
     viewerHtml: "<html>viewer</html>",
     guideMarkdown: "# guide",
     setupText: "# setup",
+    agentHowtoText: "# agent how-to",
     version,
     upgradeCommand: "npm install -g sideshow",
     fetchLatestRelease: () =>
@@ -502,9 +504,10 @@ test("auth token guards mutating routes when configured", async () => {
   // full surface is guarded, including reads and the viewer
   assert.equal((await app.request("/api/sessions")).status, 401);
   assert.equal((await app.request("/")).status, 401);
-  // docs stay open
+  // docs and bootstrap instructions stay open
   assert.equal((await app.request("/guide")).status, 200);
   assert.equal((await app.request("/setup")).status, 200);
+  assert.equal((await app.request("/agent-howto")).status, 200);
   // ?key= grants access and sets a cookie for subsequent requests
   const keyed = await app.request("/?key=secret");
   assert.equal(keyed.status, 200);

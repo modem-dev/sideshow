@@ -63,5 +63,5 @@ Rules of thumb:
 ## Configuration
 
 The plugin targets the server set in its config (`sideshowUrl`, default
-`http://localhost:4242`; `apiToken` for deployed instances). Start a local
+`http://localhost:8228`; `apiToken` for deployed instances). Start a local
 server with `npx sideshow serve` if one is not already running.
