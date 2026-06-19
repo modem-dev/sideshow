@@ -754,6 +754,13 @@ a.itree-ref:hover {
   border-top: 0.5px solid var(--border);
   padding: 6px 14px 10px;
 }
+/* Collapsed to just the action bar (no comments): the card-actions footer draws
+   the only separator, so the thread adds no frame of its own — otherwise its
+   border-top stacks with the footer's into a double hairline. */
+.thread:not(:has(.cmts)) {
+  border-top: none;
+  padding: 0;
+}
 .cmt {
   display: flex;
   gap: 8px;
@@ -848,13 +855,13 @@ a.itree-ref:hover {
   color: var(--text);
   background: var(--hover);
 }
-/* Footer action bar — a recessed well, a step darker than the agent surface
-   above it, so the whole human/control zone reads as chrome rather than as
-   part of the agent-rendered card. Reply is a quiet labelled action here;
-   open/copy/delete share the same row. */
+/* Footer action bar — a flat toolbar on the card surface, marked off only by a
+   hairline divider so it reads as chrome without nesting a second filled box
+   inside the card. The muted action styling carries the "this is controls, not
+   agent UI" cue. Reply is a quiet labelled action here; open/copy/delete share
+   the same row. */
 .card-actions {
   border-top: 0.5px solid var(--border);
-  background: var(--panel);
   padding: 5px 8px;
 }
 .actbar {

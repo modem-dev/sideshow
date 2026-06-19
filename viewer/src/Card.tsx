@@ -246,9 +246,9 @@ function Thread(props: {
   placeholder: string;
   send: (text: string) => Promise<string | null>;
   // When set, the composer is hidden behind a Comment action and the other
-  // per-card actions (open/delete/…) share the recessed footer bar. The
-  // bar is deliberately darker than the agent surface above it so a user's
-  // comment never reads as part of the agent-rendered UI.
+  // per-card actions (open/delete/…) share the footer toolbar. The bar sits on
+  // the card surface, set off by a hairline divider and muted action styling,
+  // so a user's comment never reads as part of the agent-rendered UI.
   collapsible?: boolean;
   actions?: JSX.Element;
 }) {
