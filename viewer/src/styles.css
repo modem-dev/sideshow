@@ -860,6 +860,16 @@ a.itree-ref:hover {
 .card-actions {
   border-top: 0.5px solid var(--border);
   padding: 5px 8px;
+  /* Pin the footer height and center its content so swapping the action bar for
+     the inline composer (and back) never changes the footer height — the card
+     above must not pop when you start or finish a comment. */
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.card-actions > * {
+  flex: 1;
+  min-width: 0;
 }
 .actbar {
   display: flex;
