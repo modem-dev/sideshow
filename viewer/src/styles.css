@@ -750,16 +750,13 @@ a.itree-ref:hover {
   white-space: pre-wrap;
   overflow-x: auto;
 }
-.thread {
+/* The thread is layout only — the comment list and the footer toolbar each draw
+   their own full-width separator and padding. That keeps every divider spanning
+   the whole card and the spacing identical whether or not the card has comments
+   yet, instead of the thread insetting its children once comments appear. */
+.cmts {
   border-top: 0.5px solid var(--border);
-  padding: 6px 14px 10px;
-}
-/* Collapsed to just the action bar (no comments): the card-actions footer draws
-   the only separator, so the thread adds no frame of its own — otherwise its
-   border-top stacks with the footer's into a double hairline. */
-.thread:not(:has(.cmts)) {
-  border-top: none;
-  padding: 0;
+  padding: 6px 14px;
 }
 .cmt {
   display: flex;
