@@ -270,8 +270,13 @@ function Thread(props: {
             when={replying()}
             fallback={
               <div class="actbar">
-                <button class="act comment" onClick={() => setReplying(true)}>
-                  <CommentIcon /> Comment
+                <button
+                  class="act icon comment"
+                  title="Comment"
+                  aria-label="Comment"
+                  onClick={() => setReplying(true)}
+                >
+                  <CommentIcon />
                 </button>
                 <span class="sp"></span>
                 {props.actions}
