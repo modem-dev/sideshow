@@ -22,16 +22,13 @@ a `kind`:
   escaped, not rendered — reach for an `html` part when you need live markup
   (interactivity, vector graphics, custom layout), not just to show a picture.
 - **`mermaid`** — diagram source you hand over as _text_; the viewer renders it
-  to an SVG with mermaid (flowcharts, sequence diagrams, ERDs, gantt, state, …).
-  Reach for it when the shape of a system is the point — a flow, a state
-  machine, a schema — and you'd rather describe it than draw SVG by hand. Like
-  markdown it renders as data, not sandboxed markup (securityLevel `strict`); for
-  bespoke vector art hand-write inline `<svg>` in an `html` part instead. The
-  viewer themes the diagram in the sideshow palette and font automatically (light
-  and dark) — don't set your own colors. To highlight, two classes are
-  pre-wired to the accent color: in a flowchart, tag nodes with `:::accent`
-  (e.g. `B[Live render]:::accent`) or `class A,B accent`, and recolor an edge by
-  giving it `accentLine` (pair with `linkStyle`). Accents apply to flowcharts;
+  to an SVG (flowcharts, sequence diagrams, ERDs, gantt, state, …). Reach for it
+  when the _shape_ of a system is the point and you'd rather describe it than
+  draw SVG by hand. Renders as data, not sandboxed markup (securityLevel
+  `strict`); for bespoke vector art hand-write inline `<svg>` in an `html` part
+  instead. The viewer themes the diagram (light and dark) automatically — **don't
+  set your own colors**. Highlight flowchart nodes with `:::accent` (or
+  `class A,B accent`) and edges with `accentLine` (pair with `linkStyle`);
   sequence diagrams style actors globally only.
 - **`diff`** — a patch you hand over as _data_; the trusted viewer renders it
   natively as a syntax-highlighted code review (split or unified). Reach for it
@@ -93,15 +90,12 @@ surface; inline in a `markdown` part (`![caption](/a/<id>)`) to sit it beside
 prose; or inside an html part (`<img src="<url>">`) when you're drawing. Per-asset
 limit is 5 MB.
 
-An asset's **id is the SHA-256 of its bytes**, so the URL is content-addressed
-and you can know it _before_ (or while) you upload — no need to wait for the
-upload to reference it. Derive it locally (`sideshow asset-url shot.png`, or
-`shasum -a 256 shot.png`) and write the `<img src="/a/<hash>">` or the
-`assetId` straight into your surface, then upload the bytes in any order. The
-viewer briefly waits for an in-flight asset rather than showing a broken image.
-Identical bytes dedupe to one stored blob, and an asset survives as long as any
-surface references it (even across sessions), so a referenced upload is never
-lost when a session is deleted.
+An asset's **id is the SHA-256 of its bytes**, so the URL is content-addressed:
+derive it locally (`sideshow asset-url shot.png`, or `shasum -a 256`) and write
+the `<img src="/a/<hash>">` or `assetId` into your surface _before_ uploading —
+bytes can follow in any order and the viewer briefly waits for an in-flight asset
+rather than showing a broken image. Identical bytes dedupe to one blob, and an
+asset survives as long as any surface references it (even across sessions).
 
 CLI shortcuts: `sideshow image shot.png --title "…"` (upload + publish in one
 shot), `sideshow trace run.json --title "…"`, `sideshow publish sketch.html
@@ -128,19 +122,8 @@ html-only back-compat aliases.
 
 ### Examples
 
-An html surface:
-
-```
-POST /api/surfaces  { "title": "Cache layout", "parts": [{ "kind": "html", "html": "<svg ...>" }] }
-```
-
-A standalone diff surface (a unified patch):
-
-```
-POST /api/surfaces  { "title": "Add retry", "parts": [{ "kind": "diff", "patch": "--- a/x.ts\n+++ b/x.ts\n@@ ..." }] }
-```
-
-A combined `[html, diff]` surface — a diagram above its code review:
+A combined `[html, diff]` surface — a diagram above its code review. Drop a
+part for the single-part cases:
 
 ```
 POST /api/surfaces  { "title": "Retry flow", "parts": [
@@ -149,23 +132,22 @@ POST /api/surfaces  { "title": "Retry flow", "parts": [
 ]}
 ```
 
-CLI equivalents:
+CLI equivalents — one verb per kind, or compose with `--diff`:
 
 ```
-sideshow publish sketch.html --title "Cache layout"                 # html surface
-sideshow markdown plan.md --title "Migration plan"                  # standalone markdown surface
-sideshow mermaid flow.mmd --title "Request flow"                    # standalone mermaid surface
-sideshow diff change.patch --title "Add retry" --layout split       # standalone diff surface
-sideshow publish sketch.html --diff change.patch --title "Retry flow"   # combined [html, diff]
+sideshow publish sketch.html --title "Cache layout"        # html
+sideshow markdown plan.md --title "Migration plan"         # markdown
+sideshow mermaid flow.mmd --title "Request flow"           # mermaid
+sideshow diff change.patch --layout split --title "..."    # diff
+sideshow publish sketch.html --diff change.patch --title "Retry flow"   # [html, diff]
 ```
 
-Omit `session` on your first publish and the response's `sessionId` is yours —
-reuse it so your surfaces stay grouped. On that first publish, also set a
-session title naming the task ("Auth refactor"), not your tool — `sessionTitle`
-(MCP and HTTP) or `--session-title` (CLI). It applies only when the session is
-created; never retitle it later. When refining a surface you
-already published, UPDATE it rather than publishing a near-duplicate; versions
-are kept and the user can flip between them.
+Omit `session` on your first publish; the response's `sessionId` is yours —
+reuse it to keep surfaces grouped. On that first publish also set a session
+title naming the _task_ ("Auth refactor"), not your tool — `sessionTitle` (MCP
+and HTTP) or `--session-title` (CLI); it applies only at creation, so never
+retitle later. To refine a surface, UPDATE it rather than republishing a
+near-duplicate — versions are kept and the user can flip between them.
 
 ## The feedback loop
 
@@ -189,8 +171,15 @@ replies short; do substantial revisions as surface updates instead.
 
 ## HTML contract
 
-This contract governs `html` parts (diff parts are rendered from patch data,
-not markup).
+An `html` part is a blank canvas — invent the visualization the idea deserves.
+Custom SVG, bespoke layouts, small interactions, animation, an unusual way to
+show a relationship: all fair game, and more useful than a safe diagram. The
+contract below is a short list of hard constraints (sandboxing, sizing) plus
+helpers — the kit and theme tokens — that exist to remove busywork and
+guarantee legibility in both themes, **not** to push every surface toward one
+look. Reach for them when they fit; hand-roll freely when your idea is better
+served another way. The constraints keep it readable; what you draw inside them
+is yours.
 
 - Send a **body fragment only** — no `<!doctype>`, `<html>`, `<head>`, or `<body>`.
   The server wraps your fragment in a themed, sandboxed document.
@@ -201,10 +190,12 @@ not markup).
 - **Never use `position: fixed`** — the iframe sizes to content height and
   fixed elements break that. Use normal-flow layout.
 
-## Built-in kit — reach for it before writing CSS
+## Built-in kit — a head start, not a straitjacket
 
-Bare `button`, `input`, `select`, and `textarea` are pre-styled to match the
-viewer, hover/focus included — write the plain element, don't restyle it.
+These primitives save you from restyling the basics; ignore any that don't suit
+the picture you have in mind. Bare `button`, `input`, `select`, and `textarea`
+are pre-styled to match the viewer, hover/focus included — write the plain
+element, don't restyle it.
 Checkboxes, radios, ranges, and progress bars are themed via `accent-color`.
 
 SVG utility classes, available in every html part:
@@ -272,9 +263,10 @@ kit classes in the same part.
 
 ## Theming — dark mode is mandatory
 
-For anything the kit doesn't cover, use the pre-defined CSS variables — they
-adapt to light/dark automatically. Never hardcode colors; `color: #333` is
-invisible in dark mode.
+This is the one firm rule, because it's about adaptiveness, not taste: drive
+every color from the pre-defined CSS variables (a full semantic palette to
+compose with) so it adapts to light/dark automatically. Never hardcode colors;
+`color: #333` is invisible in dark mode.
 
 - Backgrounds: `--color-background-primary|secondary|tertiary` and semantic
   `-info|-danger|-success|-warning`
@@ -302,6 +294,10 @@ Two globals are injected into every html part:
   Plain `<a href>` clicks are routed through this automatically.
 
 ## Style
+
+A few guardrails that keep surfaces feeling native to the viewer — they shape
+the finish, not the idea. Be as inventive as you like with structure, layout,
+and how you show a relationship; just land it in this register:
 
 - Flat and clean: no gradients, drop shadows, or decorative effects.
 - Sentence case for headings and labels. No emoji.
