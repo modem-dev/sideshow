@@ -25,20 +25,49 @@ test("navigating to /session/:id selects that session", async ({ page, server })
   await expect(page.locator(".card .card-title")).toHaveText("Second");
 });
 
-test("navigating to /session/:id/s/:surfaceId selects the session", async ({ page, server }) => {
-  const s1 = await publish(server.url, { html: "<p>first</p>", title: "A", agent: "pi" });
-  const s2 = await publish(server.url, {
-    html: "<p>second</p>",
+test("navigating to /session/:id/s/:surfaceId selects session and scrolls to surface", async ({
+  page,
+  server,
+}) => {
+  // Publish enough tall surfaces so the target is off-screen initially.
+  const s1 = await publish(server.url, {
+    html: '<div style="height:800px"><h2>Top</h2></div>',
+    title: "A",
+    agent: "pi",
+  });
+  await publish(server.url, {
+    html: '<div style="height:800px"><h2>Middle</h2></div>',
     title: "B",
     agent: "pi",
     session: s1.sessionId,
   });
+  const s3 = await publish(server.url, {
+    html: '<div style="height:800px"><h2>Bottom</h2></div>',
+    title: "C",
+    agent: "pi",
+    session: s1.sessionId,
+  });
 
-  // deep link with a surface id selects the session
-  await page.goto(`${server.url}/session/${s1.sessionId}/s/${s2.id}`);
+  // Deep link to the last surface
+  await page.goto(`${server.url}/session/${s1.sessionId}/s/${s3.id}`);
   await expect(page.locator(`#sessionList .sess[data-id="${s1.sessionId}"]`)).toHaveClass(/sel/);
-  // both surfaces should be loaded (full session view)
-  await expect(page.locator(".card:not(#whatsNew) .card-title")).toHaveCount(2);
+  // All surfaces should be loaded (full session view)
+  await expect(page.locator(".card:not(#whatsNew) .card-title")).toHaveCount(3);
+  // The target surface should be scrolled near the top of the viewport.
+  // pollScrollIntoView retries until the position stabilises (≤ 5 s).
+  await expect
+    .poll(
+      async () => {
+        return page.locator(`.card[data-id="${s3.id}"]`).evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return r.top >= -10 && r.top <= 200;
+        });
+      },
+      { timeout: 6000 },
+    )
+    .toBe(true);
+  // URL should include the surface id
+  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}/s/${s3.id}`));
 });
 
 test("browser back/forward navigates between sessions", async ({ page, server }) => {
@@ -73,7 +102,7 @@ test("/ redirects to the last viewed session from localStorage", async ({ page, 
 
   // now visit root — should redirect to the last session
   await page.goto(server.url);
-  await expect(page).toHaveURL(new RegExp(`/session/${s.sessionId}$`));
+  await expect(page).toHaveURL(new RegExp(`/session/${s.sessionId}(\\b|/)`));
   await expect(page.locator(`#sessionList .sess[data-id="${s.sessionId}"]`)).toHaveClass(/sel/);
 });
 
