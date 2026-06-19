@@ -25,10 +25,7 @@ test("navigating to /session/:id selects that session", async ({ page, server })
   await expect(page.locator(".card .card-title")).toHaveText("Second");
 });
 
-test("navigating to /session/:id/s/:surfaceId selects session and scrolls to surface", async ({
-  page,
-  server,
-}) => {
+test("navigating to /session/:id/s/:surfaceId selects the session", async ({ page, server }) => {
   const s1 = await publish(server.url, { html: "<p>first</p>", title: "A", agent: "pi" });
   const s2 = await publish(server.url, {
     html: "<p>second</p>",
@@ -37,9 +34,10 @@ test("navigating to /session/:id/s/:surfaceId selects session and scrolls to sur
     session: s1.sessionId,
   });
 
+  // deep link with a surface id selects the session
   await page.goto(`${server.url}/session/${s1.sessionId}/s/${s2.id}`);
   await expect(page.locator(`#sessionList .sess[data-id="${s1.sessionId}"]`)).toHaveClass(/sel/);
-  // both surfaces should be loaded (we're in the full session view)
+  // both surfaces should be loaded (full session view)
   await expect(page.locator(".card:not(#whatsNew) .card-title")).toHaveCount(2);
 });
 
