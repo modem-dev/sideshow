@@ -42,9 +42,15 @@ consciously, not as a side effect):
 - `server/storage.ts` — `JsonFileStore` (local Node). `workers/sqlStore.ts` —
   `SqlStore` (Durable Object SQLite). Both must pass `test/storeContract.ts`,
   and both migrate legacy `snippets`/`snippetId` data to surfaces on load.
+- `server/kits.ts` — opt-in style/behavior bundles for html parts (`issues`,
+  `slides`). An html part lists kit ids in `kits`; `renderHtmlPage` injects each
+  kit's CSS/JS into the sandbox after the base. Runtime-agnostic; allowlisted in
+  `surfaceParts` and listed at `/api/kits`. Adding a kit is a registry entry +
+  a guide bullet — no new part kind, no native-render surface.
 - `server/surfacePage.ts` — sandboxed documents for surface markup. `renderHtmlPage`
   wraps an html part (CDN-allowlist CSP + the postMessage bridge: resize,
-  sendPrompt, openLink). `renderSandboxedPart` wraps markup the viewer rendered
+  sendPrompt, openLink) and injects any opted-in kits (`kits.ts`).
+  `renderSandboxedPart` wraps markup the viewer rendered
   to a string (markdown/mermaid/diff/terminal) under a tighter CSP (no
   `connect-src`, no CDN) — see `viewer/src/SandboxedPart.tsx`. Image, trace, and
   issue-tree parts stay native because they have no HTML sink (the viewer renders

@@ -243,6 +243,40 @@ Icons: the Tabler webfont is on the CSP allowlist —
 `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3/dist/tabler-icons.min.css">`
 then `<i class="ti ti-check"></i>`.
 
+## Kits — opt-in component bundles
+
+A **kit** is a richer vocabulary an html part opts into. List kit ids in the
+part's `kits` and the sandbox doc gets that kit's CSS (and, for behavior kits,
+JS) on top of the base — so you write compact class-based markup instead of
+hand-rolling styles. A plain html part (no `kits`) is untouched: the vocabulary
+ships only when you ask, so default html stays fully freeform. Discover them
+with `sideshow kits` (or `GET /api/kits`). Every class resolves against the
+theme tokens, so kit output re-themes with the board.
+
+- **`issues`** — `.card` · nesting `.tree` rail · `.badge` (`.ok`/`.info`/`.warn`/`.danger`)
+  · `.dot` · mono `.chip` · `.bar > i` rollup, plus layout (`.row`/`.stack`/`.between`/`.grow`)
+  and text (`.dim`/`.faint`/`.mono`/`.title`) helpers. Composes an issue/PR/CI
+  tree — nest a `.tree` inside a `.tree` to indent — or a status board, from
+  generic primitives.
+- **`slides`** — author a `.deck` with `.slide` children; the kit shows one at a
+  time and injects prev/dots/counter/next controls. Arrow keys and PageUp/Down
+  navigate.
+
+```sh
+sideshow publish board.html --kit issues       # CLI (repeatable: --kit a --kit b)
+```
+
+```js
+publish_surface({ parts: [{ kind: "html", html, kits: ["issues"] }] }); // MCP
+```
+
+```json
+{ "html": "<ul class=\"tree\">…</ul>", "kits": ["issues"] } // POST /api/snippets
+```
+
+A kit only adds vocabulary — you can hand-roll custom markup right beside the
+kit classes in the same part.
+
 ## Theming — dark mode is mandatory
 
 For anything the kit doesn't cover, use the pre-defined CSS variables — they

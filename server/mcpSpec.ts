@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { KIT_IDS } from "./kits.ts";
 
 export const MCP_SERVER_INFO = { name: "sideshow", version: "0.1.0" };
 
@@ -36,6 +37,9 @@ const d = {
   assetKind: "Asset kind (inferred from contentType when omitted)",
   assetSession: "Session id to attach the asset to",
   partHtml: "html part: body fragment (no doctype/html/head/body)",
+  partKits: `html part: opt into style/behavior bundles by id (${KIT_IDS.join(
+    " | ",
+  )}). Each injects extra CSS/JS classes (e.g. 'issues' gives .card/.tree/.badge; 'slides' gives a stepped .deck). Omit for plain html. See get_design_guide.`,
   partMarkdown: "markdown part: prose (headings, lists, tables, code, links); raw HTML is escaped",
   partMermaid:
     "mermaid part: diagram source (flowchart, sequence, ERD, gantt, …), rendered to SVG by the viewer",
@@ -65,7 +69,9 @@ const d = {
 };
 
 const MCP_PARTS_DESCRIPTION =
-  "Ordered parts. html: {kind:'html', html:'<body fragment>'}. markdown: {kind:'markdown', " +
+  "Ordered parts. html: {kind:'html', html:'<body fragment>', kits?:['issues']} — kits opt the " +
+  "part into extra CSS/JS bundles (issues: .card/.tree/.badge/.bar; slides: a stepped .deck with " +
+  "controls); omit for plain html. markdown: {kind:'markdown', " +
   "markdown:'## prose'} — for explanations, plans, tradeoff write-ups (styled text, not sandboxed; " +
   "embedded raw HTML is escaped — use an html part for live markup). mermaid: {kind:'mermaid', " +
   "mermaid:'graph TD; A-->B'} — diagram source rendered to SVG (flowchart, sequence, ERD, gantt, …). " +
@@ -89,6 +95,7 @@ const MCP_PART_JSON_SCHEMA = {
       enum: ["html", "markdown", "mermaid", "diff", "image", "trace", "terminal", "issue-tree"],
     },
     html: { type: "string", description: d.partHtml },
+    kits: { type: "array", items: { type: "string" }, description: d.partKits },
     markdown: { type: "string", description: d.partMarkdown },
     mermaid: { type: "string", description: d.partMermaid },
     patch: { type: "string", description: d.partPatch },
@@ -236,6 +243,7 @@ export const HTTP_MCP_TOOLS = [
       properties: {
         title: { type: "string", description: "Short human-readable title" },
         html: { type: "string", description: d.html },
+        kits: { type: "array", items: { type: "string" }, description: d.partKits },
         session: { type: "string", description: d.session },
         sessionTitle: { type: "string", description: "Session name (first publish only)" },
         agent: { type: "string", description: d.agent },
@@ -251,6 +259,7 @@ export const HTTP_MCP_TOOLS = [
       properties: {
         id: { type: "string", description: "Surface id" },
         html: { type: "string", description: "Replacement HTML body fragment" },
+        kits: { type: "array", items: { type: "string" }, description: d.partKits },
         title: { type: "string", description: d.replacementTitle },
       },
       required: ["id"],
@@ -353,6 +362,7 @@ const mcpPartSchema = z
       "issue-tree",
     ]),
     html: z.string().optional().describe(d.partHtml),
+    kits: z.array(z.string()).optional().describe(d.partKits),
     markdown: z.string().optional().describe(d.partMarkdown),
     mermaid: z.string().optional().describe(d.partMermaid),
     patch: z.string().optional().describe(d.partPatch),
@@ -389,11 +399,13 @@ export const STDIO_MCP_INPUT_SCHEMAS = {
   publishSnippet: {
     title: z.string().describe("Short human-readable title shown above the snippet"),
     html: z.string().describe(d.html),
+    kits: z.array(z.string()).optional().describe(d.partKits),
     sessionTitle: z.string().optional().describe("Session name (first publish only)"),
   },
   updateSnippet: {
     id: z.string().describe("Surface id"),
     html: z.string().optional().describe("Replacement HTML body fragment"),
+    kits: z.array(z.string()).optional().describe(d.partKits),
     title: z.string().optional().describe(d.replacementTitle),
   },
   waitForFeedback: {

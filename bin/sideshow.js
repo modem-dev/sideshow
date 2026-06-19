@@ -25,6 +25,7 @@ usage:
       --diff <file|->   add a diff part from a unified/git patch (combine with html)
       --terminal <file|->  add a terminal part from monospace/ANSI output
       --issue-tree <file|->  add an issue-tree part from a JSON root issue
+      --kit <id>        opt the html part into a kit (repeatable; see "sideshow kits")
       --image <file>    upload an image and append it as an image part
       --session <id>    target session (default: auto per agent session)
       --session-title <t>  name for a newly created session — name the task,
@@ -60,8 +61,10 @@ usage:
       --title <t>       surface title
       (file is the root issue { ref, title, state, source?, note?, url?, children? })
       (also: --session, --session-title, --agent, --new-session)
+  sideshow kits                           list the opt-in html kits this board offers
   sideshow update <id> <file|->           revise a surface (new version, same card)
       --title <t>       replace title
+      --kit <id>        opt the html part into a kit (repeatable)
   sideshow wait [options]                 block until the user comments (long-poll)
       --session <id>    session to watch (default: auto)
       --timeout <sec>   max seconds to wait (default 120)
@@ -381,6 +384,17 @@ async function uploadFile(file, { session, kind } = {}) {
   return body;
 }
 
+// Normalize repeated/comma-joined --kit flags into a deduped id list (or
+// undefined). The server allowlists the ids; an unknown one is a clean 400.
+function normalizeKits(flag) {
+  if (!flag) return undefined;
+  const ids = (Array.isArray(flag) ? flag : [flag])
+    .flatMap((s) => String(s).split(","))
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return ids.length > 0 ? [...new Set(ids)] : undefined;
+}
+
 async function publishSurface(parts, flags) {
   const session = await resolveSession(flags, { create: true });
   return api("/api/surfaces", {
@@ -694,6 +708,7 @@ const commands = {
         image: { type: "string" },
         terminal: { type: "string" },
         "issue-tree": { type: "string" },
+        kit: { type: "string", multiple: true },
         layout: { type: "string" },
         session: { type: "string" },
         "session-title": { type: "string" },
@@ -701,7 +716,10 @@ const commands = {
         "new-session": { type: "boolean" },
       },
     });
-    const parts = [{ kind: "html", html: readContent(positionals[0]) }];
+    const htmlPart = { kind: "html", html: readContent(positionals[0]) };
+    const kits = normalizeKits(flags.kit);
+    if (kits) htmlPart.kits = kits;
+    const parts = [htmlPart];
     if (flags.md !== undefined) {
       parts.push({ kind: "markdown", markdown: readContent(flags.md || "-") });
     }
@@ -897,15 +915,17 @@ const commands = {
   async update() {
     const { values: flags, positionals } = parse({
       allowPositionals: true,
-      options: { title: { type: "string" } },
+      options: { title: { type: "string" }, kit: { type: "string", multiple: true } },
     });
     const id = positionals[0];
     if (!id) fail("usage: sideshow update <id> <file|->");
-    const html = readContent(positionals[1]);
+    const part = { kind: "html", html: readContent(positionals[1]) };
+    const kits = normalizeKits(flags.kit);
+    if (kits) part.kits = kits;
     outSurface(
       await api(`/api/surfaces/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ parts: [{ kind: "html", html }], title: flags.title }),
+        body: JSON.stringify({ parts: [part], title: flags.title }),
       }),
     );
   },
@@ -1148,6 +1168,13 @@ const commands = {
   async sessions() {
     parse();
     out(await api("/api/sessions"));
+  },
+
+  // List the opt-in html kits this board offers (id, label, summary, classes).
+  // Pair with `publish --kit <id>` to inject a kit's CSS/JS into an html part.
+  async kits() {
+    parse();
+    out(await api("/api/kits"));
   },
 
   async demo() {

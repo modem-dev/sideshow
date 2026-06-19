@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { EventBus } from "./events.ts";
+import { kitSummaries } from "./kits.ts";
 import { registerMcp } from "./mcpHttp.ts";
 import { renderHtmlPage } from "./surfacePage.ts";
 import { DEFAULT_THEME_ID, themeById, themeOptions } from "./themes.ts";
@@ -454,6 +455,10 @@ export function createApp({
   app.get("/setup", (c) => c.text(withOrigin(setupText, c)));
   app.get("/agent-howto", (c) => c.text(withOrigin(agentHowtoText, c)));
 
+  // Opt-in html kits available on this board (id, label, summary, classes) —
+  // for discovery (`sideshow kits`); the CSS/JS payloads are server-only.
+  app.get("/api/kits", (c) => c.json(kitSummaries()));
+
   // --- theme (one board-level setting) ---
 
   app.get("/api/theme", async (c) => {
@@ -578,13 +583,17 @@ export function createApp({
     return publish(c, body, parsed.parts);
   });
 
-  // Legacy html-only entry — sugar for a single html part.
+  // Legacy html-only entry — sugar for a single html part. An optional `kits`
+  // array opts the part into style/behavior bundles; it's validated (strict)
+  // like any html part so an unknown kit id is a clean 400.
   app.post("/api/snippets", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body.html !== "string" || !body.html.trim()) {
       return c.json({ error: 'body must include non-empty "html" string' }, 400);
     }
-    return publish(c, body, [htmlPart(body.html)]);
+    const parsed = validateSurfaceParts([htmlPart(body.html, body.kits)]);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    return publish(c, body, parsed.parts);
   });
 
   async function publish(c: any, body: any, parts: SurfacePart[]) {
@@ -616,7 +625,11 @@ export function createApp({
       const parsed = validateSurfaceParts(body.parts);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
       parts = parsed.parts;
-    } else if (typeof body.html === "string") parts = [htmlPart(body.html)];
+    } else if (typeof body.html === "string") {
+      const parsed = validateSurfaceParts([htmlPart(body.html, body.kits)]);
+      if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+      parts = parsed.parts;
+    }
     const result = await reviseSurface(c.req.param("id"), {
       parts,
       title: typeof body.title === "string" ? body.title : undefined,
@@ -717,6 +730,7 @@ export function createApp({
         html: part.html,
         origin: new URL(c.req.url).origin,
         theme: themeById(themeId),
+        kits: part.kits,
       }),
     );
   });

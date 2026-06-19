@@ -31,6 +31,9 @@ export type SurfacePartKind =
 export interface HtmlPart {
   kind: "html";
   html: string;
+  // Opt-in style/behavior bundles (see kits.ts). The sandbox doc gets each
+  // listed kit's CSS/JS injected after the base kit; omit for plain html.
+  kits?: string[];
 }
 
 // A markdown part is prose the trusted viewer renders — explanations, plans,
@@ -312,7 +315,14 @@ export async function hashAssetId(data: Uint8Array): Promise<string> {
 
 // A snippet is sugar for a single html part; this bridges the legacy
 // `{ html }` shape (CLI `publish`, `POST /api/snippets`) to the parts model.
-export const htmlPart = (html: string): HtmlPart => ({ kind: "html", html });
+// An optional `kits` list opts the part into style/behavior bundles (kits.ts).
+export const htmlPart = (html: string, kits?: unknown): HtmlPart => ({
+  kind: "html",
+  html,
+  ...(Array.isArray(kits) && kits.length > 0
+    ? { kits: kits.filter((k) => typeof k === "string") }
+    : {}),
+});
 
 // The combined byte weight of a surface's parts, for size limits. image/trace
 // parts are tiny (refs + inline steps) — the asset bytes they point at are

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isKnownKit, KIT_IDS } from "./kits.ts";
 import type { IssueNode, SurfacePart } from "./types.ts";
 
 export interface SurfacePartParseResult {
@@ -73,8 +74,29 @@ const filteredArray = <T>(schema: z.ZodType<T, z.ZodTypeDef, any>) =>
     });
   }, z.array(schema));
 
-const strictHtmlPart = z.object({ kind: z.literal("html"), html: requiredString("html") });
-const looseHtmlPart = strictHtmlPart;
+// `kits` opts an html part into style/behavior bundles (kits.ts). Strict mode
+// rejects an unknown id with the valid set, so a CLI/REST typo is a clean 400;
+// loose mode filters unknown ids out rather than dropping the whole part.
+const strictKitId = z.string().refine(isKnownKit, (id) => ({
+  message: `unknown kit "${id}" — known: ${KIT_IDS.join(", ")}`,
+}));
+const strictHtmlPart = z.object({
+  kind: z.literal("html"),
+  html: requiredString("html"),
+  kits: z.array(strictKitId).optional(),
+});
+// Loose mode keeps only known kit ids and omits the field entirely when none
+// remain — so a junk `kits` never lingers as an empty or undefined key.
+const looseHtmlPart = z
+  .object({
+    kind: z.literal("html"),
+    html: requiredString("html"),
+    kits: z.unknown().optional(),
+  })
+  .transform((p) => {
+    const kits = Array.isArray(p.kits) ? p.kits.filter(isKnownKit) : [];
+    return { kind: "html" as const, html: p.html, ...(kits.length > 0 ? { kits } : {}) };
+  });
 
 const strictMarkdownPart = z.object({
   kind: z.literal("markdown"),

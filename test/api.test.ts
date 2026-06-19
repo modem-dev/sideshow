@@ -127,6 +127,58 @@ test("publishes a combined html+diff surface; /s renders the html part only", as
   assert.equal((await app.request(`/s/${surface.id}?part=1`)).status, 404);
 });
 
+test("a snippet's kits ride the html part and inject the kit CSS/JS at /s", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/snippets",
+    json({ title: "Deck", html: "<div class=deck></div>", kits: ["slides"] }),
+  );
+  assert.equal(res.status, 201);
+  const surface = (await res.json()) as any;
+
+  // the kits persist on the stored html part
+  const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
+  assert.deepEqual(full.parts[0].kits, ["slides"]);
+
+  // /s injects the kit's css (rail/deck rules) and its behavior js
+  const doc = await (await app.request(`/s/${surface.id}`)).text();
+  assert.match(doc, /\.deck>\.slide/);
+  assert.match(doc, /querySelector\('\.deck'\)/);
+
+  // a plain snippet (no kits) gets neither
+  const plain = await app.request("/api/snippets", json({ title: "Plain", html: "<p>x</p>" }));
+  const plainSurface = (await plain.json()) as any;
+  const plainDoc = await (await app.request(`/s/${plainSurface.id}`)).text();
+  assert.doesNotMatch(plainDoc, /querySelector\('\.deck'\)/);
+});
+
+test("an unknown kit id is rejected before storage (400)", async () => {
+  const app = makeApp();
+  const bad = await app.request(
+    "/api/snippets",
+    json({ title: "x", html: "<p>x</p>", kits: ["bogus"] }),
+  );
+  assert.equal(bad.status, 400);
+  assert.match(((await bad.json()) as any).error, /unknown kit "bogus"/);
+
+  const badPart = await app.request(
+    "/api/surfaces",
+    json({ title: "x", parts: [{ kind: "html", html: "<p>x</p>", kits: ["bogus"] }] }),
+  );
+  assert.equal(badPart.status, 400);
+});
+
+test("GET /api/kits advertises the available kits without the css payload", async () => {
+  const app = makeApp();
+  const kits = (await (await app.request("/api/kits")).json()) as any[];
+  const ids = kits.map((k) => k.id);
+  assert.ok(ids.includes("issues") && ids.includes("slides"));
+  for (const k of kits) {
+    assert.ok(typeof k.summary === "string" && k.summary.length > 0);
+    assert.equal("css" in k, false);
+  }
+});
+
 test("REST surface routes reject malformed parts before storage", async () => {
   const app = makeApp();
 

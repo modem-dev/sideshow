@@ -96,12 +96,12 @@ server.registerTool(
     description: MCP_TOOL_DESCRIPTIONS.publishSnippet,
     inputSchema: STDIO_MCP_INPUT_SCHEMAS.publishSnippet,
   },
-  async ({ title, html, sessionTitle }) => {
+  async ({ title, html, kits, sessionTitle }) => {
     const session = await ensureSession(sessionTitle);
     const created = JSON.parse(
       await api("/api/surfaces", {
         method: "POST",
-        body: JSON.stringify({ title, parts: [{ kind: "html", html }], session }),
+        body: JSON.stringify({ title, parts: [{ kind: "html", html, kits }], session }),
       }),
     );
     return text({ ...created, url: `${API}/s/${created.id}` });
@@ -114,8 +114,8 @@ server.registerTool(
     description: MCP_TOOL_DESCRIPTIONS.updateSnippet,
     inputSchema: STDIO_MCP_INPUT_SCHEMAS.updateSnippet,
   },
-  async ({ id, html, title }) => {
-    const parts = html === undefined ? undefined : [{ kind: "html", html }];
+  async ({ id, html, title, kits }) => {
+    const parts = html === undefined ? undefined : [{ kind: "html", html, kits }];
     const updated = JSON.parse(
       await api(`/api/surfaces/${id}`, { method: "PUT", body: JSON.stringify({ parts, title }) }),
     );

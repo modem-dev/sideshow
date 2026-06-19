@@ -76,6 +76,7 @@ for (const cmd of [
   "comment",
   "list",
   "issue-tree",
+  "kits",
 ]) {
   test(`${cmd} --help prints usage and exits 0`, async () => {
     const { code, stdout, stderr } = await run(cmd, "--help");
@@ -190,6 +191,63 @@ test("issue-tree publishes from a bare-root JSON file", async () => {
     assert.equal(full.parts[0].kind, "issue-tree");
     assert.equal(full.parts[0].root.ref, "ENG-1");
     assert.equal(full.parts[0].root.children[0].ref, "#1");
+  } finally {
+    await server.close();
+  }
+});
+
+test("publish --kit puts the (deduped) kit ids on the html part", async () => {
+  const server = await serveApp();
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "sideshow-kit-"));
+    const file = join(dir, "x.html");
+    writeFileSync(file, "<div class=tree></div>");
+    const { code, stdout } = await runWith(
+      { env: { SIDESHOW_URL: server.url } },
+      "publish",
+      file,
+      "--kit",
+      "issues",
+      "--kit",
+      "slides,issues",
+    );
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout);
+    const full = await fetch(`${server.url}/api/surfaces/${out.id}`).then((r) => r.json() as any);
+    assert.deepEqual(full.parts[0].kits, ["issues", "slides"]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("publish --kit with an unknown id fails with a clear error", async () => {
+  const server = await serveApp();
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "sideshow-kit-"));
+    const file = join(dir, "x.html");
+    writeFileSync(file, "<p>x</p>");
+    const { code, stderr } = await runWith(
+      { env: { SIDESHOW_URL: server.url } },
+      "publish",
+      file,
+      "--kit",
+      "bogus",
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /unknown kit "bogus"/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("kits lists the board's available kits", async () => {
+  const server = await serveApp();
+  try {
+    const { code, stdout } = await runWith({ env: { SIDESHOW_URL: server.url } }, "kits");
+    assert.equal(code, 0);
+    const kits = JSON.parse(stdout);
+    assert.ok(kits.some((k: any) => k.id === "issues"));
+    assert.ok(kits.some((k: any) => k.id === "slides"));
   } finally {
     await server.close();
   }

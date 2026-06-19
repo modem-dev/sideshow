@@ -1,3 +1,4 @@
+import { kitAssets } from "./kits.ts";
 import { type Theme, themeById, tokenThemeCss, viewerThemeCss } from "./themes.ts";
 
 // Origins html parts may load external resources from. Mirrors the allowlist
@@ -237,9 +238,14 @@ export function renderHtmlPage(doc: {
   html: string;
   origin: string;
   theme?: Theme | string;
+  // Opt-in kits (kits.ts): their CSS/JS is injected after the base kit. The JS
+  // is plain inline script — same trust level as the bridge, already covered by
+  // the html-part CSP's `script-src 'unsafe-inline'`. Unknown ids are ignored.
+  kits?: string[];
 }): string {
   const theme =
     typeof doc.theme === "string" || doc.theme == null ? themeById(doc.theme) : doc.theme;
+  const kit = kitAssets(doc.kits);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -247,12 +253,13 @@ export function renderHtmlPage(doc: {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${buildCsp(doc.origin)}">
 <title>${escapeHtml(doc.title)}</title>
-<style>${tokenThemeCss(theme)}${TOKENS_CSS}${KIT_CSS}</style>
+<style>${tokenThemeCss(theme)}${TOKENS_CSS}${KIT_CSS}${kit.css}</style>
 </head>
 <body>
 ${SVG_DEFS}
 ${doc.html}
 <script>${BRIDGE_JS}</script>
+${kit.js ? `<script>${kit.js}</script>` : ""}
 </body>
 </html>`;
 }
