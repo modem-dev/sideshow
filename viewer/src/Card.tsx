@@ -33,6 +33,7 @@ import { activeTheme } from "./theme.ts";
 import { TracePart } from "./TracePart.tsx";
 import {
   comments,
+  focusSurface,
   scrollTarget,
   sendComment,
   sessions,
@@ -88,6 +89,18 @@ export function Card(props: { surface: Surface }) {
       setScrollTarget(null);
       card.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+    // Update the URL as the user scrolls past surfaces (replaceState, no
+    // history noise). The first card that crosses the 50% threshold wins.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) focusSurface(props.surface.id);
+        }
+      },
+      { threshold: 0.5 },
+    );
+    observer.observe(card);
+    onCleanup(() => observer.disconnect());
   });
 
   const versionRange = (latest: number) => {
@@ -97,7 +110,7 @@ export function Card(props: { surface: Surface }) {
   };
 
   return (
-    <div class="card" ref={(el) => (card = el)}>
+    <div class="card" data-id={props.surface.id} ref={(el) => (card = el)}>
       <div class="card-head">
         <span class="card-title">{props.surface.title}</span>
         <span class="vslot">

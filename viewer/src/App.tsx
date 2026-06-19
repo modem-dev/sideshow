@@ -11,6 +11,7 @@ import {
   connect,
   dismissUpdate,
   groupSessions,
+  handlePopState,
   live,
   navOpen,
   nearBottom,
@@ -88,6 +89,9 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeydown);
     onCleanup(() => window.removeEventListener("keydown", onKeydown));
+    // URL routing: handle browser back/forward
+    window.addEventListener("popstate", handlePopState);
+    onCleanup(() => window.removeEventListener("popstate", handlePopState));
   });
 
   // unseen activity badges the tab title
