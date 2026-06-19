@@ -11,6 +11,21 @@ function csp(html: string): string {
   return m![1];
 }
 
+// Parse the rendered <meta http-equiv> CSP into directive -> source tokens.
+// Asserting on exact source tokens (array membership) rather than substring-
+// matching the policy string keeps these checks precise and avoids the
+// URL-substring-sanitization shape static analysis (correctly) distrusts.
+function cspDirectives(doc: string): Record<string, string[]> {
+  const m = /content="([^"]*)"/.exec(doc.slice(doc.indexOf("Content-Security-Policy")));
+  const policy = m ? m[1] : "";
+  const out: Record<string, string[]> = {};
+  for (const directive of policy.split(";")) {
+    const [name, ...sources] = directive.trim().split(/\s+/);
+    if (name) out[name] = sources;
+  }
+  return out;
+}
+
 // The CDN allowlist html parts may load from. This is a deliberate, fixed set —
 // the test pins it so widening it (a new origin, a wildcard) is a conscious edit
 // that updates this list, never an accident.
@@ -120,16 +135,14 @@ test("renderSandboxedPart embeds the body and css inside the sandbox doc", () =>
 });
 
 test("renderSandboxedPart uses a tighter CSP than html parts: no connect-src, no CDN", () => {
-  const policy = csp(renderSandboxedPart({ body: "x", css: "", origin: ORIGIN }));
-  assert.ok(policy.includes("default-src 'none'"), "locked-down default");
-  assert.ok(policy.includes("script-src 'unsafe-inline'"), "only the inline bridge runs");
+  const d = cspDirectives(renderSandboxedPart({ body: "x", css: "", origin: ORIGIN }));
+  assert.deepEqual(d["default-src"], ["'none'"], "locked-down default");
+  // script-src is EXACTLY the inline bridge — no CDN sources leak in
+  assert.deepEqual(d["script-src"], ["'unsafe-inline'"], "only the inline bridge runs");
   // a contained script must have no way to phone home
-  assert.ok(!policy.includes("connect-src"), "no connect-src");
-  // rich parts never load CDN scripts (unlike html parts)
-  assert.ok(!policy.includes("cdnjs"), "no CDN allowlist");
-  assert.ok(!policy.includes("esm.sh"), "no CDN allowlist");
+  assert.ok(!("connect-src" in d), "no connect-src");
   // uploaded images still embed by absolute origin URL
-  assert.ok(policy.includes(`img-src`) && policy.includes(ORIGIN), "origin allowed for images");
+  assert.ok(d["img-src"]?.includes(ORIGIN), "origin allowed for images");
 });
 
 test("escapeHtml neutralizes markup metacharacters", () => {
