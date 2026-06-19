@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show }
 import { AgentMark } from "./agentMarks.tsx";
 import { api, relTime, sessionLabel, type SessionRow } from "./api.ts";
 import { Card, cardEls, frameForSource } from "./Card.tsx";
+import { applyFrameHeight } from "./SandboxedPart.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
 import { activeTheme, initTheme, setTheme, themeOptions } from "./theme.ts";
@@ -264,7 +265,7 @@ async function onBridgeMessage(ev: MessageEvent) {
   // several html-part iframes, so resize must target the exact one.
   const src = frameForSource(ev.source);
   if (d.type === "resize" && src) {
-    src.iframe.style.height = Math.min(Math.max(Number(d.height), 48), 2200) + "px";
+    applyFrameHeight(src.iframe, d.height);
   } else if (d.type === "send-prompt" && src) {
     await api("/api/comments", {
       method: "POST",

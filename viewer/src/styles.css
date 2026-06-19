@@ -444,10 +444,21 @@ iframe {
   border-top: 0.5px solid var(--border);
   background: transparent;
 }
+/* Rich parts (markdown, mermaid, diff) render inside opaque-origin sandbox
+   iframes — their content styles live in each component's CSS string, shipped
+   into the frame. These rules only size the frame in the card; the bridge sets
+   its height from the reported content height. */
+.partframe {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+}
+.mdframe {
+  border-top: 0.5px solid var(--border);
+}
 .diffpart {
   border-top: 0.5px solid var(--border);
-  overflow: auto;
-  font-size: 12.5px;
 }
 .diff-error {
   padding: 10px 14px;
@@ -477,179 +488,18 @@ iframe {
   font-size: 12px;
   color: var(--muted);
 }
-/* Terminal part: a dark terminal window, regardless of viewer theme — that is
-   what terminal output looks like. AnsiUp emits inline-styled spans on top of
-   this base palette. */
-.terminalpart {
+/* Terminal part renders inside a sandbox iframe (its window styles ship in
+   TerminalPart's CSS string); this only draws the separator from the card. */
+.termframe {
   border-top: 0.5px solid var(--border);
-  background: var(--term-bg);
-}
-.term-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  background: var(--term-bar);
-  border-bottom: 0.5px solid #000;
-}
-.term-dots {
-  display: inline-flex;
-  gap: 6px;
-}
-.term-dots span {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #555;
-}
-.term-dots span:nth-child(1) {
-  background: #ff5f56;
-}
-.term-dots span:nth-child(2) {
-  background: #ffbd2e;
-}
-.term-dots span:nth-child(3) {
-  background: #27c93f;
-}
-.term-title {
-  font-size: 11.5px;
-  color: var(--term-title);
-  font-family: ui-monospace, monospace;
-}
-.term-body {
-  margin: 0;
-  padding: 12px 14px;
-  overflow-x: auto;
-  white-space: pre;
-  color: var(--term-fg);
-  font:
-    12.5px/1.5 ui-monospace,
-    "SF Mono",
-    Menlo,
-    Consolas,
-    monospace;
-  tab-size: 8;
 }
 .asset-gone {
   padding: 10px 14px;
   font-size: 12px;
   color: var(--faint);
 }
-.mdpart {
-  border-top: 0.5px solid var(--border);
-  padding: 4px 16px 14px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text);
-  overflow-wrap: anywhere;
-}
-.mdpart h1,
-.mdpart h2,
-.mdpart h3,
-.mdpart h4 {
-  line-height: 1.3;
-  margin: 1.2em 0 0.5em;
-  font-weight: 600;
-}
-.mdpart h1 {
-  font-size: 1.5em;
-}
-.mdpart h2 {
-  font-size: 1.25em;
-}
-.mdpart h3 {
-  font-size: 1.1em;
-}
-.mdpart > :first-child {
-  margin-top: 0.4em;
-}
-.mdpart p,
-.mdpart ul,
-.mdpart ol,
-.mdpart blockquote,
-.mdpart table {
-  margin: 0.5em 0;
-}
-.mdpart ul,
-.mdpart ol {
-  padding-left: 1.5em;
-}
-.mdpart li {
-  margin: 0.2em 0;
-}
-.mdpart a {
-  color: var(--accent);
-  text-decoration: none;
-}
-.mdpart a:hover {
-  text-decoration: underline;
-}
-.mdpart code {
-  font: 0.875em var(--font-mono, ui-monospace, monospace);
-  background: var(--hover);
-  padding: 0.12em 0.35em;
-  border-radius: 4px;
-}
-.mdpart pre {
-  background: var(--panel);
-  border: 0.5px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  overflow: auto;
-}
-.mdpart pre code {
-  background: none;
-  padding: 0;
-  font-size: 12.5px;
-}
-/* shiki dual-theme: light values render inline; this flips to the dark theme's
-   --shiki-dark / --shiki-dark-bg under a dark color scheme (matches DiffPart). */
-@media (prefers-color-scheme: dark) {
-  .mdpart .shiki,
-  .mdpart .shiki span {
-    color: var(--shiki-dark) !important;
-    background-color: var(--shiki-dark-bg) !important;
-  }
-}
-.mdpart blockquote {
-  margin-left: 0;
-  padding-left: 12px;
-  border-left: 2px solid var(--border-2);
-  color: var(--muted);
-}
-.mdpart table {
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.mdpart th,
-.mdpart td {
-  border: 0.5px solid var(--border);
-  padding: 4px 8px;
-  text-align: left;
-}
-.mdpart th {
-  background: var(--hover);
-}
-.mdpart img {
-  max-width: 100%;
-  height: auto;
-  border-radius: 6px;
-}
-.mdpart hr {
-  border: none;
-  border-top: 0.5px solid var(--border);
-  margin: 1em 0;
-}
 .mermaidpart {
   border-top: 0.5px solid var(--border);
-  padding: 14px 16px;
-  /* center the diagram; mermaid sizes the SVG to its content */
-  text-align: center;
-  overflow: auto;
-}
-.mermaid-svg svg {
-  max-width: 100%;
-  height: auto;
 }
 .mermaid-error {
   padding: 10px 14px;
@@ -918,10 +768,15 @@ a.itree-ref:hover {
 .cmt.user .who {
   color: var(--accent);
 }
-.cmt .txt {
-  color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
+/* Comment text renders in an opaque-origin sandbox iframe (its text styles ship
+   in CMT_CSS). flex:1 takes the row's free space; the resize bridge sets height,
+   but seed a one-line height so there's no tall-iframe flash before it reports. */
+.cmtframe {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  border: 0;
+  background: transparent;
 }
 .cmt .when {
   flex: none;

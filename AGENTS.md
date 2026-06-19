@@ -42,10 +42,14 @@ consciously, not as a side effect):
 - `server/storage.ts` — `JsonFileStore` (local Node). `workers/sqlStore.ts` —
   `SqlStore` (Durable Object SQLite). Both must pass `test/storeContract.ts`,
   and both migrate legacy `snippets`/`snippetId` data to surfaces on load.
-- `server/surfacePage.ts` — sandboxed document for one html part: CSP allowlist
-  and the postMessage bridge (resize, sendPrompt, openLink). Only html parts
-  reach here — markdown, diff, terminal, image, mermaid, and issue-tree parts are
-  data the viewer renders natively, never markup in the sandbox.
+- `server/surfacePage.ts` — sandboxed documents for surface markup. `renderHtmlPage`
+  wraps an html part (CDN-allowlist CSP + the postMessage bridge: resize,
+  sendPrompt, openLink). `renderSandboxedPart` wraps markup the viewer rendered
+  to a string (markdown/mermaid/diff/terminal) under a tighter CSP (no
+  `connect-src`, no CDN) — see `viewer/src/SandboxedPart.tsx`. Image, trace, and
+  issue-tree parts stay native because they have no HTML sink (the viewer renders
+  them with text nodes / `<img>` / JSX). No agent markup is ever set as
+  `innerHTML` in the trusted viewer origin.
 - `server/themes.ts` — theme registry (github/gruvbox/one), runtime-agnostic so
   both server and viewer import it. One `Palette` per light/dark per theme; the
   viewer-chrome vars and the html-part `--color-*` tokens are both _derived_
@@ -73,11 +77,30 @@ consciously, not as a side effect):
   in relative imports, no build step (`npm pack` compiles `dist/` for the
   published CLI). The viewer is the one exception: Solid JSX needs real
   compilation, so `viewer/src/` is Vite-built (`npm run build:viewer`).
-- Snippet iframes are sandboxed without `allow-same-origin`. Never weaken
-  this. WebKit quirk: in sandboxed iframes ResizeObserver's initial callback
-  may not fire and `documentElement.scrollHeight` ratchets to viewport height
-  — the bridge reports `body.scrollHeight` on `load` plus staggered timers.
-  Don't "simplify" it back; e2e covers it on real WebKit.
+- **Agent-authored content that becomes HTML MUST render inside a sandboxed
+  iframe — never as `innerHTML` (or any HTML sink) in the trusted viewer
+  origin.** This is the core isolation rule, and it's load-bearing: the viewer
+  shares an origin with the board's authenticated API and the comment→agent
+  channel, so any markup that executes there can read every surface, act as the
+  user, and inject prompts back to the agent. The rule applies to every part
+  kind, comments, and anything else agent-authored. The two safe ways to render
+  it: (a) **build a STRING and hand it to a sandbox iframe** — `SandboxedPart`
+  for viewer-rendered parts (markdown/mermaid/diff/terminal, comments) and
+  `renderHtmlPage` at `/s/:id` for html parts; or (b) **keep it as data and
+  render with Solid text nodes / element attributes**, which escape by
+  construction (image, trace). String-building in the viewer is fine — a string
+  is not a DOM sink; danger only starts when it reaches the DOM, which must
+  happen at an opaque origin. When you add a part kind, pick (a) or (b); never a
+  third way. The iframes are sandboxed without `allow-same-origin` (opaque
+  origin) and `connect-src`-free for rich parts (no exfil even if contained
+  script runs); never weaken this.
+- WebKit quirk in sandboxed iframes: ResizeObserver's initial callback may not
+  fire and `documentElement.scrollHeight` ratchets to viewport height — the
+  bridge reports `body.scrollHeight` on `load` plus staggered timers. Don't
+  "simplify" it back; e2e covers it on real WebKit. Watch the inverse too: the
+  bridge sizes the frame from `body.scrollHeight`, so a `white-space: pre-wrap`
+  on `body` makes the template's surrounding newlines render as blank lines and
+  inflate the height — scope `pre-wrap` to a wrapper element (see `CMT_CSS`).
 - Feedback cursor: each session carries `agentSeq`, the highest comment seq
   already delivered to the agent. Piggyback collection and `author=user`
   waits advance it, and `author=user` session waits with no explicit `after`
@@ -87,13 +110,14 @@ consciously, not as a side effect):
 - `SqlStore` schema changes need in-place migration — deployed Durable
   Objects can't be reset. Follow the `pragma_table_info` probe pattern in its
   constructor.
-- A theme switch must re-theme all four layers or it looks broken. Server-side
-  html parts are injected at `/s/:id` (so the viewer keys each iframe `src` on
-  `activeTheme()` to reload them); client-side, `viewer/src/theme.ts` swaps the
-  chrome `<style>`, and `MarkdownPart`/`DiffPart`/`MermaidPart` read
-  `activeTheme()` reactively (shiki + mermaid bake colors in, so they re-render;
-  the terminal is intentionally theme-independent). Add presets to the registry,
-  not per-component.
+- A theme switch must re-theme every layer or it looks broken. Server-side html
+  parts are injected at `/s/:id` (so the viewer keys each iframe `src` on
+  `activeTheme()` to reload them); `viewer/src/theme.ts` swaps the chrome
+  `<style>`. `MarkdownPart`/`DiffPart`/`MermaidPart` read `activeTheme()`
+  reactively and re-render their string (shiki + mermaid bake colors in), which
+  rebuilds the `srcdoc` `SandboxedPart` wraps it in — so the iframe reloads with
+  the new chrome vars (`viewerThemeCss`) injected. The terminal is intentionally
+  theme-independent. Add presets to the registry, not per-component.
 - The server reads `viewer/dist/index.html` and `guide/` files at boot —
   rebuild (`npm run build:viewer`) and restart to see viewer changes.
   `npm run dev` runs a Vite watch build alongside the server; the e2e suite

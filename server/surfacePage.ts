@@ -1,4 +1,4 @@
-import { type Theme, themeById, tokenThemeCss } from "./themes.ts";
+import { type Theme, themeById, tokenThemeCss, viewerThemeCss } from "./themes.ts";
 
 // Origins html parts may load external resources from. Mirrors the allowlist
 // agents already know from Claude's inline widget surface.
@@ -173,12 +173,65 @@ if (window.ResizeObserver) {
 }
 `;
 
-const escapeHtml = (s: string) =>
+export const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 // Wrap one html part in the themed, sandboxed document the iframe loads. The
 // board's color tokens (theme-dependent) are injected first so the static base
 // + kit resolve against them; `theme` defaults to the github preset.
+// CSP for a rich part (markdown/mermaid/diff). These render markup our own
+// libraries produced — they never load CDN scripts and never need the network,
+// so the policy is *tighter* than an html part's: only the inline bridge runs,
+// and there is no `connect-src`, so even if a sanitizer regression let agent
+// markup execute, the script is boxed into an opaque origin with no way to
+// phone home. `img-src origin` lets inline markdown images at <origin>/a/:id
+// load (the iframe is opaque-origin, so `'self'` matches nothing — same reason
+// buildCsp adds it explicitly).
+function buildRichCsp(origin: string): string {
+  return [
+    `default-src 'none'`,
+    `script-src 'unsafe-inline'`,
+    `style-src 'unsafe-inline'`,
+    `img-src https: data: blob: ${origin}`,
+    `font-src data:`,
+  ].join("; ");
+}
+
+// Wrap pre-rendered, *untrusted* markup (markdown HTML, a mermaid SVG, a diff's
+// SSR output) in the same opaque-origin sandbox html parts get. The markup was
+// built as a STRING in the trusted viewer (string building is not a DOM sink),
+// and only becomes live DOM here, inside the iframe — so a markdown-it / shiki /
+// mermaid / DOMPurify / @pierre-diffs sanitizer bypass can no longer reach the
+// board. `css` is the part-specific stylesheet (prose/diff/mermaid rules);
+// chrome theme vars come from viewerThemeCss so the part matches the viewer.
+export function renderSandboxedPart(doc: {
+  body: string;
+  css: string;
+  origin: string;
+  theme?: Theme | string;
+}): string {
+  const theme =
+    typeof doc.theme === "string" || doc.theme == null ? themeById(doc.theme) : doc.theme;
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="${buildRichCsp(doc.origin)}">
+<!-- srcdoc's base URL is about:srcdoc, so relative URLs (e.g. a markdown
+     image at /a/:id) would not resolve; pin the base to the server origin.
+     img-src in buildRichCsp allows that origin. (html parts don't need this —
+     they load via /s/:id, whose URL is already the base.) -->
+<base href="${doc.origin}/">
+<style>${viewerThemeCss(theme)}${doc.css}</style>
+</head>
+<body>
+${doc.body}
+<script>${BRIDGE_JS}</script>
+</body>
+</html>`;
+}
+
 export function renderHtmlPage(doc: {
   title: string;
   html: string;

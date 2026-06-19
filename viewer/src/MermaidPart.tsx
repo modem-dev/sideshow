@@ -1,6 +1,15 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import type { MermaidPart as MermaidPartData } from "./api.ts";
+import { SandboxedPart } from "./SandboxedPart.tsx";
 import { activeTheme } from "./theme.ts";
+
+// Wrapper styles shipped into the sandbox iframe. Mermaid bakes theme colors
+// into the SVG itself (read from the trusted viewer's vars at render time), so
+// the iframe only needs to center and constrain it.
+const MERMAID_CSS = `
+body { margin: 0; padding: 14px 16px; background: transparent; text-align: center; }
+svg { max-width: 100%; height: auto; }
+`;
 
 // Mermaid bakes theme colors into the SVG at render time (unlike shiki's
 // dual-theme output, which a CSS rule can flip), so the diagram must be
@@ -152,8 +161,9 @@ export function MermaidPart(props: { part: MermaidPartData }) {
           <pre>{props.part.mermaid}</pre>
         </div>
       ) : (
-        // eslint-disable-next-line solid/no-innerhtml -- sanitized: mermaid securityLevel 'strict' (DOMPurify)
-        <div class="mermaid-svg" innerHTML={svg()}></div>
+        // The SVG string is produced here (trusted), then parsed inside an
+        // opaque-origin iframe — a second boundary behind mermaid's DOMPurify.
+        <SandboxedPart class="partframe mermaidframe" body={svg()} css={MERMAID_CSS} />
       )}
     </div>
   );

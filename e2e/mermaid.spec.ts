@@ -18,13 +18,17 @@ test("a mermaid part renders a diagram as inline SVG in the viewer", async ({ pa
   const card = page.locator(".card:not(#sessionThread)");
   const mermaid = card.locator(".mermaidpart");
 
-  // rendered natively in the viewer document (no sandboxed iframe), as an SVG
-  const svg = mermaid.locator("svg");
+  // the diagram renders inside an opaque-origin sandbox iframe — a second
+  // boundary behind mermaid's DOMPurify. No allow-same-origin.
+  await expect(mermaid.locator("iframe.mermaidframe")).toHaveAttribute("sandbox", "allow-scripts");
+  const frame = mermaid.frameLocator("iframe.mermaidframe");
+
+  const svg = frame.locator("svg");
   await expect(svg).toBeVisible();
   // the node labels made it into the rendered graph
-  await expect(mermaid).toContainText("Start");
-  await expect(mermaid).toContainText("Choice");
-  // it's structured SVG, not an error fallback
+  await expect(frame.locator("body")).toContainText("Start");
+  await expect(frame.locator("body")).toContainText("Choice");
+  // it's structured SVG, not an error fallback (the fallback stays in the viewer)
   await expect(mermaid.locator(".mermaid-error")).toHaveCount(0);
 });
 

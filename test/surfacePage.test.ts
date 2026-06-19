@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { renderHtmlPage } from "../server/surfacePage.ts";
+import { escapeHtml, renderHtmlPage, renderSandboxedPart } from "../server/surfacePage.ts";
 
 const ORIGIN = "http://localhost:4000";
 
@@ -100,4 +100,42 @@ test("theme tokens are injected and resolve unknown/absent themes to the default
     unknown.match(/--color-text-primary:[^;]*/)?.[0],
     "unknown theme should render identically to the default",
   );
+});
+
+test("renderSandboxedPart embeds the body and css inside the sandbox doc", () => {
+  const doc = renderSandboxedPart({
+    body: "<p>hello</p>",
+    css: "p{color:red}",
+    origin: ORIGIN,
+  });
+  assert.ok(doc.includes("<p>hello</p>"), "body is present");
+  assert.ok(doc.includes("p{color:red}"), "css is present");
+  // srcdoc's base URL is about:srcdoc, so relative URLs (e.g. a markdown image
+  // at /a/:id) need an explicit base pinned to the origin to resolve.
+  assert.ok(doc.includes(`<base href="${ORIGIN}/">`), "base href pins the origin");
+  // the resize/openLink bridge ships in the frame so it can self-size
+  assert.ok(doc.includes("postMessage"), "bridge is present");
+  // chrome theme vars are injected (viewerThemeCss) so the part matches the viewer
+  assert.ok(doc.includes("--bg:"), "theme vars are injected");
+});
+
+test("renderSandboxedPart uses a tighter CSP than html parts: no connect-src, no CDN", () => {
+  const policy = csp(renderSandboxedPart({ body: "x", css: "", origin: ORIGIN }));
+  assert.ok(policy.includes("default-src 'none'"), "locked-down default");
+  assert.ok(policy.includes("script-src 'unsafe-inline'"), "only the inline bridge runs");
+  // a contained script must have no way to phone home
+  assert.ok(!policy.includes("connect-src"), "no connect-src");
+  // rich parts never load CDN scripts (unlike html parts)
+  assert.ok(!policy.includes("cdnjs"), "no CDN allowlist");
+  assert.ok(!policy.includes("esm.sh"), "no CDN allowlist");
+  // uploaded images still embed by absolute origin URL
+  assert.ok(policy.includes(`img-src`) && policy.includes(ORIGIN), "origin allowed for images");
+});
+
+test("escapeHtml neutralizes markup metacharacters", () => {
+  assert.equal(
+    escapeHtml(`<img src=x onerror="alert(1)">`),
+    "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;",
+  );
+  assert.equal(escapeHtml("a & b"), "a &amp; b");
 });

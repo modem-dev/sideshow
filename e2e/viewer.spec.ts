@@ -111,8 +111,9 @@ test("comment typed in the composer round-trips to the API", async ({ page, serv
   await input.fill("ship it");
   await input.press("Enter");
 
-  // renders in the thread (via SSE) and is persisted server-side
-  await expect(card.locator(".cmt .txt")).toHaveText("ship it");
+  // renders in the thread (via SSE) and is persisted server-side. The comment
+  // text renders inside its own opaque-origin sandbox iframe.
+  await expect(card.frameLocator(".cmtframe").locator("body")).toContainText("ship it");
   await expect(card.locator(".cmt .who")).toHaveText("you");
   await expect
     .poll(async () => {
@@ -181,7 +182,7 @@ test("a failed comment send restores the input instead of losing the message", a
   // and once the network is back, the same send goes through
   await page.unroute("**/api/comments");
   await input.press("Enter");
-  await expect(card.locator(".cmt .txt")).toHaveText("important feedback");
+  await expect(card.frameLocator(".cmtframe").locator("body")).toContainText("important feedback");
 });
 
 test("a comment echoes immediately, before the SSE round-trip confirms it", async ({
@@ -206,10 +207,31 @@ test("a comment echoes immediately, before the SSE round-trip confirms it", asyn
 
   const cmt = card.locator(".cmt");
   await expect(cmt).toHaveClass(/pending/);
-  await expect(cmt.locator(".txt")).toHaveText("instant echo");
+  await expect(cmt.frameLocator(".cmtframe").locator("body")).toContainText("instant echo");
   // settles into a confirmed comment, still exactly one copy
   await expect(cmt).not.toHaveClass(/pending/, { timeout: 10_000 });
   await expect(card.locator(".cmt")).toHaveCount(1);
+});
+
+test("a comment containing raw HTML is sandboxed and escaped, never a live node", async ({
+  page,
+  server,
+}) => {
+  await publish(server.url, { html: "<p>x</p>", title: "Doc", agent: "e2e" });
+
+  await page.goto(server.url);
+  const card = page.locator(".card");
+  await card.locator(".act.comment").click();
+  const input = card.locator(".composer input");
+  await input.fill("<img src=x onerror=alert(1)> hi");
+  await input.press("Enter");
+
+  // the comment renders inside an opaque-origin sandbox iframe...
+  await expect(card.locator(".cmtframe")).toHaveAttribute("sandbox", "allow-scripts");
+  const frame = card.frameLocator(".cmtframe");
+  // ...with the raw HTML escaped to text, never a live <img>
+  await expect(frame.locator("img")).toHaveCount(0);
+  await expect(frame.locator("body")).toContainText("<img src=x onerror=alert(1)> hi");
 });
 
 test("a snippet published while scrolled up shows a pill instead of yanking", async ({

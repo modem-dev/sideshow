@@ -22,12 +22,14 @@ import {
   type TerminalPart as TerminalPartData,
   type TracePart as TracePartData,
 } from "./api.ts";
+import { escapeHtml } from "../../server/surfacePage.ts";
 import { DiffPart } from "./DiffPart.tsx";
 import { CommentIcon, LinkIcon, OpenIcon, TrashIcon } from "./icons.tsx";
 import { ImagePart } from "./ImagePart.tsx";
 import { IssueTreePart } from "./IssueTreePart.tsx";
 import { MarkdownPart } from "./MarkdownPart.tsx";
 import { MermaidPart } from "./MermaidPart.tsx";
+import { SandboxedPart } from "./SandboxedPart.tsx";
 import { TerminalPart } from "./TerminalPart.tsx";
 import { activeTheme } from "./theme.ts";
 import { TracePart } from "./TracePart.tsx";
@@ -40,6 +42,23 @@ import {
   toast,
   type ViewComment,
 } from "./state.ts";
+
+// Comment text is plain text — it already renders as an escaped text node — but
+// it is shown right beside agent-rendered surfaces, so for consistency it goes
+// through the same opaque-origin sandbox: the text is escaped to a string here
+// and only parsed inside the iframe. `pre-wrap` preserves the author's line
+// breaks; the height comes from the resize bridge (a one-liner clamps to ~24px).
+const CMT_CSS = `
+body {
+  margin: 0;
+  background: transparent;
+  color: var(--text);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+/* pre-wrap lives on the text wrapper, NOT body — otherwise the newlines the
+   sandbox template puts around the body would render as blank lines. */
+.t { white-space: pre-wrap; word-break: break-word; }
+`;
 
 // Card registry keyed by surface id: the "new surface" pill scrolls to the
 // card element, and each card tracks its html-part iframes so the postMessage
@@ -299,7 +318,11 @@ function CommentRow(props: { comment: ViewComment }) {
       data-cid={props.comment.id}
     >
       <span class="who">{props.comment.author === "user" ? "you" : props.comment.author}</span>
-      <span class="txt">{props.comment.text}</span>
+      <SandboxedPart
+        class="cmtframe"
+        body={`<div class="t">${escapeHtml(props.comment.text)}</div>`}
+        css={CMT_CSS}
+      />
       <Show when={isUser()}>
         <button class="copy" title="Copy for pasting to your agent" onClick={copy}>
           ⧉
