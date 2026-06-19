@@ -159,6 +159,31 @@ test("html parts keep their CDN allowlist (rich-part tightening did not leak)", 
   assert.ok("connect-src" in html, "html parts still have connect-src");
 });
 
+test("the board origin is never a connect/script source — img/media only", () => {
+  // The server origin is deliberately in img-src/media-src so uploaded assets
+  // embed by URL. It must NEVER reach connect-src or script-src: that origin
+  // serves the authenticated board API and the comment->agent channel, so a
+  // contained script that could fetch it would defeat the whole sandbox. This
+  // is the exact exfil hole the existing 'self'/wildcard/`https:` checks miss —
+  // localhost:4000 is none of those, so it would slip past them.
+  for (const make of [
+    () => renderHtmlPage({ title: "t", html: "<p>x</p>", origin: ORIGIN }),
+    () => renderSandboxedPart({ body: "x", css: "", origin: ORIGIN }),
+  ]) {
+    const d = cspDirectives(make());
+    assert.ok(
+      !(d["connect-src"] ?? []).includes(ORIGIN),
+      "board origin must not be a connect source",
+    );
+    assert.ok(
+      !(d["script-src"] ?? []).includes(ORIGIN),
+      "board origin must not be a script source",
+    );
+    // it is present where it's meant to be, so this test can't pass vacuously
+    assert.ok(d["img-src"]?.includes(ORIGIN), "board origin should still embed images");
+  }
+});
+
 test("escapeHtml neutralizes markup metacharacters", () => {
   assert.equal(
     escapeHtml(`<img src=x onerror="alert(1)">`),

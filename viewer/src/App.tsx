@@ -255,9 +255,17 @@ async function onBridgeMessage(ev: MessageEvent) {
     key?: string;
   } | null;
   if (!d || !d.__sideshow) return;
-  // A surface iframe forwarded the session-switch shortcut because focus was
-  // inside it (see server/surfacePage.ts). Mirror the parent keydown handler.
+  // Every host-affecting message must come from a frame the viewer actually
+  // embedded — never an unexpected/nested frame. send-prompt and resize prove
+  // this implicitly (frameForSource resolves the exact html frame); the
+  // remaining types reach the host UI directly, so gate them on isOwnFrame.
+  // (frameForSource only knows html-part frames; switch-session is sent only by
+  // those, but open-link is sent by rich-part frames too, so use the broader
+  // check that recognizes any embedded iframe.)
   if (d.type === "switch-session") {
+    if (!isOwnFrame(ev.source)) return;
+    // A surface iframe forwarded the session-switch shortcut because focus was
+    // inside it (see server/surfacePage.ts). Mirror the parent keydown handler.
     void selectAdjacent(d.key === "ArrowUp" ? -1 : 1);
     return;
   }
@@ -272,9 +280,21 @@ async function onBridgeMessage(ev: MessageEvent) {
       body: JSON.stringify({ surface: src.id, text: String(d.text), author: "user" }),
     });
     toast("Sent to agent: " + d.text);
-  } else if (d.type === "open-link") {
+  } else if (d.type === "open-link" && isOwnFrame(ev.source)) {
     if (confirm(`Open external link?\n\n${d.url}`)) window.open(d.url, "_blank", "noopener");
   }
+}
+
+// True when `source` is the contentWindow of an iframe the viewer embedded
+// (html or rich part). frameForSource only tracks html-part frames; this is the
+// broader gate for messages rich-part frames also send (open-link). Identity
+// comparison works across the opaque-origin boundary even though the frame's
+// document is unreadable.
+function isOwnFrame(source: unknown): boolean {
+  for (const f of document.querySelectorAll("iframe")) {
+    if (f.contentWindow === source) return true;
+  }
+  return false;
 }
 
 function SessionItem(props: { session: SessionRow }) {
