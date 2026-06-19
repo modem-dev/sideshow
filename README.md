@@ -25,18 +25,6 @@ comment, revise: a two-way loop, right next to the conversation.
   </tr>
 </table>
 
-## Sponsor
-
-Sponsored by [Modem](https://modem.dev/go/oss-sideshow).
-
-<a href="https://modem.dev/go/oss-sideshow">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://modem.dev/images/logo/svg/modem-combined-white.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://modem.dev/images/logo/svg/modem-combined-black.svg">
-    <img src="https://modem.dev/images/logo/svg/modem-combined-black.svg" alt="Modem" width="220">
-  </picture>
-</a>
-
 ## Why
 
 - **See what your agent means.** An architecture it's proposing, a flow it's
@@ -160,6 +148,18 @@ native type-stripping, and the npm package ships compiled JS built on prepack.
 The viewer (`viewer/src/`, Solid) is Vite-built into a single self-contained
 `viewer/dist/index.html` (`npm run build:viewer`). See
 [AGENTS.md](AGENTS.md) for the full architecture and rules.
+
+## Sponsor
+
+Sponsored by [Modem](https://modem.dev/go/oss-sideshow).
+
+<a href="https://modem.dev/go/oss-sideshow">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://modem.dev/images/logo/svg/modem-combined-white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://modem.dev/images/logo/svg/modem-combined-black.svg">
+    <img src="https://modem.dev/images/logo/svg/modem-combined-black.svg" alt="Modem" width="220">
+  </picture>
+</a>
 
 ## License
 
