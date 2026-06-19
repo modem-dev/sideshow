@@ -180,7 +180,7 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.equal(await store.getSurface("missing"), null);
   });
 
-  contract("supports multi-part surfaces (html + diff + terminal)", async (store) => {
+  contract("supports multi-part surfaces (html + diff + terminal + issue-tree)", async (store) => {
     const session = await store.createSession({ agent: "pi" });
     const surface = await store.createSurface({
       sessionId: session.id,
@@ -188,10 +188,31 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
         htmlPart("<svg/>"),
         { kind: "diff", patch: "@@ -1 +1 @@", layout: "split" },
         { kind: "terminal", text: "$ ls\n\x1b[34mbin\x1b[0m", cols: 80, title: "shell" },
+        // issue-tree is the first part with a recursive nested-object shape; both
+        // stores serialize parts to JSON, so a deep round-trip is exactly what the
+        // contract guards.
+        {
+          kind: "issue-tree",
+          root: {
+            ref: "ENG-204",
+            title: "Epic",
+            state: "in-progress",
+            source: "linear",
+            children: [
+              { ref: "#1", title: "child", state: "done", source: "github" },
+              {
+                ref: "SUP-1",
+                title: "branch",
+                state: "blocked",
+                children: [{ ref: "JS-1", title: "leaf", state: "open", note: "deep" }],
+              },
+            ],
+          },
+        },
       ],
     });
     assert.ok(surface);
-    assert.equal(surface.parts.length, 3);
+    assert.equal(surface.parts.length, 4);
     assert.deepEqual(await store.getSurface(surface.id), surface);
   });
 

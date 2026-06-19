@@ -7,7 +7,7 @@ _use_ a running sideshow lives in `guide/AGENT_SETUP.md`, served at `/setup`.)
 ## What this is and why
 
 A live visual surface for terminal coding agents: agents publish surfaces
-(multi-part cards — html, markdown, diff, terminal, image, mermaid) over
+(multi-part cards — html, markdown, diff, terminal, image, mermaid, issue-tree) over
 CLI/MCP/HTTP; the user watches them render in a browser and comments back. The
 two-way loop — publish → live render → comment → revise/reply — is the product.
 When in doubt, optimize for the loop.
@@ -33,7 +33,7 @@ consciously, not as a side effect):
   (`/api/assets`, `/a/:id`), and the shared flow functions both REST and MCP call.
 - `server/types.ts` — data model + `Store` interface; no runtime imports. A
   surface is an ordered list of parts (`html` | `markdown` | `diff` | `terminal`
-  | `image` | `mermaid`); a snippet is sugar for a single html part.
+  | `image` | `mermaid` | `issue-tree`); a snippet is sugar for a single html part.
   `htmlPart` bridges the legacy snippet shape. Assets (uploaded blobs)
   are a separate entity, referenced by `image` parts; `selectEvictions`
   is the reference-aware LRU policy.
@@ -44,8 +44,8 @@ consciously, not as a side effect):
   and both migrate legacy `snippets`/`snippetId` data to surfaces on load.
 - `server/surfacePage.ts` — sandboxed document for one html part: CSP allowlist
   and the postMessage bridge (resize, sendPrompt, openLink). Only html parts
-  reach here — markdown, diff, terminal, image, and mermaid parts are data the
-  viewer renders natively, never markup in the sandbox.
+  reach here — markdown, diff, terminal, image, mermaid, and issue-tree parts are
+  data the viewer renders natively, never markup in the sandbox.
 - `server/themes.ts` — theme registry (github/gruvbox/one), runtime-agnostic so
   both server and viewer import it. One `Palette` per light/dark per theme; the
   viewer-chrome vars and the html-part `--color-*` tokens are both _derived_

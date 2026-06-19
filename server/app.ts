@@ -201,6 +201,15 @@ export function createApp({
   const app = new Hono();
   const bus = new EventBus();
 
+  // Last-resort safety net: any handler that throws (rather than returning a
+  // status) becomes a clean JSON 500 instead of leaking a stack or a bare crash.
+  // Validation rejects bad input with 4xx before this, so reaching here means an
+  // unexpected bug — log it so it isn't swallowed silently.
+  app.onError((err, c) => {
+    console.error("sideshow: unhandled error", err);
+    return c.json({ error: "internal error" }, 500);
+  });
+
   // Cached, fail-silent update lookup: being offline or rate-limited must
   // cost nothing but the absence of the notice. Failures are cached too, so
   // a dead network doesn't retry on every viewer load.

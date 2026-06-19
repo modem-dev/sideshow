@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { SurfacePart } from "./types.ts";
+import type { IssueNode, SurfacePart } from "./types.ts";
 
 export interface SurfacePartParseResult {
   parts: SurfacePart[];
@@ -64,7 +64,7 @@ const looseTraceStep = z.object({
   ts: optionalLooseString,
 });
 
-const filteredArray = <T>(schema: z.ZodType<T>) =>
+const filteredArray = <T>(schema: z.ZodType<T, z.ZodTypeDef, any>) =>
   z.preprocess((raw) => {
     if (!Array.isArray(raw)) return raw;
     return raw.flatMap((item) => {
@@ -96,6 +96,89 @@ const looseMermaidPart = z
   .object({ kind: z.literal("mermaid"), mermaid: z.string() })
   .refine((p) => p.mermaid.trim().length > 0, {
     message: 'mermaid part requires non-empty "mermaid"',
+  });
+
+const issueStates = ["open", "in-progress", "blocked", "done", "closed"] as const;
+const strictIssueState = z.enum(issueStates);
+// Loose mode keeps an unknown/missing state from dropping a whole node — it
+// falls back to "open" (the only safe default: it never inflates the rollup).
+const looseIssueState = z.preprocess(
+  (v) => (typeof v === "string" && (issueStates as readonly string[]).includes(v) ? v : "open"),
+  strictIssueState,
+);
+const looseRequiredString = z.preprocess((v) => (typeof v === "string" ? v : ""), z.string());
+
+// issue-tree is the only recursive part kind, so it is the only one whose nesting
+// is unbounded. The recursive zod schemas below overflow the call stack on a deep
+// `children` chain (a ~1k-deep tree is only ~50 KB, far under MAX_SURFACE_BYTES),
+// and so do partsByteLength and the viewer renderer. Callers bound the RAW tree
+// with the iterative walk below BEFORE handing it to the schema, so the recursive
+// parse only ever sees a tree within these caps.
+export const MAX_ISSUE_TREE_DEPTH = 32;
+export const MAX_ISSUE_TREE_NODES = 2000;
+
+// Iterative (explicit-stack) check that a raw issue-tree root stays within the
+// depth and node caps. Shape errors (non-objects, bad fields) are left to the
+// schema; this only guards size so the recursive parse can't blow the stack.
+export function issueTreeWithinBounds(root: unknown): boolean {
+  if (!root || typeof root !== "object") return true;
+  let nodes = 0;
+  const stack: Array<{ node: unknown; depth: number }> = [{ node: root, depth: 1 }];
+  while (stack.length > 0) {
+    const { node, depth } = stack.pop()!;
+    if (depth > MAX_ISSUE_TREE_DEPTH) return false;
+    if (++nodes > MAX_ISSUE_TREE_NODES) return false;
+    const children =
+      node && typeof node === "object" ? (node as { children?: unknown }).children : undefined;
+    if (Array.isArray(children)) {
+      for (const child of children) stack.push({ node: child, depth: depth + 1 });
+    }
+  }
+  return true;
+}
+
+const strictIssueNode: z.ZodType<IssueNode> = z.lazy(() =>
+  z.object({
+    ref: requiredString("ref"),
+    title: requiredString("title"),
+    state: strictIssueState,
+    source: z.string().optional(),
+    note: z.string().optional(),
+    url: z.string().optional(),
+    children: z.array(strictIssueNode).optional(),
+  }),
+);
+const looseIssueNode: z.ZodType<IssueNode, z.ZodTypeDef, unknown> = z.lazy(() =>
+  z
+    .object({
+      ref: looseRequiredString,
+      title: looseRequiredString,
+      state: looseIssueState,
+      source: optionalLooseString,
+      note: optionalLooseString,
+      url: optionalLooseString,
+      children: filteredArray(looseIssueNode).optional(),
+    })
+    // looseRequiredString coerces a missing ref/title to "", so a junk child like
+    // {} would otherwise survive as a blank, ref-less row that still counts toward
+    // the rollup. Drop children with neither a ref nor a title (bottom-up, since
+    // each child is already transformed before this runs).
+    .transform((node) => {
+      if (!node.children) return node;
+      const kids = node.children.filter((c) => c.ref.trim() !== "" || c.title.trim() !== "");
+      return { ...node, children: kids.length > 0 ? kids : undefined };
+    }),
+);
+
+const strictIssueTreePart = z.object({
+  kind: z.literal("issue-tree"),
+  root: strictIssueNode,
+});
+// Loose mode drops a rootless / empty tree rather than publishing a blank card.
+const looseIssueTreePart = z
+  .object({ kind: z.literal("issue-tree"), root: looseIssueNode })
+  .refine((p) => p.root.ref.trim().length > 0 || p.root.title.trim().length > 0, {
+    message: 'issue-tree part requires a root with "ref" or "title"',
   });
 
 const strictDiffPart = z
@@ -174,6 +257,7 @@ const looseSurfacePart = z.union([
   looseImagePart,
   looseTracePart,
   looseTerminalPart,
+  looseIssueTreePart,
 ]);
 
 // Runtime SurfacePart parser shared by REST and MCP. REST uses strict mode to
@@ -191,6 +275,16 @@ function parseSurfaceParts(raw: unknown, opts: { strict?: boolean } = {}): Surfa
   }
 
   const parts: SurfacePart[] = raw.flatMap((part) => {
+    // Drop an over-deep issue-tree before the recursive parse would overflow —
+    // the tolerant path skips it like any other invalid part.
+    if (
+      part &&
+      typeof part === "object" &&
+      (part as { kind?: unknown }).kind === "issue-tree" &&
+      !issueTreeWithinBounds((part as { root?: unknown }).root)
+    ) {
+      return [];
+    }
     const parsed = looseSurfacePart.safeParse(part);
     return parsed.success ? [parsed.data as SurfacePart] : [];
   });
@@ -216,8 +310,20 @@ function parseStrictPart(
   if (!raw || typeof raw !== "object")
     return { part: null, errors: [`${path}: must be an object`] };
 
-  const schema = schemaForKind((raw as { kind?: unknown }).kind);
+  const kind = (raw as { kind?: unknown }).kind;
+  const schema = schemaForKind(kind);
   if (!schema) return { part: null, errors: [`${path}: unknown part kind`] };
+
+  // Bound issue-tree nesting before the recursive parse so a deep tree is a clean
+  // 400, not a stack-overflow 500.
+  if (kind === "issue-tree" && !issueTreeWithinBounds((raw as { root?: unknown }).root)) {
+    return {
+      part: null,
+      errors: [
+        `${path}: issue-tree exceeds ${MAX_ISSUE_TREE_DEPTH} levels deep or ${MAX_ISSUE_TREE_NODES} nodes`,
+      ],
+    };
+  }
 
   const parsed = schema.safeParse(raw);
   return parsed.success
@@ -241,6 +347,8 @@ function schemaForKind(kind: unknown): z.ZodType<SurfacePart> | null {
       return strictTracePart;
     case "terminal":
       return strictTerminalPart;
+    case "issue-tree":
+      return strictIssueTreePart;
     default:
       return null;
   }

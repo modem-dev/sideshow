@@ -15,6 +15,7 @@ import {
   sessionLabel,
   type DiffPart as DiffPartData,
   type ImagePart as ImagePartData,
+  type IssueTreePart as IssueTreePartData,
   type MarkdownPart as MarkdownPartData,
   type MermaidPart as MermaidPartData,
   type Surface,
@@ -24,6 +25,7 @@ import {
 import { DiffPart } from "./DiffPart.tsx";
 import { CommentIcon, LinkIcon, OpenIcon, TrashIcon } from "./icons.tsx";
 import { ImagePart } from "./ImagePart.tsx";
+import { IssueTreePart } from "./IssueTreePart.tsx";
 import { MarkdownPart } from "./MarkdownPart.tsx";
 import { MermaidPart } from "./MermaidPart.tsx";
 import { TerminalPart } from "./TerminalPart.tsx";
@@ -160,6 +162,9 @@ export function Card(props: { surface: Surface }) {
             </Match>
             <Match when={part().kind === "terminal"}>
               <TerminalPart part={part() as TerminalPartData} />
+            </Match>
+            <Match when={part().kind === "issue-tree"}>
+              <IssueTreePart part={part() as IssueTreePartData} />
             </Match>
           </Switch>
         )}

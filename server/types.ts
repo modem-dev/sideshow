@@ -15,9 +15,9 @@ export interface Session {
 // A surface is an ordered list of parts. Each part declares its own kind;
 // the surface itself is kind-agnostic. An `html` part is arbitrary agent
 // markup (rendered sandboxed in an iframe); `diff`, `image`, `trace`,
-// `markdown`, `terminal`, and `mermaid` parts are structured data rendered by
-// the trusted viewer. A snippet is just a surface with one html part; a
-// diagram-with-its-diff is `[html, diff]`.
+// `markdown`, `terminal`, `mermaid`, and `issue-tree` parts are structured data
+// rendered by the trusted viewer. A snippet is just a surface with one html
+// part; a diagram-with-its-diff is `[html, diff]`.
 export type SurfacePartKind =
   | "html"
   | "diff"
@@ -25,7 +25,8 @@ export type SurfacePartKind =
   | "trace"
   | "markdown"
   | "terminal"
-  | "mermaid";
+  | "mermaid"
+  | "issue-tree";
 
 export interface HtmlPart {
   kind: "html";
@@ -51,6 +52,39 @@ export interface MarkdownPart {
 export interface MermaidPart {
   kind: "mermaid";
   mermaid: string;
+}
+
+// The five normalized issue states every provider's status folds into (see the
+// "normalized model" surface): open / in-progress / blocked / done / closed.
+// `done` and `closed` are the two terminal states the viewer's rollup counts as
+// complete.
+export type IssueState = "open" | "in-progress" | "blocked" | "done" | "closed";
+
+// One issue in an issue-tree. The shape is provider-agnostic — a GitHub issue, a
+// Linear story, a Jira subtask, and a Sentry error all map onto it — and it is
+// recursive: a sub-issue is just another IssueNode in `children`, so the tree can
+// nest across providers. `ref` is the human handle ("octo/web #1432", "ENG-204"),
+// `source` drives the chip (color + short code), `note` is a small inline
+// annotation (e.g. "unresolved →" on a normalized Sentry leaf), and `url` makes
+// the ref a link when present.
+export interface IssueNode {
+  ref: string;
+  title: string;
+  state: IssueState;
+  source?: string;
+  note?: string;
+  url?: string;
+  children?: IssueNode[];
+}
+
+// An issue-tree part renders a parent issue and its nested sub-issues as a
+// rail/elbow tree with a computed progress rollup — the trusted viewer draws it
+// from this data (no markup, no re-sent CSS). The rollup (done ÷ total over
+// descendants) is computed by the viewer, never stored, so editing a leaf moves
+// the bar with nothing to keep in sync.
+export interface IssueTreePart {
+  kind: "issue-tree";
+  root: IssueNode;
 }
 
 export interface DiffFile {
@@ -121,7 +155,8 @@ export type SurfacePart =
   | TracePart
   | MarkdownPart
   | TerminalPart
-  | MermaidPart;
+  | MermaidPart
+  | IssueTreePart;
 
 export interface SurfaceVersion {
   version: number;
@@ -297,6 +332,14 @@ export function partsByteLength(parts: SurfacePart[]): number {
       n += p.text.length + (p.title?.length ?? 0);
     } else if (p.kind === "mermaid") {
       n += p.mermaid.length;
+    } else if (p.kind === "issue-tree") {
+      const walk = (node: IssueNode): number => {
+        let m = node.ref.length + node.title.length + (node.note?.length ?? 0);
+        m += (node.source?.length ?? 0) + (node.url?.length ?? 0);
+        for (const c of node.children ?? []) m += walk(c);
+        return m;
+      };
+      n += walk(p.root);
     } else {
       n += (p.assetId?.length ?? 0) + (p.title?.length ?? 0);
       for (const s of p.steps ?? []) {
