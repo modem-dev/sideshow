@@ -1,4 +1,5 @@
 import {
+  createEffect,
   createSignal,
   For,
   Index,
@@ -75,24 +76,83 @@ export function frameForSource(source: unknown): { id: string; iframe: HTMLIFram
   return null;
 }
 
+// While a deep-link scroll poll is active, IntersectionObserver callbacks on
+// other cards must not call focusSurface — they would overwrite the URL with
+// whichever card happens to cross the 50% threshold mid-scroll. The poll sets
+// this to true and clears it when the position stabilises, at which point it
+// calls focusSurface with the correct target surface id.
+let deepLinkScrolling = false;
+
+// Repeatedly scroll an element into view until its position stabilises.
+// Iframe heights resolve asynchronously (postMessage resize), so a single
+// scrollIntoView fires before the layout settles and the target drifts.
+// Returns a cancel function so the caller can abort on cleanup.
+function pollScrollIntoView(el: HTMLElement, surfaceId: string): () => void {
+  deepLinkScrolling = true;
+  const started = performance.now();
+  let lastTop: number | null = null;
+  let stableChecks = 0;
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const finish = () => {
+    deepLinkScrolling = false;
+    focusSurface(surfaceId);
+  };
+
+  const tick = () => {
+    if (stopped) return;
+    el.scrollIntoView({ behavior: "instant", block: "start" });
+    const top = el.getBoundingClientRect().top;
+    if (lastTop !== null && Math.abs(top - lastTop) <= 5) stableChecks += 1;
+    else stableChecks = 0;
+    lastTop = top;
+    // Stable for 3 consecutive checks → done; hard cap at 5 s.
+    if (stableChecks >= 3 || performance.now() - started >= 5000) {
+      finish();
+      return;
+    }
+    timer = setTimeout(tick, 100);
+  };
+
+  tick();
+  return () => {
+    stopped = true;
+    if (timer !== undefined) clearTimeout(timer);
+    deepLinkScrolling = false;
+  };
+}
+
 export function Card(props: { surface: Surface }) {
   let card!: HTMLDivElement;
   const iframes = new Set<HTMLIFrameElement>();
   // Absolute part index -> its iframe, for html parts only. Lets the version
   // dropdown rebuild each `/s/:id?part=N` src across every html part.
   const htmlFrames = new Map<number, HTMLIFrameElement>();
+  let stopPoll: (() => void) | undefined;
+
+  // React to scrollTarget changes — start the polling scroll when this card
+  // becomes the target.  createEffect tracks scrollTarget(); onMount covers
+  // the initial render (card ref isn't assigned when the effect first runs).
+  const scrollIfTarget = () => {
+    if (!card || scrollTarget() !== props.surface.id) return;
+    setScrollTarget(null);
+    stopPoll?.();
+    stopPoll = pollScrollIntoView(card, props.surface.id);
+  };
+
+  createEffect(scrollIfTarget);
+  onCleanup(() => stopPoll?.());
 
   onMount(() => {
     cardEls.set(props.surface.id, { card, iframes });
     onCleanup(() => cardEls.delete(props.surface.id));
-    if (scrollTarget() === props.surface.id) {
-      setScrollTarget(null);
-      card.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    scrollIfTarget();
     // Update the URL as the user scrolls past surfaces (replaceState, no
     // history noise). The first card that crosses the 50% threshold wins.
     const observer = new IntersectionObserver(
       (entries) => {
+        if (deepLinkScrolling) return;
         for (const entry of entries) {
           if (entry.isIntersecting) focusSurface(props.surface.id);
         }
