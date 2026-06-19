@@ -5,7 +5,7 @@
       "name": "html-preview",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "start"],
-      "port": 4242,
+      "port": 8228,
       "autoPort": false
     }
   ]

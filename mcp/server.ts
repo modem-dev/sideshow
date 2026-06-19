@@ -9,7 +9,7 @@ import {
 } from "../server/mcpSpec.ts";
 
 // Point at a deployed instance later by setting SIDESHOW_URL.
-const API = process.env.SIDESHOW_URL ?? "http://localhost:4242";
+const API = process.env.SIDESHOW_URL ?? "http://localhost:8228";
 const TOKEN = process.env.SIDESHOW_TOKEN;
 const AGENT = process.env.SIDESHOW_AGENT ?? "claude-code";
 

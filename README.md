@@ -45,19 +45,20 @@ Requires Node 22.18 or newer.
 
 ```sh
 npm install
-npx sideshow serve --open   # viewer on http://localhost:4242
+npx sideshow serve --open   # viewer on http://localhost:8228
 ```
 
 Then point your agent at the surface — paste the setup block into its
 instructions:
 
 ```sh
-curl -s http://localhost:4242/setup >> AGENTS.md
+curl -s http://localhost:8228/setup >> AGENTS.md
 ```
 
-That teaches any agent with a shell (Pi, opencode, amp, codex, Claude Code) to
-publish surfaces and read your comments. Ask it to "sketch this on sideshow" and
-watch the card appear.
+That bootstrap tells any agent with a shell (Pi, opencode, amp, codex, Claude
+Code) to fetch the current instructions from the running server, then publish
+surfaces and read your comments. Ask it to "sketch this on sideshow" and watch
+the card appear.
 
 The running viewer has the same handoff built in: its sidebar footer carries an
 **agent setup** link (the block above) and a **Connect Claude Code** button, so

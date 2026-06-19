@@ -27,8 +27,8 @@
     "sideshowUrl": {
       "type": "string",
       "title": "Sideshow URL",
-      "description": "Base URL of your sideshow server. Local default is http://localhost:4242; set your deployed instance (e.g. https://sideshow.you.workers.dev) otherwise.",
-      "default": "http://localhost:4242",
+      "description": "Base URL of your sideshow server. Local default is http://localhost:8228; set your deployed instance (e.g. https://sideshow.you.workers.dev) otherwise.",
+      "default": "http://localhost:8228",
       "required": true
     },
     "apiToken": {

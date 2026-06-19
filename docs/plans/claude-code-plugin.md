@@ -31,7 +31,7 @@ true one-click, so that page becomes a copy-the-command card.
 - **PR #16 TODO before merge:** the title is stale — still says "make the feedback loop
   legible — listening indicator, read receipts, per-comment copy". Retitle to reflect the
   reframe + copy button. Optionally squash the 5 exploration commits.
-- **Local dev server:** `node bin/sideshow.js serve` on :4242, data at `data/sideshow.json`.
+- **Local dev server:** `node bin/sideshow.js serve` on :8228, data at `data/sideshow.json`.
   Has accumulated demo snippets across sessions (`b903e7b7` "Sideshow test drive", plus a
   fresh session `f9d8b335` holding the summary + plan visualizations). Offer to delete demo
   cards when convenient.
@@ -110,7 +110,7 @@ https://host/marketplace.json`) BUT relative plugin sources won't work there —
 2. **The plugin package** — `monitors/monitors.json` running `sideshow watch`, plus the
    existing sideshow MCP server config and a small skill teaching the workflow ("comments
    arrive as notifications; revise the snippet or reply"). Configurable `sideshowUrl`
-   (default `localhost:4242`) via `user_config`. Test with `claude --plugin-dir ./plugin`.
+   (default `localhost:8228`) via `user_config`. Test with `claude --plugin-dir ./plugin`.
 
 3. **The integrations page (viewer)** — a "Connect Claude Code" card/modal with the two
    install commands + copy buttons (reuse the existing copy affordance), a plain-English

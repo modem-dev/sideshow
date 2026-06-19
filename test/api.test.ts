@@ -14,6 +14,7 @@ function makeApp(authToken?: string) {
     viewerHtml: "<html>viewer</html>",
     guideMarkdown: "# guide",
     setupText: "# setup",
+    agentHowtoText: "# agent how-to",
     authToken,
   });
 }
@@ -588,6 +589,7 @@ function makeVersionApp(version?: string, latest?: { version: string; notes?: st
     viewerHtml: "<html>viewer</html>",
     guideMarkdown: "# guide",
     setupText: "# setup",
+    agentHowtoText: "# agent how-to",
     version,
     upgradeCommand: "npm install -g sideshow",
     fetchLatestRelease: () =>
@@ -683,9 +685,10 @@ test("auth token guards mutating routes when configured", async () => {
   // full surface is guarded, including reads and the viewer
   assert.equal((await app.request("/api/sessions")).status, 401);
   assert.equal((await app.request("/")).status, 401);
-  // docs stay open
+  // docs and bootstrap instructions stay open
   assert.equal((await app.request("/guide")).status, 200);
   assert.equal((await app.request("/setup")).status, 200);
+  assert.equal((await app.request("/agent-howto")).status, 200);
   // ?key= grants access and sets a cookie for subsequent requests
   const keyed = await app.request("/?key=secret");
   assert.equal(keyed.status, 200);
@@ -881,6 +884,97 @@ test("a consumed wait is not re-delivered as piggyback", async () => {
   assert.deepEqual(
     next.userFeedback.map((f: any) => f.text),
     ["fresh"],
+  );
+});
+
+// The agentSeq cursor is shared across every delivery channel, so a comment
+// delivered once on one channel must never reappear on another. The REST-to-REST
+// directions are covered above; these pin the MCP<->REST crossings, the pairing
+// most likely to drift since the two go through different code paths.
+
+test("feedback consumed via the MCP wait is not re-delivered through REST channels", async () => {
+  const app = makeApp();
+  const published = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "publish_snippet",
+        arguments: { title: "Doc", html: "<p>v1</p>", agent: "mcp-agent" },
+      }),
+    )
+  ).json()) as any;
+  const p = JSON.parse(published.result.content[0].text);
+  await app.request("/api/comments", json({ snippet: p.id, text: "via mcp", author: "user" }));
+
+  // the agent drains it through the MCP tool...
+  const feedback = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "wait_for_feedback",
+        arguments: { session: p.sessionId, timeoutSeconds: 0 },
+      }),
+    )
+  ).json()) as any;
+  assert.deepEqual(
+    JSON.parse(feedback.result.content[0].text).comments.map((c: any) => c.text),
+    ["via mcp"],
+  );
+
+  // ...so a REST write must not re-piggyback it, and a REST author=user read
+  // (CLI watch) sees nothing either — both honor the same advanced cursor
+  const updated = (await (
+    await app.request(`/api/snippets/${p.id}`, { ...json({ html: "<p>v2</p>" }), method: "PUT" })
+  ).json()) as any;
+  assert.equal(updated.userFeedback, undefined);
+  const restWait = (await (
+    await app.request(`/api/comments?session=${p.sessionId}&author=user`)
+  ).json()) as any;
+  assert.equal(restWait.comments.length, 0);
+});
+
+test("feedback consumed via a REST wait is not re-delivered through the MCP wait", async () => {
+  const app = makeApp();
+  const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
+  await app.request("/api/comments", json({ snippet: s.id, text: "via rest", author: "user" }));
+
+  // the agent drains it through a REST author=user read...
+  const restWait = (await (
+    await app.request(`/api/comments?session=${s.sessionId}&author=user`)
+  ).json()) as any;
+  assert.deepEqual(
+    restWait.comments.map((c: any) => c.text),
+    ["via rest"],
+  );
+
+  // ...so the MCP tool, reading the same cursor, must not re-deliver it
+  const feedback = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "wait_for_feedback",
+        arguments: { session: s.sessionId, timeoutSeconds: 0 },
+      }),
+    )
+  ).json()) as any;
+  const fb = JSON.parse(feedback.result.content[0].text);
+  assert.equal(fb.comments.length, 0);
+
+  // and a fresh comment still flows to the MCP channel — the cursor advanced,
+  // it didn't wedge
+  await app.request("/api/comments", json({ snippet: s.id, text: "later", author: "user" }));
+  const next = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "wait_for_feedback",
+        arguments: { session: s.sessionId, timeoutSeconds: 0 },
+      }),
+    )
+  ).json()) as any;
+  assert.deepEqual(
+    JSON.parse(next.result.content[0].text).comments.map((c: any) => c.text),
+    ["later"],
   );
 });
 

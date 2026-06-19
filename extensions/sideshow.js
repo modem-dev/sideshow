@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 
-const DEFAULT_BASE_URL = "http://localhost:4242";
+const DEFAULT_BASE_URL = "http://localhost:8228";
 const MAX_WAIT_SECONDS = 300;
 const TRACE_MAX_DETAIL = 1800;
 const TRACE_MAX_LABEL = 140;

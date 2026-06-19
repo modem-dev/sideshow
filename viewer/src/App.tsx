@@ -422,9 +422,9 @@ function SessionTitle(props: { current: SessionRow | undefined }) {
 
 // withOrigin on the server rewrites these localhost URLs to the deployed
 // origin when serving the built document — keep them as plain literals.
-const SETUP_SNIP = "curl -s http://localhost:4242/setup >> AGENTS.md";
+const SETUP_SNIP = "curl -s http://localhost:8228/setup >> AGENTS.md";
 const TRY_SNIP =
-  "curl -s -X POST http://localhost:4242/api/snippets -H 'content-type: application/json' " +
+  "curl -s -X POST http://localhost:8228/api/snippets -H 'content-type: application/json' " +
   `-d '{"agent": "me", "title": "Hello", "html": "<h2>It works</h2>"}'`;
 
 function Onboard() {
@@ -481,7 +481,7 @@ function ConnectModal(props: { onClose: () => void }) {
         <Snip text={INSTALL_CMD} />
         <p class="note">
           Run both inside Claude Code. On install it asks for your <strong>Sideshow URL</strong>{" "}
-          (default <code>http://localhost:4242</code>, or your deployed instance) and an optional
+          (default <code>http://localhost:8228</code>, or your deployed instance) and an optional
           token.
         </p>
         <h3>what it runs</h3>
