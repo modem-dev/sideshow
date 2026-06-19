@@ -115,13 +115,6 @@ viewer. A surface is an ordered list of **parts**; one card can carry several.
       <p><b>Parts compose.</b> One card can carry several — here a <code>markdown</code> rationale stacked above its <code>diff</code>, so a single surface holds the why and the what.</p>
     </td>
   </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/surfaces/09-issue-tree.png" width="100%" alt="issue-tree part — nested sub-issues with a computed progress rollup">
-      <p><b><code>issue-tree</code></b> — a parent issue and its nested sub-issues, rendered as a rail tree with a rollup the viewer computes. Nests across providers — a Linear epic can own a GitHub sub-issue and a Sentry error.</p>
-    </td>
-    <td width="50%" valign="top"></td>
-  </tr>
 </table>
 
 ## Run it anywhere

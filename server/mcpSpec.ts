@@ -56,16 +56,6 @@ const d = {
   traceTs: "ISO timestamp",
   terminalText: "terminal part: raw output (ANSI SGR color escapes are rendered)",
   terminalCols: "terminal part: optional render width in columns",
-  partIssueTree:
-    "issue-tree part: a parent issue with nested sub-issues, rendered as a rail tree with a computed progress rollup",
-  issueNodeRoot:
-    "root issue: { ref, title, state, source?, note?, url?, children? } — children are nested issues of the same shape",
-  issueState: "one of: open | in-progress | blocked | done | closed",
-  issueRef: 'issue handle, e.g. "octo/web #1432" or "ENG-204"',
-  issueSource: "provider for the chip, e.g. github | linear | jira | gitlab | sentry",
-  issueNote: 'small inline annotation, e.g. "unresolved →"',
-  issueUrl: "optional link target for the ref",
-  issueChildren: "nested sub-issues (same shape) — recursion is how the tree nests",
 };
 
 const MCP_PARTS_DESCRIPTION =
@@ -82,9 +72,7 @@ const MCP_PARTS_DESCRIPTION =
   "{kind:'trace', steps:[{label, kind?, detail?, ts?}]} renders a step timeline, and/or " +
   "{kind:'trace', assetId} for an uploaded trace file (downloadable). terminal: {kind:'terminal', " +
   "text:'<output>', cols?, title?} renders monospace terminal output (ANSI SGR colors supported; " +
-  "cursor-addressing TUIs are not resolved). issue-tree: {kind:'issue-tree', root:{ref, title, " +
-  "state, source?, note?, url?, children:[…]}} renders a parent issue and its nested sub-issues as a " +
-  "rail tree with a computed progress rollup (state is open|in-progress|blocked|done|closed). Optional diff layout " +
+  "cursor-addressing TUIs are not resolved). Optional diff layout " +
   "'unified'|'split'. Combine freely, e.g. [{kind:'html',...},{kind:'image',assetId},{kind:'trace',steps}].";
 
 const MCP_PART_JSON_SCHEMA = {
@@ -92,7 +80,7 @@ const MCP_PART_JSON_SCHEMA = {
   properties: {
     kind: {
       type: "string",
-      enum: ["html", "markdown", "mermaid", "diff", "image", "trace", "terminal", "issue-tree"],
+      enum: ["html", "markdown", "mermaid", "diff", "image", "trace", "terminal"],
     },
     html: { type: "string", description: d.partHtml },
     kits: { type: "array", items: { type: "string" }, description: d.partKits },
@@ -134,44 +122,6 @@ const MCP_PART_JSON_SCHEMA = {
         required: ["label"],
       },
     },
-    root: {
-      type: "object",
-      description: d.issueNodeRoot,
-      properties: {
-        ref: { type: "string", description: d.issueRef },
-        title: { type: "string" },
-        state: {
-          type: "string",
-          enum: ["open", "in-progress", "blocked", "done", "closed"],
-          description: d.issueState,
-        },
-        source: { type: "string", description: d.issueSource },
-        note: { type: "string", description: d.issueNote },
-        url: { type: "string", description: d.issueUrl },
-        children: {
-          type: "array",
-          description: d.issueChildren,
-          items: {
-            type: "object",
-            properties: {
-              ref: { type: "string", description: d.issueRef },
-              title: { type: "string" },
-              state: {
-                type: "string",
-                enum: ["open", "in-progress", "blocked", "done", "closed"],
-                description: d.issueState,
-              },
-              source: { type: "string", description: d.issueSource },
-              note: { type: "string", description: d.issueNote },
-              url: { type: "string", description: d.issueUrl },
-              children: { type: "array", description: d.issueChildren, items: { type: "object" } },
-            },
-            required: ["ref", "title", "state"],
-          },
-        },
-      },
-      required: ["ref", "title", "state"],
-    },
   },
   required: ["kind"],
 } as const;
@@ -184,9 +134,9 @@ const MCP_PARTS_JSON_SCHEMA = {
 
 export const MCP_TOOL_DESCRIPTIONS = {
   publishSurfaceHttp:
-    "Publish a surface to the user's sideshow board. A surface is an ordered list of parts (html, markdown, mermaid, diff, image, trace, and/or issue-tree). Returns the surface id, view URL, and sessionId — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+    "Publish a surface to the user's sideshow board. A surface is an ordered list of parts (html, markdown, mermaid, diff, image, trace). Returns the surface id, view URL, and sessionId — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
   publishSurfaceStdio:
-    "Publish a surface to the user's sideshow board. A surface is an ordered list of parts (html, markdown, mermaid, diff, image, trace, and/or issue-tree). Returns the surface id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+    "Publish a surface to the user's sideshow board. A surface is an ordered list of parts (html, markdown, mermaid, diff, image, trace). Returns the surface id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
   updateSurface:
     "Revise a surface in place (same card, new version). Prefer this over publishing a near-duplicate. Pass the full replacement parts array. If the result includes userFeedback, read it.",
   publishSnippet:
@@ -337,30 +287,9 @@ const traceStepSchema = z.object({
   ts: z.string().optional().describe(d.traceTs),
 });
 
-const issueNodeSchema: z.ZodType<unknown> = z.lazy(() =>
-  z.object({
-    ref: z.string().describe(d.issueRef),
-    title: z.string(),
-    state: z.enum(["open", "in-progress", "blocked", "done", "closed"]).describe(d.issueState),
-    source: z.string().optional().describe(d.issueSource),
-    note: z.string().optional().describe(d.issueNote),
-    url: z.string().optional().describe(d.issueUrl),
-    children: z.array(issueNodeSchema).optional().describe(d.issueChildren),
-  }),
-);
-
 const mcpPartSchema = z
   .object({
-    kind: z.enum([
-      "html",
-      "markdown",
-      "mermaid",
-      "diff",
-      "image",
-      "trace",
-      "terminal",
-      "issue-tree",
-    ]),
+    kind: z.enum(["html", "markdown", "mermaid", "diff", "image", "trace", "terminal"]),
     html: z.string().optional().describe(d.partHtml),
     kits: z.array(z.string()).optional().describe(d.partKits),
     markdown: z.string().optional().describe(d.partMarkdown),
@@ -375,14 +304,12 @@ const mcpPartSchema = z
     steps: z.array(traceStepSchema).optional().describe(d.traceSteps),
     text: z.string().optional().describe(d.terminalText),
     cols: z.number().optional().describe(d.terminalCols),
-    root: issueNodeSchema.optional().describe(d.issueNodeRoot),
   })
   .describe(
     "A surface part: html {kind:'html',html}; markdown {kind:'markdown',markdown} (prose); mermaid " +
       "{kind:'mermaid',mermaid} (diagram source → SVG); diff {kind:'diff',patch}; image " +
       "{kind:'image',assetId} (from upload_asset); trace {kind:'trace',steps} and/or {kind:'trace',assetId}; " +
-      "terminal {kind:'terminal',text} (monospace output; ANSI SGR colors rendered); issue-tree " +
-      "{kind:'issue-tree',root} (parent issue + nested sub-issues, rollup computed)",
+      "terminal {kind:'terminal',text} (monospace output; ANSI SGR colors rendered)",
   );
 
 export const STDIO_MCP_INPUT_SCHEMAS = {

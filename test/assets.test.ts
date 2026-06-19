@@ -76,71 +76,35 @@ test("partsByteLength counts image/trace parts without throwing", () => {
   assert.ok(n > 0);
 });
 
-test("partsByteLength walks issue-tree descendants (gates the size limit)", () => {
-  const root = {
-    ref: "ENG-1",
-    title: "Epic",
-    state: "open" as const,
-    children: [
-      { ref: "#1", title: "child", state: "done" as const },
-      {
-        ref: "#2",
-        title: "branch",
-        state: "blocked" as const,
-        children: [{ ref: "#3", title: "grandchild", state: "open" as const, note: "deep" }],
-      },
-    ],
-  };
-  const withTree = partsByteLength([{ kind: "issue-tree", root }]);
-  const shallow = partsByteLength([{ kind: "issue-tree", root: { ...root, children: undefined } }]);
-  // recursing into children must add to the count; the grandchild's text is included
-  assert.ok(withTree >= shallow + "grandchild".length + "deep".length);
-});
-
 // --- SurfacePart validation/coercion ---
 
 test("validateSurfaceParts accepts all supported part kinds", () => {
   const result = validateSurfaceParts([
     { kind: "html", html: "<p>x</p>" },
+    { kind: "html", html: "<div class=tree></div>", kits: ["issues"] },
     { kind: "diff", patch: "@@ -1 +1 @@\n-a\n+b", layout: "unified" },
     { kind: "diff", files: [{ filename: "a.ts", before: "a", after: "b" }] },
     { kind: "image", assetId: "img", alt: "shot", caption: "cap" },
     { kind: "trace", steps: [{ label: "read", kind: "tool" }], title: "Trace" },
     { kind: "trace", assetId: "trace-file" },
-    {
-      kind: "issue-tree",
-      root: {
-        ref: "ENG-1",
-        title: "Epic",
-        state: "open",
-        children: [{ ref: "#1", title: "c", state: "done" }],
-      },
-    },
   ]);
   assert.equal(result.ok, true);
   if (result.ok)
     assert.deepEqual(
       result.parts.map((p) => p.kind),
-      ["html", "diff", "diff", "image", "trace", "trace", "issue-tree"],
+      ["html", "html", "diff", "diff", "image", "trace", "trace"],
     );
 });
 
 test("validateSurfaceParts rejects malformed parts", () => {
   for (const parts of [
     [{ kind: "html", html: 1 }],
+    [{ kind: "html", html: "<p>x</p>", kits: ["nope"] }], // unknown kit id (strict)
     [{ kind: "diff" }],
     [{ kind: "diff", files: [{ filename: "x", before: "a" }] }],
     [{ kind: "diff", patch: "x", layout: "sideways" }],
     [{ kind: "image" }],
     [{ kind: "trace", steps: [{ detail: "missing label" }] }],
-    [{ kind: "issue-tree" }], // no root
-    [{ kind: "issue-tree", root: { ref: "x", title: "x", state: "bad" } }], // invalid state
-    [
-      {
-        kind: "issue-tree",
-        root: { ref: "x", title: "x", state: "open", children: [{ state: "open" }] },
-      },
-    ], // child missing ref+title (strict)
     [{ kind: "unknown" }],
   ]) {
     const result = validateSurfaceParts(parts);

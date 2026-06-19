@@ -38,8 +38,8 @@ const CORE_CSS = `
 `;
 
 // issues: cards, status badges/dots, mono ref chips, rollup bars, and a nesting
-// rail (.tree → nest another .tree to indent). Composes the whole issue-tree
-// look — and CI boards, PR summaries — from generic primitives.
+// rail (.tree → nest another .tree to indent). Composes an issue/PR/CI tree,
+// a status board, or a PR summary from generic primitives.
 const ISSUES_CSS = `
 .card{background:var(--color-background-primary);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);padding:14px 16px}
 .card.soft{background:var(--color-background-secondary)}

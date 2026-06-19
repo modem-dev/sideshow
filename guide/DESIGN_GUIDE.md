@@ -47,20 +47,14 @@ a `kind`:
   bold, italic, underline); the viewer renders those and HTML-escapes the rest.
   Reach for it to share shell output, build logs, or example commands. (Colors
   yes; cursor-addressing TUIs are not resolved — share a captured frame.)
-- **`issue-tree`** — a parent issue and its nested sub-issues, rendered natively
-  as a rail tree with a computed progress rollup. Hand over a `root` issue whose
-  `children` are more issues of the same shape (it nests as deep as you like, and
-  across providers — a Linear epic can own a GitHub sub-issue). Each node is
-  `{ ref, title, state, source?, note?, url?, children? }`; `state` is one of
-  `open | in-progress | blocked | done | closed`, `source` (github / linear /
-  jira / gitlab / sentry / …) picks the chip. The rollup (`done ÷ total` over
-  descendants) is computed by the viewer — don't send it. Reach for it for
-  sub-issues, epics → stories, or any parent/child issue hierarchy.
+
+For an issue/PR/CI tree, status board, or stepped deck, reach for an `html`
+part with a kit (see Kits below) rather than a dedicated part kind.
 
 A surface can combine parts, e.g. `[html, diff]` is a diagram with its code
 review in one card, and `[markdown, diff]` is a written rationale above its
 changeset. Trust differs: html parts are sandboxed because you author the
-markup; markdown/mermaid/diff/image/trace/terminal/issue-tree parts are rendered
+markup; markdown/mermaid/diff/image/trace/terminal parts are rendered
 by the viewer from data — send data, never markup.
 
 A **`SurfacePart`** is one of:
@@ -75,8 +69,7 @@ A **`SurfacePart`** is one of:
 { "kind": "trace", "steps": [{ "label": "...", "kind": "tool", "detail": "...", "ts": "..." }] }
 { "kind": "trace", "assetId": "<id of an uploaded JSON/JSONL trace>", "title": "..." }
 { "kind": "terminal", "text": "<output, may include ANSI SGR escapes>", "cols": 80, "title": "..." }
-{ "kind": "issue-tree", "root": { "ref": "ENG-204", "title": "...", "state": "in-progress", "source": "linear",
-    "children": [ { "ref": "#1432", "title": "...", "state": "done", "source": "github" } ] } }
+{ "kind": "html", "html": "<ul class=\"tree\">...</ul>", "kits": ["issues"] }   # opt into a kit (see Kits)
 ```
 
 For a diff, send a `patch` — it carries only the changed lines, so it is the

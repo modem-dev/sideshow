@@ -24,7 +24,6 @@ usage:
       --mermaid <file|-> add a mermaid part (diagram source → SVG) — combine with html
       --diff <file|->   add a diff part from a unified/git patch (combine with html)
       --terminal <file|->  add a terminal part from monospace/ANSI output
-      --issue-tree <file|->  add an issue-tree part from a JSON root issue
       --kit <id>        opt the html part into a kit (repeatable; see "sideshow kits")
       --image <file>    upload an image and append it as an image part
       --session <id>    target session (default: auto per agent session)
@@ -56,10 +55,6 @@ usage:
       (also: --session, --session-title, --agent, --new-session)
   sideshow mermaid <file|-> [options]     publish a mermaid surface (diagram → SVG)
       --title <t>       surface title
-      (also: --session, --session-title, --agent, --new-session)
-  sideshow issue-tree <file|-> [options]  publish an issue-tree surface from JSON
-      --title <t>       surface title
-      (file is the root issue { ref, title, state, source?, note?, url?, children? })
       (also: --session, --session-title, --agent, --new-session)
   sideshow kits                           list the opt-in html kits this board offers
   sideshow update <id> <file|->           revise a surface (new version, same card)
@@ -301,27 +296,6 @@ function readContent(arg) {
   } catch {
     fail(`cannot read file: ${arg}`);
   }
-}
-
-// Build an issue-tree part from JSON text. Accepts a full part ({ kind, root }),
-// a wrapper ({ root }), or a bare root issue ({ ref, title, state, … }) — the
-// server validates the shape, so this only normalizes the envelope.
-function issueTreePart(text) {
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    fail("issue-tree input must be JSON (a root issue, or { root } / { kind, root })");
-  }
-  if (data && typeof data === "object" && "root" in data) {
-    return { kind: "issue-tree", root: data.root };
-  }
-  // A part object that has a kind but no root ({kind:'issue-tree'}) is a mistake;
-  // don't silently wrap it as its own root (which yields a confusing field error).
-  if (data && typeof data === "object" && "kind" in data) {
-    fail("issue-tree input has a 'kind' but no 'root' — pass the root issue, or { root: {…} }");
-  }
-  return { kind: "issue-tree", root: data };
 }
 
 function out(value) {
@@ -707,7 +681,6 @@ const commands = {
         diff: { type: "string" },
         image: { type: "string" },
         terminal: { type: "string" },
-        "issue-tree": { type: "string" },
         kit: { type: "string", multiple: true },
         layout: { type: "string" },
         session: { type: "string" },
@@ -735,9 +708,6 @@ const commands = {
     }
     if (flags.terminal !== undefined) {
       parts.push({ kind: "terminal", text: readContent(flags.terminal || "-") });
-    }
-    if (flags["issue-tree"] !== undefined) {
-      parts.push(issueTreePart(readContent(flags["issue-tree"] || "-")));
     }
     // Resolve the session first so the image upload and the surface share it.
     const session = await resolveSession(flags, { create: true });
@@ -894,21 +864,6 @@ const commands = {
       },
     });
     const parts = [{ kind: "mermaid", mermaid: readContent(positionals[0]) }];
-    outSurface(await publishSurface(parts, flags));
-  },
-
-  async "issue-tree"() {
-    const { values: flags, positionals } = parse({
-      allowPositionals: true,
-      options: {
-        title: { type: "string" },
-        session: { type: "string" },
-        "session-title": { type: "string" },
-        agent: { type: "string" },
-        "new-session": { type: "boolean" },
-      },
-    });
-    const parts = [issueTreePart(readContent(positionals[0]))];
     outSurface(await publishSurface(parts, flags));
   },
 

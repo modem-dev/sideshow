@@ -7,7 +7,7 @@ _use_ a running sideshow lives in `guide/AGENT_SETUP.md`, served at `/setup`.)
 ## What this is and why
 
 A live visual surface for terminal coding agents: agents publish surfaces
-(multi-part cards — html, markdown, diff, terminal, image, mermaid, issue-tree) over
+(multi-part cards — html, markdown, diff, terminal, image, mermaid) over
 CLI/MCP/HTTP; the user watches them render in a browser and comments back. The
 two-way loop — publish → live render → comment → revise/reply — is the product.
 When in doubt, optimize for the loop.
@@ -33,7 +33,7 @@ consciously, not as a side effect):
   (`/api/assets`, `/a/:id`), and the shared flow functions both REST and MCP call.
 - `server/types.ts` — data model + `Store` interface; no runtime imports. A
   surface is an ordered list of parts (`html` | `markdown` | `diff` | `terminal`
-  | `image` | `mermaid` | `issue-tree`); a snippet is sugar for a single html part.
+  | `image` | `mermaid`); a snippet is sugar for a single html part.
   `htmlPart` bridges the legacy snippet shape. Assets (uploaded blobs)
   are a separate entity, referenced by `image` parts; `selectEvictions`
   is the reference-aware LRU policy.
@@ -52,10 +52,10 @@ consciously, not as a side effect):
   sendPrompt, openLink) and injects any opted-in kits (`kits.ts`).
   `renderSandboxedPart` wraps markup the viewer rendered
   to a string (markdown/mermaid/diff/terminal) under a tighter CSP (no
-  `connect-src`, no CDN) — see `viewer/src/SandboxedPart.tsx`. Image, trace, and
-  issue-tree parts stay native because they have no HTML sink (the viewer renders
-  them with text nodes / `<img>` / JSX). No agent markup is ever set as
-  `innerHTML` in the trusted viewer origin.
+  `connect-src`, no CDN) — see `viewer/src/SandboxedPart.tsx`. Image and trace
+  parts stay native because they have no HTML sink (the viewer renders them with
+  text nodes / `<img>` / JSX). No agent markup is ever set as `innerHTML` in the
+  trusted viewer origin.
 - `server/themes.ts` — theme registry (github/gruvbox/one), runtime-agnostic so
   both server and viewer import it. One `Palette` per light/dark per theme; the
   viewer-chrome vars and the html-part `--color-*` tokens are both _derived_

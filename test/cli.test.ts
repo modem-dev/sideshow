@@ -75,7 +75,6 @@ for (const cmd of [
   "watch",
   "comment",
   "list",
-  "issue-tree",
   "kits",
 ]) {
   test(`${cmd} --help prints usage and exits 0`, async () => {
@@ -166,36 +165,6 @@ async function waitFor(pred: () => boolean, timeoutMs = 10_000) {
   }
 }
 
-test("issue-tree publishes from a bare-root JSON file", async () => {
-  const server = await serveApp();
-  try {
-    const dir = mkdtempSync(join(tmpdir(), "sideshow-itree-"));
-    const file = join(dir, "tree.json");
-    writeFileSync(
-      file,
-      JSON.stringify({
-        ref: "ENG-1",
-        title: "Epic",
-        state: "in-progress",
-        children: [{ ref: "#1", title: "child", state: "done" }],
-      }),
-    );
-    const { code, stdout } = await runWith(
-      { env: { SIDESHOW_URL: server.url } },
-      "issue-tree",
-      file,
-    );
-    assert.equal(code, 0);
-    const out = JSON.parse(stdout);
-    const full = await fetch(`${server.url}/api/surfaces/${out.id}`).then((r) => r.json() as any);
-    assert.equal(full.parts[0].kind, "issue-tree");
-    assert.equal(full.parts[0].root.ref, "ENG-1");
-    assert.equal(full.parts[0].root.children[0].ref, "#1");
-  } finally {
-    await server.close();
-  }
-});
-
 test("publish --kit puts the (deduped) kit ids on the html part", async () => {
   const server = await serveApp();
   try {
@@ -251,15 +220,6 @@ test("kits lists the board's available kits", async () => {
   } finally {
     await server.close();
   }
-});
-
-test("issue-tree fails clearly when the JSON has a kind but no root", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "sideshow-itree-"));
-  const file = join(dir, "bad.json");
-  writeFileSync(file, JSON.stringify({ kind: "issue-tree" }));
-  const { code, stderr } = await run("issue-tree", file);
-  assert.notEqual(code, 0);
-  assert.match(stderr, /no 'root'/);
 });
 
 test("install-hook --print emits a Stop hook that runs `sideshow hook`", async () => {

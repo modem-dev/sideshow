@@ -171,11 +171,6 @@ const cards = [
       { kind: "diff", patch: read("dlq.patch"), layout: "unified" },
     ],
   },
-  {
-    file: "issue-tree",
-    title: "issue-tree part — nested sub-issues with a computed rollup",
-    parts: [{ kind: "issue-tree", root: JSON.parse(read("issue-tree.json")) }],
-  },
 ];
 
 let session;
