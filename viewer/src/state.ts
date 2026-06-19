@@ -18,13 +18,9 @@ import { applyTheme } from "./theme.ts";
 // /                       → redirect to last-viewed session (localStorage)
 const LAST_SESSION_KEY = "sideshow-last-session";
 
-export function parseRoute(pathname: string): { sessionId?: string } {
-  // /session/:id and /session/:id/s/:surfaceId both resolve to the session.
-  // The surface suffix is preserved in the URL for shareability but the
-  // viewer navigates to the top of the session (scroll-to-surface on load
-  // is unreliable with async iframe-heavy content).
-  const match = pathname.match(/^\/session\/([^/]+)/);
-  if (match) return { sessionId: match[1] };
+export function parseRoute(pathname: string): { sessionId?: string; surfaceId?: string } {
+  const match = pathname.match(/^\/session\/([^/]+)(?:\/s\/([^/]+))?/);
+  if (match) return { sessionId: match[1], surfaceId: match[2] };
   return {};
 }
 
@@ -161,16 +157,26 @@ export async function refreshSessions() {
       (route.sessionId && sessions.some((s) => s.id === route.sessionId) && route.sessionId) ||
       (lastId && sessions.some((s) => s.id === lastId) && lastId) ||
       sessions[0].id;
-    await select(target, { replace: true });
+    await select(target, {
+      replace: true,
+      initialSurfaceId: target === route.sessionId ? route.surfaceId : undefined,
+    });
   }
 }
 
-export async function select(id: string, opts?: { fromPopState?: boolean; replace?: boolean }) {
+export async function select(
+  id: string,
+  opts?: { fromPopState?: boolean; replace?: boolean; initialSurfaceId?: string },
+) {
   setSelectedInternal(id);
   if (opts?.fromPopState) {
     // Browser already moved the history; don't touch it.
   } else if (opts?.replace) {
-    history.replaceState(null, "", `/session/${id}`);
+    history.replaceState(
+      null,
+      "",
+      opts.initialSurfaceId ? `/session/${id}/s/${opts.initialSurfaceId}` : `/session/${id}`,
+    );
   } else {
     pushSessionUrl(id);
   }
@@ -180,6 +186,7 @@ export async function select(id: string, opts?: { fromPopState?: boolean; replac
     next.delete(id);
     return next;
   });
+  setScrollTarget(null);
   setPillTarget(null);
   setNavOpen(false);
   setStreamLoadingInternal(true);
@@ -193,6 +200,11 @@ export async function select(id: string, opts?: { fromPopState?: boolean; replac
   ).filter((s) => s !== null);
   if (selected() !== id) return; // user switched away mid-load
   setSurfacesInternal(reconcile(details, { key: "id" }));
+  // Scroll to a specific surface if requested (deep link).
+  if (opts?.initialSurfaceId && details.some((s) => s.id === opts.initialSurfaceId)) {
+    setScrollTarget(opts.initialSurfaceId);
+    replaceSurfaceUrl(id, opts.initialSurfaceId);
+  }
   setStreamLoadingInternal(false);
   const res = await api<{ comments: Comment[] }>(`/api/comments?session=${id}`).catch(() => null);
   if (!res || selected() !== id) return;
@@ -210,7 +222,7 @@ export function focusSurface(surfaceId: string) {
 export function handlePopState() {
   const route = parseRoute(window.location.pathname);
   if (route.sessionId && route.sessionId !== selected()) {
-    void select(route.sessionId, { fromPopState: true });
+    void select(route.sessionId, { fromPopState: true, initialSurfaceId: route.surfaceId });
   }
 }
 
