@@ -22,6 +22,7 @@ type FlowResult<T> = Promise<
 
 export interface McpDeps {
   store: Store;
+  basePath?: (request: Request) => string;
   publishSurface(input: {
     parts: SurfacePart[];
     title?: string;
@@ -231,9 +232,10 @@ export function registerMcp(app: Hono, deps: McpDeps) {
     if (msg.method === "ping") return rpc(msg.id, {});
     if (msg.method === "tools/list") return rpc(msg.id, { tools: HTTP_MCP_TOOLS });
     if (msg.method === "tools/call") {
-      const origin = new URL(c.req.url).origin;
+      const url = new URL(c.req.url);
+      const baseUrl = `${url.origin}${deps.basePath?.(c.req.raw) ?? ""}`;
       try {
-        const text = await callTool(msg.params?.name, msg.params?.arguments ?? {}, origin);
+        const text = await callTool(msg.params?.name, msg.params?.arguments ?? {}, baseUrl);
         return rpc(msg.id, { content: [{ type: "text", text }] });
       } catch (err) {
         return rpc(msg.id, {

@@ -81,6 +81,8 @@ export type AuthenticateHook = (
   request: Request,
 ) => boolean | Response | Promise<boolean | Response>;
 
+export type BasePathHook = string | ((request: Request) => string | null | undefined);
+
 export interface AppOptions {
   store: Store;
   viewerHtml: string;
@@ -97,6 +99,11 @@ export interface AppOptions {
   // /setup, and /agent-howto requires it: Authorization bearer, ?key= query,
   // or the cookie it sets. Preserved for backwards compatibility.
   authToken?: string;
+  // Public path prefix for deployments mounted below an origin root, e.g.
+  // /u/:account in a hosted multi-tenant wrapper. The core still receives
+  // stripped routes like /api/sessions and /s/:id?part=0; this prefix is only
+  // used when the server/viewer generate browser-visible URLs.
+  basePath?: BasePathHook;
   // Update notice: the running version and the upgrade hint that fits this
   // deployment (npm install vs redeploy). Without `version`, /api/version
   // reports nothing and the viewer shows no notice.
@@ -209,6 +216,7 @@ export function createApp({
   agentHowtoText = setupText,
   authenticate,
   authToken,
+  basePath,
   version,
   upgradeCommand,
   fetchLatestRelease,
@@ -224,6 +232,14 @@ export function createApp({
     console.error("sideshow: unhandled error", err);
     return c.json({ error: "internal error" }, 500);
   });
+
+  const normalizeBasePath = (value: string | null | undefined): string => {
+    if (!value || value === "/") return "";
+    const withLeading = value.startsWith("/") ? value : `/${value}`;
+    return withLeading.replace(/\/+$/, "");
+  };
+  const requestBasePath = (request: Request): string =>
+    normalizeBasePath(typeof basePath === "function" ? basePath(request) : basePath);
 
   // Cached, fail-silent update lookup: being offline or rate-limited must
   // cost nothing but the absence of the notice. Failures are cached too, so
@@ -472,9 +488,18 @@ export function createApp({
   const withOrigin = (text: string, c: { req: { url: string } }) =>
     text.replaceAll(LOCAL_ORIGIN, new URL(c.req.url).origin);
 
-  app.get("/", (c) => c.html(withOrigin(viewerHtml, c)));
-  app.get("/session/:id", (c) => c.html(withOrigin(viewerHtml, c)));
-  app.get("/session/:id/s/:surfaceId", (c) => c.html(withOrigin(viewerHtml, c)));
+  const withViewerConfig = (text: string, request: Request) => {
+    const script = `<script>window.__SIDESHOW_BASE_PATH__=${JSON.stringify(requestBasePath(request))};</script>`;
+    return text.includes("</head>")
+      ? text.replace("</head>", `${script}</head>`)
+      : `${script}${text}`;
+  };
+
+  const viewerResponse = (c: { req: { raw: Request; url: string }; html: (html: string) => Response }) =>
+    c.html(withViewerConfig(withOrigin(viewerHtml, c), c.req.raw));
+  app.get("/", viewerResponse);
+  app.get("/session/:id", viewerResponse);
+  app.get("/session/:id/s/:surfaceId", viewerResponse);
   app.get("/guide", (c) => c.text(withOrigin(guideMarkdown, c)));
   app.get("/setup", (c) => c.text(withOrigin(setupText, c)));
   app.get("/agent-howto", (c) => c.text(withOrigin(agentHowtoText, c)));
@@ -741,7 +766,12 @@ export function createApp({
       title = old.title;
       parts = old.parts;
     }
-    const idx = Number(c.req.query("part") ?? 0);
+    const partParam = c.req.query("part");
+    const publicBasePath = requestBasePath(c.req.raw);
+    if (partParam == null && publicBasePath) {
+      return c.redirect(`${publicBasePath}/?surface=${encodeURIComponent(surface.id)}`, 302);
+    }
+    const idx = Number(partParam ?? 0);
     const part = parts[idx];
     if (!part || part.kind !== "html") return c.text("No html part at that index", 404);
     c.header("X-Content-Type-Options", "nosniff");
@@ -870,6 +900,7 @@ export function createApp({
 
   registerMcp(app, {
     store,
+    basePath: requestBasePath,
     publishSurface,
     reviseSurface,
     createComment,
