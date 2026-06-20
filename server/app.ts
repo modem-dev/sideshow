@@ -497,13 +497,11 @@ export function createApp({
       : `${script}${text}`;
   };
 
-  const viewerResponse = (c: {
-    req: { raw: Request; url: string };
-    html: (html: string) => Response;
-  }) => c.html(withViewerConfig(withOrigin(viewerHtml, c), c.req.raw));
-  app.get("/", viewerResponse);
-  app.get("/session/:id", viewerResponse);
-  app.get("/session/:id/s/:surfaceId", viewerResponse);
+  const configuredViewerHtml = (request: Request, url: string) =>
+    withViewerConfig(withOrigin(viewerHtml, { req: { url } }), request);
+  app.get("/", (c) => c.html(configuredViewerHtml(c.req.raw, c.req.url)));
+  app.get("/session/:id", (c) => c.html(configuredViewerHtml(c.req.raw, c.req.url)));
+  app.get("/session/:id/s/:surfaceId", (c) => c.html(configuredViewerHtml(c.req.raw, c.req.url)));
   app.get("/guide", (c) => c.text(withOrigin(guideMarkdown, c)));
   app.get("/setup", (c) => c.text(withOrigin(setupText, c)));
   app.get("/agent-howto", (c) => c.text(withOrigin(agentHowtoText, c)));
