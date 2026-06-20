@@ -88,6 +88,15 @@ let deepLinkScrolling = false;
 // scrollIntoView fires before the layout settles and the target drifts.
 // Returns a cancel function so the caller can abort on cleanup.
 function pollScrollIntoView(el: HTMLElement, surfaceId: string): () => void {
+  // If the card is already near the top of the viewport, no polling needed —
+  // skip straight to focusSurface so the app behaves identically to a load
+  // without a deep-link target (no IO suppression window, no timers).
+  const top = el.getBoundingClientRect().top;
+  if (top >= -10 && top <= 200) {
+    focusSurface(surfaceId);
+    return () => {};
+  }
+
   deepLinkScrolling = true;
   const started = performance.now();
   let lastTop: number | null = null;
