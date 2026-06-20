@@ -52,7 +52,7 @@ export default function App() {
   });
 
   onMount(() => {
-    refreshSessions();
+    refreshSessions(new URLSearchParams(location.search).get("surface"));
     connect();
     checkVersion();
     void initTheme();

@@ -44,9 +44,21 @@ export interface VersionInfo {
   notes?: string | null;
 }
 
+export function appBasePath(): string {
+  return location.pathname.match(/^\/u\/[^/]+/)?.[0] ?? "";
+}
+
+export function appPath(path: string): string {
+  return `${appBasePath()}${path}`;
+}
+
+export function surfaceLink(id: string): string {
+  return `${location.origin}${appPath(`/?surface=${encodeURIComponent(id)}`)}`;
+}
+
 export async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(
-    path,
+    appPath(path),
     init ? { headers: { "content-type": "application/json" }, ...init } : undefined,
   );
   if (!res.ok) {

@@ -146,9 +146,19 @@ export async function refreshSessionsQuiet() {
   setSessionsInternal(reconcile(await api<SessionRow[]>("/api/sessions"), { key: "id" }));
 }
 
-export async function refreshSessions() {
+export async function refreshSessions(targetSurfaceId?: string | null) {
   await refreshSessionsQuiet();
   if (selected() && !sessions.some((s) => s.id === selected())) setSelectedInternal(null);
+  if (targetSurfaceId) {
+    const target = await api<Surface>(`/api/surfaces/${encodeURIComponent(targetSurfaceId)}`).catch(
+      () => null,
+    );
+    if (target && sessions.some((s) => s.id === target.sessionId)) {
+      await select(target.sessionId, { replace: true, initialSurfaceId: target.id });
+      return;
+    }
+  }
+
   if (!selected() && sessions.length > 0) {
     // Check the URL first, then localStorage, then fall back to first session.
     const route = parseRoute(window.location.pathname);

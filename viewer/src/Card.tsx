@@ -12,6 +12,7 @@ import {
 } from "solid-js";
 import {
   api,
+  appPath,
   relTime,
   sessionLabel,
   type DiffPart as DiffPartData,
@@ -21,6 +22,7 @@ import {
   type Surface,
   type TerminalPart as TerminalPartData,
   type TracePart as TracePartData,
+  surfaceLink,
 } from "./api.ts";
 import { escapeHtml } from "../../server/surfacePage.ts";
 import { DiffPart } from "./DiffPart.tsx";
@@ -241,7 +243,9 @@ export function Card(props: { surface: Surface }) {
                     ? `${props.surface.title} (part ${i + 1})`
                     : props.surface.title
                 }
-                src={`/s/${props.surface.id}?part=${i}&ver=${props.surface.version}&cb=${props.surface.version}&theme=${activeTheme()}`}
+                src={appPath(
+                  `/s/${props.surface.id}?part=${i}&ver=${props.surface.version}&cb=${props.surface.version}&theme=${activeTheme()}`,
+                )}
               ></iframe>
             </Match>
             <Match when={part().kind === "markdown"}>
@@ -277,7 +281,7 @@ export function Card(props: { surface: Surface }) {
               aria-label="Copy link to this surface"
               onClick={async () => {
                 try {
-                  await navigator.clipboard.writeText(`${location.origin}/s/${props.surface.id}`);
+                  await navigator.clipboard.writeText(surfaceLink(props.surface.id));
                   toast("Link copied");
                 } catch {
                   toast("Couldn't copy the link");
@@ -289,7 +293,7 @@ export function Card(props: { surface: Surface }) {
             <a
               class="act icon open"
               target="_blank"
-              href={`/s/${props.surface.id}`}
+              href={surfaceLink(props.surface.id)}
               title="Open in a new tab"
               aria-label="Open in a new tab"
             >
