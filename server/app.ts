@@ -492,8 +492,9 @@ export function createApp({
 
   const withViewerConfig = (text: string, request: Request) => {
     const script = `<script>window.__SIDESHOW_BASE_PATH__=${JSON.stringify(requestBasePath(request))};</script>`;
-    return text.includes("</head>")
-      ? text.replace("</head>", `${script}</head>`)
+    const headClose = text.lastIndexOf("</head>");
+    return headClose >= 0
+      ? `${text.slice(0, headClose)}${script}${text.slice(headClose)}`
       : `${script}${text}`;
   };
 
