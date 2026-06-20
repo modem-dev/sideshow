@@ -5,6 +5,7 @@ import { Card, cardEls, frameForSource } from "./Card.tsx";
 import { applyFrameHeight } from "./SandboxedPart.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
+import { Slot } from "./host.tsx";
 import { activeTheme, initTheme, setTheme, themeOptions } from "./theme.ts";
 import {
   checkVersion,
@@ -120,6 +121,13 @@ export default function App() {
           </button>
           <div class="brand">
             <span class="livedot" classList={{ on: live() }}></span>sideshow
+          </div>
+          <div
+            class="topbar-slot"
+            data-slot="account"
+            style={{ "margin-left": "auto", "min-width": "0", overflow: "hidden" }}
+          >
+            <Slot name="account" />
           </div>
         </header>
         <aside>

@@ -104,6 +104,14 @@ export interface AppOptions {
   // stripped routes like /api/sessions and /s/:id?part=0; this prefix is only
   // used when the server/viewer generate browser-visible URLs.
   basePath?: BasePathHook;
+  // Extra HTML spliced into the viewer <head> at request time, right after the
+  // base-path config script. Hosts (e.g. a SaaS wrapper) use it to load a
+  // companion bundle or publish additional window globals before the viewer
+  // boots. Kept generic — the core ships no host-specific markup; self-hosters
+  // simply leave it unset. The string is inserted verbatim into the HTML
+  // response, so it must be deployment-controlled — never built from untrusted
+  // or user-supplied request data without escaping.
+  headHtml?: string | ((request: Request) => string);
   // Update notice: the running version and the upgrade hint that fits this
   // deployment (npm install vs redeploy). Without `version`, /api/version
   // reports nothing and the viewer shows no notice.
@@ -217,6 +225,7 @@ export function createApp({
   authenticate,
   authToken,
   basePath,
+  headHtml,
   version,
   upgradeCommand,
   fetchLatestRelease,
@@ -491,7 +500,8 @@ export function createApp({
     text.replaceAll(LOCAL_ORIGIN, new URL(c.req.url).origin);
 
   const withViewerConfig = (text: string, request: Request) => {
-    const script = `<script>window.__SIDESHOW_BASE_PATH__=${JSON.stringify(requestBasePath(request))};</script>`;
+    const extra = typeof headHtml === "function" ? (headHtml(request) ?? "") : (headHtml ?? "");
+    const script = `<script>window.__SIDESHOW_BASE_PATH__=${JSON.stringify(requestBasePath(request))};</script>${extra}`;
     const headClose = text.lastIndexOf("</head>");
     return headClose >= 0
       ? `${text.slice(0, headClose)}${script}${text.slice(headClose)}`
