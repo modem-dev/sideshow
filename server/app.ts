@@ -236,7 +236,9 @@ export function createApp({
   const normalizeBasePath = (value: string | null | undefined): string => {
     if (!value || value === "/") return "";
     const withLeading = value.startsWith("/") ? value : `/${value}`;
-    return withLeading.replace(/\/+$/, "");
+    let end = withLeading.length;
+    while (end > 0 && withLeading.charCodeAt(end - 1) === 47) end--;
+    return withLeading.slice(0, end);
   };
   const requestBasePath = (request: Request): string =>
     normalizeBasePath(typeof basePath === "function" ? basePath(request) : basePath);
@@ -495,8 +497,10 @@ export function createApp({
       : `${script}${text}`;
   };
 
-  const viewerResponse = (c: { req: { raw: Request; url: string }; html: (html: string) => Response }) =>
-    c.html(withViewerConfig(withOrigin(viewerHtml, c), c.req.raw));
+  const viewerResponse = (c: {
+    req: { raw: Request; url: string };
+    html: (html: string) => Response;
+  }) => c.html(withViewerConfig(withOrigin(viewerHtml, c), c.req.raw));
   app.get("/", viewerResponse);
   app.get("/session/:id", viewerResponse);
   app.get("/session/:id/s/:surfaceId", viewerResponse);
