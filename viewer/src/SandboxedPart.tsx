@@ -11,8 +11,10 @@ const ORIGIN = location.origin;
 // SandboxedPart (rich/comment frames) and App's bridge handler (html-part
 // frames) so every sandboxed surface clamps to the same bounds — min one line,
 // max generous enough for a long diff/markdown without runaway growth.
+const MIN_H = 24;
+const MAX_H = 4000;
 export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unknown): void {
-  iframe.style.height = Math.min(Math.max(Number(reportedHeight), 24), 4000) + "px";
+  iframe.style.height = Math.min(Math.max(Number(reportedHeight), MIN_H), MAX_H) + "px";
 }
 
 // Renders agent-produced markup (markdown, mermaid, diff) inside the SAME
@@ -48,6 +50,25 @@ export function SandboxedPart(props: { body: string; css: string; class?: string
     };
     window.addEventListener("message", onMessage);
     onCleanup(() => window.removeEventListener("message", onMessage));
+
+    // Chrome field-trial workaround: certain Chrome 149 A/B experiments break
+    // layout measurement in opaque-origin srcdoc iframes — scrollHeight,
+    // offsetHeight, innerWidth all read as 0.  The bridge may fire with only
+    // the body-padding height (≤ MIN_H) because the content was never laid
+    // out, then never re-fire because no resize occurs.  Re-setting the
+    // srcdoc attribute forces a fresh HTML parse that consistently recovers
+    // layout.  One retry after 2 s is enough; the re-parsed bridge fires
+    // within ~60 ms.
+    const retryId = setTimeout(() => {
+      if (frame.isConnected && frame.srcdoc && frame.offsetHeight <= MIN_H) {
+        const s = frame.srcdoc;
+        frame.srcdoc = "";
+        requestAnimationFrame(() => {
+          frame.srcdoc = s;
+        });
+      }
+    }, 2000);
+    onCleanup(() => clearTimeout(retryId));
   });
 
   return (
