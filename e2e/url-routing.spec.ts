@@ -54,7 +54,7 @@ test("navigating to /session/:id/s/:surfaceId selects session and scrolls to sur
   // All surfaces should be loaded (full session view)
   await expect(page.locator(".card:not(#whatsNew) .card-title")).toHaveCount(3);
   // The target surface should be scrolled near the top of the viewport.
-  // pollScrollIntoView retries until the position stabilises (≤ 5 s).
+  // pollScrollIntoView retries every 50 ms until the position stabilises (≤ 5 s).
   await expect
     .poll(
       async () => {

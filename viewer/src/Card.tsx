@@ -121,7 +121,7 @@ function pollScrollIntoView(el: HTMLElement, surfaceId: string): () => void {
       finish();
       return;
     }
-    timer = setTimeout(tick, 100);
+    timer = setTimeout(tick, 50);
   };
 
   tick();
