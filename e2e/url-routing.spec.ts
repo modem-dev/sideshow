@@ -6,13 +6,16 @@ test("clicking a session updates the URL to /session/:id", async ({ page, server
   await page.goto(server.url);
   await expect(page.locator("#sessionList .sess")).toHaveCount(2);
 
-  // click the second session row
+  // click the second session row. Selecting a session pushes /session/:id, then
+  // focusSurface immediately replaceState's /session/:id/s/:surfaceId once the
+  // first card is visible — so match the session segment with a boundary, not a
+  // `$`, or this races the deep-link suffix (see the back/forward test below).
   await page.locator(`#sessionList .sess[data-id="${s2.sessionId}"]`).click();
-  await expect(page).toHaveURL(new RegExp(`/session/${s2.sessionId}$`));
+  await expect(page).toHaveURL(new RegExp(`/session/${s2.sessionId}(\\b|/)`));
 
   // click the first session row
   await page.locator(`#sessionList .sess[data-id="${s1.sessionId}"]`).click();
-  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}$`));
+  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}(\\b|/)`));
 });
 
 test("navigating to /session/:id selects that session", async ({ page, server }) => {
