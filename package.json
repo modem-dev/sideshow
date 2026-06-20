@@ -39,6 +39,16 @@
       "types": "./dist/server/public.d.ts",
       "import": "./dist/server/public.js"
     },
+    "./app": {
+      "types": "./dist/server/app.d.ts",
+      "import": "./dist/server/app.js"
+    },
+    "./workers": {
+      "types": "./dist/workers/public.d.ts",
+      "import": "./dist/workers/public.js"
+    },
+    "./viewer": "./viewer/dist/index.html",
+    "./guide/*": "./guide/*",
     "./*": "./*"
   },
   "publishConfig": {

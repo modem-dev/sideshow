@@ -77,15 +77,25 @@ function decodeBase64(b64: string): Uint8Array {
 // them with the real origin so a deployed instance shows copy-pasteable URLs.
 const LOCAL_ORIGIN = "http://localhost:8228";
 
+export type AuthenticateHook = (
+  request: Request,
+) => boolean | Response | Promise<boolean | Response>;
+
 export interface AppOptions {
   store: Store;
   viewerHtml: string;
   guideMarkdown: string;
   setupText: string;
   agentHowtoText?: string;
-  // When set (cloud deployments), every route except /guide, /setup, and
-  // /agent-howto requires it: Authorization bearer, ?key= query, or
-  // the cookie it sets.
+  // When set (cloud deployments), this hook authorizes requests before any
+  // app route runs. Return true to allow, false to use the default 401, or a
+  // Response for custom denials. This is intentionally lower-level than
+  // authToken so hosts can validate edge-signed assertions without teaching
+  // sideshow about their session/token systems.
+  authenticate?: AuthenticateHook;
+  // When set (self-hosted Worker deployments), every route except /guide,
+  // /setup, and /agent-howto requires it: Authorization bearer, ?key= query,
+  // or the cookie it sets. Preserved for backwards compatibility.
   authToken?: string;
   // Update notice: the running version and the upgrade hint that fits this
   // deployment (npm install vs redeploy). Without `version`, /api/version
@@ -197,6 +207,7 @@ export function createApp({
   guideMarkdown,
   setupText,
   agentHowtoText = setupText,
+  authenticate,
   authToken,
   version,
   upgradeCommand,
@@ -421,8 +432,19 @@ export function createApp({
   // --- auth ---
 
   app.use("*", async (c, next) => {
-    if (!authToken) return next();
     const path = new URL(c.req.url).pathname;
+
+    if (authenticate) {
+      const result = await authenticate(c.req.raw);
+      if (result === true) return next();
+      if (result instanceof Response) return result;
+      if (path.startsWith("/api") || path === "/mcp") {
+        return c.json({ error: "unauthorized" }, 401);
+      }
+      return c.text("unauthorized", 401);
+    }
+
+    if (!authToken) return next();
     if (path === "/guide" || path === "/setup" || path === "/agent-howto") return next();
 
     const bearer = c.req.header("authorization");

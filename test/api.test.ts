@@ -544,6 +544,22 @@ test("rename session", async () => {
   assert.equal(((await res.json()) as any).title, "Auth refactor");
 });
 
+test("auth hook can guard an embedding host without authToken", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sideshow-test-"));
+  const app = createApp({
+    store: new JsonFileStore(join(dir, "data.json")),
+    viewerHtml: "<html>viewer</html>",
+    guideMarkdown: "# guide",
+    setupText: "# setup",
+    authenticate: (request) => request.headers.get("x-sideshow-internal") === "ok",
+  });
+
+  assert.equal((await app.request("/guide")).status, 401);
+  assert.equal((await app.request("/api/sessions")).status, 401);
+  const allowed = await app.request("/api/sessions", { headers: { "x-sideshow-internal": "ok" } });
+  assert.equal(allowed.status, 200);
+});
+
 test("auth token guards mutating routes when configured", async () => {
   const app = makeApp("secret");
   const denied = await app.request("/api/snippets", json({ html: "<p>x</p>" }));
