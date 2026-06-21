@@ -4,6 +4,9 @@ import { createSignal } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import {
   api,
+  appPath,
+  isReadonly,
+  publicReadMode,
   type Comment,
   type SessionRow,
   type Surface,
@@ -143,10 +146,35 @@ export function updateNotice(): VersionInfo | null {
 }
 
 export async function refreshSessionsQuiet() {
+  if (isReadonly() && publicReadMode() === "session") return;
   setSessionsInternal(reconcile(await api<SessionRow[]>("/api/sessions"), { key: "id" }));
 }
 
+function syntheticSession(id: string): SessionRow {
+  const now = new Date().toISOString();
+  return {
+    id,
+    agent: "",
+    title: null,
+    cwd: null,
+    createdAt: now,
+    lastActiveAt: now,
+    agentSeq: 0,
+    surfaceCount: 0,
+  };
+}
+
 export async function refreshSessions(targetSurfaceId?: string | null) {
+  if (isReadonly() && publicReadMode() === "session") {
+    const route = parseRoute(window.location.pathname);
+    if (!route.sessionId) return;
+    if (!sessions.some((s) => s.id === route.sessionId)) {
+      setSessionsInternal(reconcile([syntheticSession(route.sessionId)], { key: "id" }));
+    }
+    await select(route.sessionId, { replace: true, initialSurfaceId: route.surfaceId });
+    return;
+  }
+
   await refreshSessionsQuiet();
   if (selected() && !sessions.some((s) => s.id === selected())) setSelectedInternal(null);
   if (targetSurfaceId) {
@@ -338,7 +366,13 @@ interface FeedEvent {
 }
 
 export function connect() {
-  const es = new EventSource("/api/events");
+  const route = parseRoute(window.location.pathname);
+  const sessionId = route.sessionId ?? selected();
+  const eventsPath =
+    isReadonly() && publicReadMode() === "session" && sessionId
+      ? `/api/events?session=${encodeURIComponent(sessionId)}`
+      : "/api/events";
+  const es = new EventSource(appPath(eventsPath));
   let everConnected = false;
   es.onopen = async () => {
     setLiveInternal(true);

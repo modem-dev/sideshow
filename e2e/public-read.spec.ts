@@ -1,4 +1,4 @@
-import { expect, publicReadTest as test, publish } from "./fixtures.ts";
+import { expect, publicReadTest as test, publish, startSideshowServer } from "./fixtures.ts";
 
 async function postComment(
   serverUrl: string,
@@ -30,6 +30,43 @@ test("public read viewer globals are visible to the browser", async ({
       }),
     )
     .toEqual({ readonly: true, mode: publicReadServer.mode });
+});
+
+test("readonly session-mode viewer loads without fetching the session list", async ({ page }) => {
+  const token = "secret";
+  const server = await startSideshowServer({
+    SIDESHOW_TOKEN: token,
+    SIDESHOW_PUBLIC_READ: "session",
+  });
+  try {
+    const surface = await publish(
+      server.url,
+      { html: "<p>session scoped</p>", title: "Session scoped", agent: "e2e" },
+      token,
+    );
+    const sessionListRequests: string[] = [];
+    const eventUrls: string[] = [];
+    page.on("request", (req) => {
+      const url = new URL(req.url());
+      if (req.method() === "GET" && url.pathname === "/api/sessions") {
+        sessionListRequests.push(req.url());
+      }
+      if (url.pathname === "/api/events") eventUrls.push(req.url());
+    });
+
+    await page.goto(`${server.url}/session/${surface.sessionId}`);
+
+    await expect(page.locator(".card:not(#whatsNew)")).toBeVisible();
+    await expect(page.locator(".card-title")).toContainText("Session scoped");
+    expect(sessionListRequests).toEqual([]);
+    await expect
+      .poll(() =>
+        eventUrls.some((url) => new URL(url).searchParams.get("session") === surface.sessionId),
+      )
+      .toBe(true);
+  } finally {
+    server.stop();
+  }
 });
 
 test("readonly full-mode chrome hides sidebar write controls", async ({
