@@ -347,12 +347,15 @@ export class JsonFileStore implements Store {
 
   async createComment(input: CreateCommentInput) {
     await this.load();
-    if (!this.sessions.has(input.sessionId)) return null;
     const surface = input.surfaceId ? this.surfaces.get(input.surfaceId) : null;
+    // Derive the session from the surface so a comment can never land in a
+    // session that doesn't own its surface.
+    const sessionId = surface ? surface.sessionId : input.sessionId;
+    if (!this.sessions.has(sessionId)) return null;
     const comment: Comment = {
       id: newId(),
       seq: ++this.lastSeq,
-      sessionId: input.sessionId,
+      sessionId,
       surfaceId: surface?.id ?? null,
       surfaceTitle: surface?.title ?? null,
       author: input.author.trim() || "user",
@@ -360,7 +363,7 @@ export class JsonFileStore implements Store {
       createdAt: new Date().toISOString(),
     };
     this.comments.push(comment);
-    this.touch(input.sessionId);
+    this.touch(sessionId);
     await this.persist();
     return clone(comment);
   }

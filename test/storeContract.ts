@@ -392,6 +392,34 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.equal(ghost?.surfaceId, null);
   });
 
+  contract("a comment's session follows its surface, not the caller's sessionId", async (store) => {
+    // Two sessions; a surface in session A. A comment that passes B's
+    // sessionId but the surface's id must still be filed under A — the
+    // comment's session should always match the surface's session.
+    const a = await store.createSession({ agent: "a" });
+    const b = await store.createSession({ agent: "b" });
+    const surface = await store.createSurface({
+      sessionId: a.id,
+      parts: [htmlPart("<p>x</p>")],
+    });
+    assert.ok(surface);
+    const comment = await store.createComment({
+      sessionId: b.id,
+      surfaceId: surface.id,
+      author: "user",
+      text: "mismatch",
+    });
+    assert.ok(comment);
+    assert.equal(comment.sessionId, a.id);
+    assert.equal(comment.surfaceId, surface.id);
+    // listed under A, not B
+    assert.deepEqual(
+      (await store.listComments({ sessionId: a.id })).map((c) => c.text),
+      ["mismatch"],
+    );
+    assert.deepEqual(await store.listComments({ sessionId: b.id }), []);
+  });
+
   contract("comment seq is strictly monotonic, even across deletes", async (store) => {
     const first = await store.createSession({ agent: "a" });
     const c1 = await store.createComment({ sessionId: first.id, author: "user", text: "1" });

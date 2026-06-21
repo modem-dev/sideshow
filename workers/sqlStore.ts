@@ -368,15 +368,18 @@ export class SqlStore implements Store {
   }
 
   async createComment(input: CreateCommentInput) {
-    if (!(await this.getSession(input.sessionId))) return null;
     const surface = input.surfaceId ? await this.getSurface(input.surfaceId) : null;
+    // Derive the session from the surface so a comment can never land in a
+    // session that doesn't own its surface.
+    const sessionId = surface ? surface.sessionId : input.sessionId;
+    if (!(await this.getSession(sessionId))) return null;
     const id = newId();
     const createdAt = new Date().toISOString();
     const author = input.author.trim() || "user";
     this.sql.exec(
       "INSERT INTO comments (id, sessionId, surfaceId, surfaceTitle, author, text, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
       id,
-      input.sessionId,
+      sessionId,
       surface?.id ?? null,
       surface?.title ?? null,
       author,
@@ -384,11 +387,11 @@ export class SqlStore implements Store {
       createdAt,
     );
     const seq = this.sql.exec("SELECT last_insert_rowid() AS seq").one().seq as number;
-    this.touch(input.sessionId);
+    this.touch(sessionId);
     return {
       id,
       seq,
-      sessionId: input.sessionId,
+      sessionId,
       surfaceId: surface?.id ?? null,
       surfaceTitle: surface?.title ?? null,
       author,
