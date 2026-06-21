@@ -269,6 +269,7 @@ export interface ImportData {
   surfaces?: Surface[];
   comments?: Comment[];
   assets?: ImportAsset[];
+  trace?: Record<string, TraceStep[]>;
   settings?: Record<string, string>;
 }
 

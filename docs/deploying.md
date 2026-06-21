@@ -34,7 +34,7 @@ UI. Invalid `SIDESHOW_PUBLIC_READ` values are ignored.
 
 Authenticated owners can export the whole board as JSON and import it into
 another sideshow instance. The payload preserves IDs and includes sessions,
-surfaces, comments, settings, and base64-encoded assets.
+surfaces, comments, trace steps, settings, and base64-encoded assets.
 
 ```sh
 curl -H "Authorization: Bearer $SIDESHOW_TOKEN" \

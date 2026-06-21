@@ -489,6 +489,10 @@ export class JsonFileStore implements Store {
         });
       }
     }
+    for (const [sessionId, steps] of Object.entries(data.trace ?? {})) {
+      if (steps.length === 0) this.trace.delete(sessionId);
+      else this.trace.set(sessionId, clone(steps));
+    }
     for (const [key, value] of Object.entries(data.settings ?? {})) {
       this.settings.set(key, value);
     }

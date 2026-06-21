@@ -626,14 +626,17 @@ export function createApp({
       store.listSettings(),
     ]);
     const assets = [];
+    const trace: Record<string, TraceStep[]> = {};
     for (const session of sessions) {
       for (const meta of await store.listAssets(session.id)) {
         const asset = await store.getAsset(meta.id);
         if (!asset) continue;
         assets.push({ ...asset, data: encodeBase64(asset.data) });
       }
+      const steps = await store.listTrace(session.id);
+      if (steps.length > 0) trace[session.id] = steps;
     }
-    return c.json({ sessions, surfaces, comments, assets, settings });
+    return c.json({ sessions, surfaces, comments, assets, trace, settings });
   });
 
   app.get("/api/sessions", async (c) => {

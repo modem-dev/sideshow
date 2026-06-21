@@ -610,6 +610,9 @@ export class SqlStore implements Store {
         a.lastAccessedAt,
       );
     }
+    for (const [sessionId, steps] of Object.entries(data.trace ?? {})) {
+      await this.setTrace(sessionId, steps);
+    }
     for (const [key, value] of Object.entries(data.settings ?? {})) {
       this.sql.exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, value);
     }

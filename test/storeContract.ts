@@ -645,6 +645,11 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
       author: "user",
       text: "looks good",
     });
+    const traceSteps = [
+      { kind: "prompt", label: "read plan", ts: "2026-06-21T00:00:00.000Z" },
+      { kind: "tool", label: "run tests", detail: "npm test passed" },
+    ];
+    await source.setTrace(session.id, traceSteps);
 
     const sourceAssets = await source.listAssets(session.id);
     const data: ImportData = {
@@ -652,6 +657,7 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
       surfaces: await source.listSurfaces(),
       comments: await source.listComments({}),
       assets: sourceAssets.map((a) => ({ ...a, data: base64(a.data) })),
+      trace: { [session.id]: traceSteps },
       settings: { theme: "gruvbox", sidebar: "collapsed" },
     };
 
@@ -661,6 +667,7 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.deepEqual(await target.getSession(session.id), await source.getSession(session.id));
     assert.deepEqual(await target.listSurfaces(), data.surfaces);
     assert.deepEqual(await target.listComments({}), data.comments);
+    assert.deepEqual(await target.listTrace(session.id), traceSteps);
     assert.equal(await target.getSetting("theme"), "gruvbox");
     assert.equal(await target.getSetting("sidebar"), "collapsed");
 

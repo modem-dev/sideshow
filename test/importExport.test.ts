@@ -86,6 +86,10 @@ test("GET /api/export returns sessions, surfaces, comments, assets, and all sett
       }),
     )
   ).json()) as any;
+  await app.request(
+    `/api/sessions/${created.sessionId}/trace`,
+    json({ steps: [{ kind: "tool", label: "npm test", detail: "passed" }] }),
+  );
   await store.setSetting("theme", "gruvbox");
   await store.setSetting("sidebar", "collapsed");
 
@@ -98,6 +102,9 @@ test("GET /api/export returns sessions, surfaces, comments, assets, and all sett
   assert.equal(exported.comments.length, 1);
   assert.equal(exported.comments[0].text, "ship it");
   assert.deepEqual(exported.settings, { theme: "gruvbox", sidebar: "collapsed" });
+  assert.deepEqual(exported.trace, {
+    [created.sessionId]: [{ kind: "tool", label: "npm test", detail: "passed" }],
+  });
   assert.equal(exported.assets.length, 1);
   assert.deepEqual(exported.assets[0], {
     id: asset.id,
@@ -163,6 +170,12 @@ test("POST /api/import preserves IDs and imported assets are served", async () =
         lastAccessedAt: "2026-06-21T00:00:05.000Z",
       },
     ],
+    trace: {
+      "known-session": [
+        { kind: "prompt", label: "read prompt", ts: "2026-06-21T00:00:06.000Z" },
+        { kind: "tool", label: "write code", detail: "done" },
+      ],
+    },
     settings: { theme: "gruvbox" },
   };
 
@@ -184,6 +197,10 @@ test("POST /api/import preserves IDs and imported assets are served", async () =
   const comments = (await (await app.request("/api/comments?session=known-session")).json()) as any;
   assert.equal(comments.comments[0].id, "known-comment");
   assert.equal(comments.comments[0].seq, 99);
+  assert.deepEqual(
+    ((await (await app.request("/api/sessions/known-session/trace")).json()) as any).steps,
+    imported.trace["known-session"],
+  );
   assert.equal(((await (await app.request("/api/theme")).json()) as any).id, "gruvbox");
   const asset = await app.request("/a/known-asset");
   assert.equal(asset.status, 200);
@@ -205,6 +222,10 @@ test("exported data can be imported into another server without changing shape",
   await source.app.request(
     "/api/comments",
     json({ snippet: created.id, text: "round-trip comment", author: "user" }),
+  );
+  await source.app.request(
+    `/api/sessions/${created.sessionId}/trace`,
+    json({ steps: [{ kind: "prompt", label: "trace survives export" }] }),
   );
   await source.store.setSetting("theme", "one");
   await source.store.setSetting("sidebar", "expanded");
