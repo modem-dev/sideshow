@@ -746,6 +746,14 @@ export function createApp({
   // base64 `data` string; a raw JSON asset (no top-level `data`) stays raw.
   app.post("/api/assets", async (c) => {
     const mime = (c.req.header("content-type") ?? "").split(";")[0].trim().toLowerCase();
+    // Reject oversize uploads before buffering the body into memory. The
+    // Content-Length header is the wire size; the post-decode cap in
+    // uploadAsset still applies (a base64 envelope decodes to ~3/4), so this
+    // is an early-out for obvious offenders, not the only check.
+    const declaredLen = Number(c.req.header("content-length") ?? 0);
+    if (declaredLen > MAX_ASSET_BYTES) {
+      return c.json({ error: `asset exceeds ${MAX_ASSET_BYTES} bytes` }, 413);
+    }
     const buf = new Uint8Array(await c.req.arrayBuffer());
     let envelope: any = null;
     if (mime === "application/json") {
