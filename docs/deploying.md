@@ -18,6 +18,18 @@ export SIDESHOW_URL=https://sideshow.<account>.workers.dev
 export SIDESHOW_TOKEN=<token>
 ```
 
+To share read-only access without handing out the token, set
+`SIDESHOW_PUBLIC_READ` on the deployment:
+
+- `SIDESHOW_PUBLIC_READ=session` makes direct `/session/:id` links readable
+  without a token while keeping `/` and the session list private (unlisted-link
+  style).
+- `SIDESHOW_PUBLIC_READ=full` makes all read routes public, including the root
+  viewer and session list.
+
+Writes still require `SIDESHOW_TOKEN`, and authenticated owners keep the full
+UI. Invalid `SIDESHOW_PUBLIC_READ` values are ignored.
+
 Remote agents can connect MCP straight to the deployment:
 
 ```sh
