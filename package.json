@@ -29,6 +29,8 @@
     "bin/",
     "dist/",
     "viewer/dist/",
+    "viewer/dist-embed/",
+    "viewer/embed.d.ts",
     "guide/",
     "skills/",
     "extensions/"
@@ -48,6 +50,10 @@
       "import": "./dist/workers/public.js"
     },
     "./viewer": "./viewer/dist/index.html",
+    "./viewer-embed": {
+      "types": "./viewer/embed.d.ts",
+      "import": "./viewer/dist-embed/engine.js"
+    },
     "./guide/*": "./guide/*",
     "./*": "./*"
   },
@@ -58,6 +64,7 @@
     "dev": "vite build && (vite build --watch & node --watch server/index.ts)",
     "start": "vite build && node server/index.ts",
     "build:viewer": "vite build",
+    "build:embed": "vite build -c viewer/vite.embed.config.ts",
     "mcp": "node mcp/server.ts",
     "test": "node --test 'test/**/*.test.ts'",
     "test:e2e": "playwright test",
@@ -69,7 +76,7 @@
     "changeset:status": "changeset status",
     "release:version": "changeset version",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.workers.json --noEmit && tsc -p tsconfig.viewer.json --noEmit",
-    "build": "tsc -p tsconfig.build.json && vite build",
+    "build": "tsc -p tsconfig.build.json && vite build && npm run build:embed",
     "deploy": "npm run build:viewer && wrangler deploy",
     "dev:cloud": "npm run build:viewer && wrangler dev",
     "prepack": "npm run build",
