@@ -29,6 +29,8 @@ export type {
   TraceStep,
 };
 
+export type PublicReadMode = "session" | "full";
+
 // GET /api/sessions decorates each session with its surface count.
 export interface SessionRow extends Session {
   surfaceCount: number;
@@ -47,6 +49,8 @@ export interface VersionInfo {
 declare global {
   interface Window {
     __SIDESHOW_BASE_PATH__?: string;
+    __SIDESHOW_READONLY__?: boolean;
+    __SIDESHOW_PUBLIC_READ__?: PublicReadMode;
   }
 }
 
@@ -56,6 +60,14 @@ export function appBasePath(): string {
 
 export function appPath(path: string): string {
   return `${appBasePath()}${path}`;
+}
+
+export function isReadonly(): boolean {
+  return !!window.__SIDESHOW_READONLY__;
+}
+
+export function publicReadMode(): PublicReadMode | undefined {
+  return window.__SIDESHOW_PUBLIC_READ__;
 }
 
 export function surfaceLink(id: string): string {
