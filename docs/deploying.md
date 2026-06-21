@@ -30,6 +30,22 @@ To share read-only access without handing out the token, set
 Writes still require `SIDESHOW_TOKEN`, and authenticated owners keep the full
 UI. Invalid `SIDESHOW_PUBLIC_READ` values are ignored.
 
+## Backup and migration
+
+Authenticated owners can export the whole board as JSON and import it into
+another sideshow instance. The payload preserves IDs and includes sessions,
+surfaces, comments, settings, and base64-encoded assets.
+
+```sh
+curl -H "Authorization: Bearer $SIDESHOW_TOKEN" \
+  "$SIDESHOW_URL/api/export" > sideshow-backup.json
+
+curl -X POST -H "Authorization: Bearer $SIDESHOW_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data-binary @sideshow-backup.json \
+  "$SIDESHOW_URL/api/import"
+```
+
 Remote agents can connect MCP straight to the deployment:
 
 ```sh
