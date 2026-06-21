@@ -69,6 +69,46 @@ test("readonly session-mode viewer loads without fetching the session list", asy
   }
 });
 
+test("readonly session-mode viewer receives live surfaces without refreshing the list", async ({
+  page,
+}) => {
+  const token = "secret";
+  const server = await startSideshowServer({
+    SIDESHOW_TOKEN: token,
+    SIDESHOW_PUBLIC_READ: "session",
+  });
+  try {
+    const first = await publish(
+      server.url,
+      { html: "<p>first</p>", title: "First live card", agent: "e2e" },
+      token,
+    );
+    const sessionListRequests: string[] = [];
+    page.on("request", (req) => {
+      const url = new URL(req.url());
+      if (req.method() === "GET" && url.pathname === "/api/sessions") {
+        sessionListRequests.push(req.url());
+      }
+    });
+
+    await page.goto(`${server.url}/session/${first.sessionId}`);
+
+    await expect(page.locator(".card-title")).toContainText("First live card");
+    await expect(page.locator(".topbar .livedot")).toHaveClass(/on/);
+
+    await publish(
+      server.url,
+      { html: "<p>second</p>", title: "Second live card", agent: "e2e", session: first.sessionId },
+      token,
+    );
+
+    await expect(page.locator(".card-title", { hasText: "Second live card" })).toBeVisible();
+    expect(sessionListRequests).toEqual([]);
+  } finally {
+    server.stop();
+  }
+});
+
 test("readonly session-mode viewer renders without sidebar chrome", async ({ page }) => {
   const token = "secret";
   const server = await startSideshowServer({
