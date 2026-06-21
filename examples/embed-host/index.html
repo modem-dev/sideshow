@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>sideshow embed host</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      /* the HOST's own chrome — deliberately not sideshow's — to make the
+         boundary obvious: everything below the bar is the embedded engine. */
+      .chrome {
+        height: 48px;
+        flex: 0 0 48px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 16px;
+        background: #0d1117;
+        color: #e6edf3;
+        font-size: 14px;
+        border-bottom: 1px solid #30363d;
+      }
+      .chrome b {
+        font-weight: 600;
+      }
+      .chrome .dim {
+        color: #9198a1;
+      }
+      #mount {
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="chrome">
+      <b>Cloud shell</b>
+      <span class="dim">— host chrome · the viewer engine is mounted below in a shadow root</span>
+    </div>
+    <div id="mount"></div>
+    <script type="module">
+      import { mountViewer } from "/engine/engine.js";
+      // No host passed → the engine uses its default History-API host
+      // (basePath ""), fetching /api/* from this origin (proxied to the server).
+      const handle = mountViewer(document.getElementById("mount"));
+      window.__viewer = handle;
+    </script>
+  </body>
+</html>

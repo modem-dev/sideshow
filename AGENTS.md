@@ -128,6 +128,18 @@ consciously, not as a side effect):
   rebuild (`npm run build:viewer`) and restart to see viewer changes.
   `npm run dev` runs a Vite watch build alongside the server; the e2e suite
   builds the viewer itself (Playwright global setup).
+- The viewer is also an **embeddable engine**. `mountViewer(el, host)`
+  (`viewer/src/embed.tsx`) renders it into a shadow root with its own runtime,
+  reading base path / route / theme from an injected host (`viewer/src/host.ts`)
+  instead of `window`/`location`. `main.tsx` is the default self-hosted host and
+  renders into `document.body` unchanged — **self-hosted behaviour must stay
+  identical** (the e2e suite is the parity oracle). So in `viewer/src`, don't
+  reach for `document`/`location`/`history`/`:root` directly; go through
+  `root()`/`host()` so both the self-hosted document and the embedded shadow
+  root work (`:root` matches nothing in a shadow root, and there is no
+  `<html>`/`<body>` — `:host` plays `<body>`'s role; see `embed.tsx`). Build the
+  bundle with `npm run build:embed` (→ `viewer/dist-embed/engine.js`, the
+  `sideshow/viewer-embed` export); it is folded into `npm run build`.
 
 ## Validation
 
