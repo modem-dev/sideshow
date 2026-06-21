@@ -927,8 +927,15 @@ export function createApp({
     // but only when a live surface actually points at this id, so unknown ids
     // still fail fast.
     if (!asset && (await store.isAssetReferenced(id))) {
-      for (let i = 0; i < 20 && !asset; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 150));
+      // Optimistic uploads: an agent can derive an asset's URL from its
+      // content hash and publish a surface referencing it before (or while)
+      // the bytes are uploaded. Rather than 404 in that window, briefly wait
+      // for the bytes — but only when a live surface actually points at this
+      // id, so unknown ids still fail fast. The wait is short (1s): the
+      // upload is either in-flight (sub-second) or never coming (evicted),
+      // and a long spin on every such request is a bad failure mode.
+      for (let i = 0; i < 10 && !asset; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
         asset = await store.getAsset(id);
       }
     }

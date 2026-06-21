@@ -1200,6 +1200,23 @@ test("uploading to an unknown session 404s; serving a missing asset 404s", async
   assert.equal((await app.request("/a/missing")).status, 404);
 });
 
+test("a referenced but never-uploaded asset 404s quickly, not after a long spin", async () => {
+  // An image part names an asset id that was never uploaded. The optimistic
+  // wait should be brief — the upload is either in-flight (sub-second) or
+  // never coming (evicted). A 3-second spin on every such request is a bad
+  // failure mode.
+  const app = makeApp();
+  const surface = (await (
+    await app.request("/api/surfaces", json({ parts: [{ kind: "image", assetId: "neversent" }] }))
+  ).json()) as any;
+  assert.ok(surface);
+  const start = Date.now();
+  const res = await app.request("/a/neversent");
+  const elapsed = Date.now() - start;
+  assert.equal(res.status, 404);
+  assert.ok(elapsed < 2000, `expected <2s, got ${elapsed}ms`);
+});
+
 test("the surface CSP allows the server origin so assets embed by url", async () => {
   const app = makeApp();
   const snip = (await (
