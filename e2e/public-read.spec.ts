@@ -1,4 +1,17 @@
-import { expect, publicReadTest as test } from "./fixtures.ts";
+import { expect, publicReadTest as test, publish } from "./fixtures.ts";
+
+async function postComment(
+  serverUrl: string,
+  token: string,
+  body: { surface: string; text: string },
+) {
+  const res = await fetch(`${serverUrl}/api/comments`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ ...body, author: "user" }),
+  });
+  if (!res.ok) throw new Error(`comment failed: ${res.status}`);
+}
 
 test("public read viewer globals are visible to the browser", async ({
   page,
@@ -17,4 +30,29 @@ test("public read viewer globals are visible to the browser", async ({
       }),
     )
     .toEqual({ readonly: true, mode: publicReadServer.mode });
+});
+
+test("readonly cards hide comment and delete controls but keep read actions", async ({
+  page,
+  publicReadServer,
+}) => {
+  const surface = await publish(
+    publicReadServer.url,
+    { html: "<p>readable</p>", title: "Readonly card", agent: "e2e" },
+    publicReadServer.token,
+  );
+  await postComment(publicReadServer.url, publicReadServer.token, {
+    surface: surface.id,
+    text: "existing feedback",
+  });
+
+  await page.goto(publicReadServer.url);
+
+  const card = page.locator(".card:not(#whatsNew)");
+  await expect(card.locator(".act.comment")).toHaveCount(0);
+  await expect(card.locator(".act.del")).toHaveCount(0);
+  await expect(card.locator(".act.copy")).toBeVisible();
+  await expect(card.locator(".act.open")).toBeVisible();
+  await expect(card.frameLocator(".cmtframe").locator("body")).toContainText("existing feedback");
+  await expect(card.locator(".composer")).toHaveCount(0);
 });

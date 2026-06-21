@@ -13,6 +13,7 @@ import {
 import {
   api,
   appPath,
+  isReadonly,
   relTime,
   sessionLabel,
   type DiffPart as DiffPartData,
@@ -273,8 +274,20 @@ export function Card(props: { surface: Surface }) {
         surfaceId={props.surface.id}
         placeholder="Leave a comment…"
         collapsible
-        actions={
+        readonly={isReadonly()}
+        actions={(startReply) => (
           <>
+            <Show when={!isReadonly()}>
+              <button
+                class="act icon comment"
+                title="Comment"
+                aria-label="Comment"
+                onClick={startReply}
+              >
+                <CommentIcon />
+              </button>
+            </Show>
+            <span class="sp"></span>
             <button
               class="act icon copy"
               title="Copy link to this surface"
@@ -299,21 +312,23 @@ export function Card(props: { surface: Surface }) {
             >
               <OpenIcon />
             </a>
-            <span class="divider"></span>
-            <button
-              class="act icon del"
-              title="Delete surface"
-              aria-label={`Delete "${props.surface.title}"`}
-              onClick={async () => {
-                if (confirm(`Delete "${props.surface.title}"?`)) {
-                  await api(`/api/surfaces/${props.surface.id}`, { method: "DELETE" });
-                }
-              }}
-            >
-              <TrashIcon />
-            </button>
+            <Show when={!isReadonly()}>
+              <span class="divider"></span>
+              <button
+                class="act icon del"
+                title="Delete surface"
+                aria-label={`Delete "${props.surface.title}"`}
+                onClick={async () => {
+                  if (confirm(`Delete "${props.surface.title}"?`)) {
+                    await api(`/api/surfaces/${props.surface.id}`, { method: "DELETE" });
+                  }
+                }}
+              >
+                <TrashIcon />
+              </button>
+            </Show>
           </>
-        }
+        )}
         send={(text) =>
           sendComment({ surface: props.surface.id, text, author: "user" }, props.surface.id, text)
         }
@@ -331,7 +346,8 @@ function Thread(props: {
   // the card surface, set off by a hairline divider and muted action styling,
   // so a user's comment never reads as part of the agent-rendered UI.
   collapsible?: boolean;
-  actions?: JSX.Element;
+  readonly?: boolean;
+  actions?: (startReply: () => void) => JSX.Element;
 }) {
   const [replying, setReplying] = createSignal(false);
   const list = () => comments().filter((c) => c.surfaceId === props.surfaceId);
@@ -344,25 +360,16 @@ function Thread(props: {
       </Show>
       <Show
         when={props.collapsible}
-        fallback={<Composer placeholder={props.placeholder} send={props.send} />}
+        fallback={
+          <Show when={!props.readonly}>
+            <Composer placeholder={props.placeholder} send={props.send} />
+          </Show>
+        }
       >
         <div class="card-actions">
           <Show
-            when={replying()}
-            fallback={
-              <div class="actbar">
-                <button
-                  class="act icon comment"
-                  title="Comment"
-                  aria-label="Comment"
-                  onClick={() => setReplying(true)}
-                >
-                  <CommentIcon />
-                </button>
-                <span class="sp"></span>
-                {props.actions}
-              </div>
-            }
+            when={!props.readonly && replying()}
+            fallback={<div class="actbar">{props.actions?.(() => setReplying(true))}</div>}
           >
             <Composer
               placeholder={props.placeholder}
