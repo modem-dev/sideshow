@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { EventBus } from "./events.ts";
@@ -471,14 +471,14 @@ export function createApp({
 
   // --- auth ---
 
-  const isAuthenticated = (c: any): boolean => {
+  const isAuthenticated = (c: Context): boolean => {
     if (!authToken) return true;
     if (c.req.header("authorization") === `Bearer ${authToken}`) return true;
     if (getCookie(c, "sideshow_key") === authToken) return true;
     return c.req.query("key") === authToken;
   };
 
-  const isUnauthenticatedSessionRead = (c: any): boolean =>
+  const isUnauthenticatedSessionRead = (c: Context): boolean =>
     publicRead === "session" && !isAuthenticated(c);
 
   app.use("*", async (c, next) => {
@@ -523,22 +523,33 @@ export function createApp({
   const withOrigin = (text: string, c: { req: { url: string } }) =>
     text.replaceAll(LOCAL_ORIGIN, new URL(c.req.url).origin);
 
-  const withViewerConfig = (text: string, request: Request) => {
-    const script = `<script>window.__SIDESHOW_BASE_PATH__=${JSON.stringify(requestBasePath(request))};</script>`;
+  const withViewerConfig = (text: string, request: Request, isReadonly: boolean) => {
+    const config = [
+      `window.__SIDESHOW_BASE_PATH__=${JSON.stringify(requestBasePath(request))};`,
+      isReadonly ? "window.__SIDESHOW_READONLY__=true;" : "",
+      isReadonly && publicRead
+        ? `window.__SIDESHOW_PUBLIC_READ__=${JSON.stringify(publicRead)};`
+        : "",
+    ].join("");
+    const script = `<script>${config}</script>`;
     const headClose = text.lastIndexOf("</head>");
     return headClose >= 0
       ? `${text.slice(0, headClose)}${script}${text.slice(headClose)}`
       : `${script}${text}`;
   };
 
-  const configuredViewerHtml = (request: Request, url: string) =>
-    withViewerConfig(withOrigin(viewerHtml, { req: { url } }), request);
-  app.get("/", (c) => c.html(configuredViewerHtml(c.req.raw, c.req.url)));
+  const configuredViewerHtml = (c: Context) =>
+    withViewerConfig(
+      withOrigin(viewerHtml, { req: { url: c.req.url } }),
+      c.req.raw,
+      !!publicRead && !isAuthenticated(c),
+    );
+  app.get("/", (c) => c.html(configuredViewerHtml(c)));
   app.get("/session/:id", async (c) => {
     if (isUnauthenticatedSessionRead(c) && !(await store.getSession(c.req.param("id")))) {
       return c.text("Session not found", 404);
     }
-    return c.html(configuredViewerHtml(c.req.raw, c.req.url));
+    return c.html(configuredViewerHtml(c));
   });
   app.get("/session/:id/s/:surfaceId", async (c) => {
     if (isUnauthenticatedSessionRead(c)) {
@@ -548,7 +559,7 @@ export function createApp({
         return c.text("Session or surface not found", 404);
       }
     }
-    return c.html(configuredViewerHtml(c.req.raw, c.req.url));
+    return c.html(configuredViewerHtml(c));
   });
   app.get("/guide", (c) => c.text(withOrigin(guideMarkdown, c)));
   app.get("/setup", (c) => c.text(withOrigin(setupText, c)));

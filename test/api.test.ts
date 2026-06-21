@@ -724,6 +724,45 @@ test("public read session mode protects and scopes event streams", async () => {
   assert.ok(!text.includes(other.id));
 });
 
+test("public read viewer config marks unauthenticated full-mode visitors readonly", async () => {
+  const app = makeApp("secret", { publicRead: "full" });
+
+  const html = await (await app.request("/")).text();
+  assert.ok(html.includes("__SIDESHOW_READONLY__=true"));
+  assert.ok(html.includes('__SIDESHOW_PUBLIC_READ__="full"'));
+});
+
+test("public read viewer config keeps authenticated owners writable", async () => {
+  const app = makeApp("secret", { publicRead: "full" });
+
+  const html = await (
+    await app.request("/", { headers: { authorization: "Bearer secret" } })
+  ).text();
+  assert.ok(!html.includes("__SIDESHOW_READONLY__"));
+  assert.ok(!html.includes("__SIDESHOW_PUBLIC_READ__"));
+});
+
+test("public read viewer config marks session-mode visitors readonly", async () => {
+  const app = makeApp("secret", { publicRead: "session" });
+  const created = (await (
+    await app.request("/api/snippets", authedJson({ html: "<p>x</p>" }))
+  ).json()) as any;
+
+  const html = await (await app.request(`/session/${created.sessionId}`)).text();
+  assert.ok(html.includes("__SIDESHOW_READONLY__=true"));
+  assert.ok(html.includes('__SIDESHOW_PUBLIC_READ__="session"'));
+});
+
+test("public read viewer config treats query key as authenticated for that response", async () => {
+  const app = makeApp("secret", { publicRead: "full" });
+
+  const res = await app.request("/?key=secret");
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.ok(!html.includes("__SIDESHOW_READONLY__"));
+  assert.ok(!html.includes("__SIDESHOW_PUBLIC_READ__"));
+});
+
 test("public read does not bypass custom authenticate hooks", async () => {
   const dir = mkdtempSync(join(tmpdir(), "sideshow-test-"));
   const app = createApp({
