@@ -455,6 +455,11 @@ export class JsonFileStore implements Store {
     return [...this.assets.values()].filter((a) => a.sessionId === sessionId).map(clone);
   }
 
+  async listAllAssets() {
+    await this.load();
+    return [...this.assets.values()].map(clone).sort((a, b) => a.id.localeCompare(b.id));
+  }
+
   async removeAsset(id: string) {
     await this.load();
     if (!this.assets.delete(id)) return false;

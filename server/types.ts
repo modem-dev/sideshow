@@ -251,6 +251,7 @@ export interface Store {
   // Bump lastAccessedAt (called when bytes are served), keeping live assets warm.
   touchAsset(id: string): Promise<void>;
   listAssets(sessionId: string): Promise<Asset[]>;
+  listAllAssets(): Promise<Asset[]>;
   removeAsset(id: string): Promise<boolean>;
   // Whether any live surface (current or historical version) references this
   // asset id. Drives the optimistic-read wait and reference-aware deletion.

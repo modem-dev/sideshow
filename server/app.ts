@@ -619,20 +619,16 @@ export function createApp({
   // the same shape /api/import accepts, so round-tripping is trivial.
   app.get("/api/export", async (c) => {
     if (!isAuthenticated(c)) return c.json({ error: "unauthorized" }, 401);
-    const [sessions, surfaces, comments, settings] = await Promise.all([
+    const [sessions, surfaces, comments, settings, rawAssets] = await Promise.all([
       store.listSessions(),
       store.listSurfaces(),
       store.listComments({}),
       store.listSettings(),
+      store.listAllAssets(),
     ]);
-    const assets = [];
+    const assets = rawAssets.map((asset) => ({ ...asset, data: encodeBase64(asset.data) }));
     const trace: Record<string, TraceStep[]> = {};
     for (const session of sessions) {
-      for (const meta of await store.listAssets(session.id)) {
-        const asset = await store.getAsset(meta.id);
-        if (!asset) continue;
-        assets.push({ ...asset, data: encodeBase64(asset.data) });
-      }
       const steps = await store.listTrace(session.id);
       if (steps.length > 0) trace[session.id] = steps;
     }

@@ -540,6 +540,13 @@ export class SqlStore implements Store {
       .map((r) => this.rowToAsset(r));
   }
 
+  async listAllAssets() {
+    return this.sql
+      .exec("SELECT * FROM assets ORDER BY id ASC")
+      .toArray()
+      .map((r) => this.rowToAsset(r));
+  }
+
   async removeAsset(id: string) {
     if (!(await this.getAsset(id))) return false;
     this.sql.exec("DELETE FROM assets WHERE id = ?", id);

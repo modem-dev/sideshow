@@ -207,6 +207,50 @@ test("POST /api/import preserves IDs and imported assets are served", async () =
   assert.deepEqual([...new Uint8Array(await asset.arrayBuffer())], [5, 6, 7, 8]);
 });
 
+test("GET /api/export includes referenced assets whose owning session was deleted", async () => {
+  const { app, store } = makeApp();
+  const owner = await store.createSession({ agent: "pi", title: "asset owner" });
+  const asset = await store.putAsset({
+    sessionId: owner.id,
+    kind: "image",
+    contentType: "image/png",
+    filename: "orphaned-owner.png",
+    data: new Uint8Array([10, 20, 30]),
+  });
+  assert.ok(asset);
+  const survivor = await store.createSession({ agent: "pi", title: "survivor" });
+  const surface = await store.createSurface({
+    sessionId: survivor.id,
+    title: "References old asset",
+    parts: [{ kind: "image", assetId: asset.id, alt: "still live" }],
+  });
+  assert.ok(surface);
+
+  assert.equal(await store.removeSession(owner.id), true);
+  assert.ok(await store.getAsset(asset.id), "referenced asset should survive owner deletion");
+
+  const exported = (await (await app.request("/api/export")).json()) as any;
+
+  assert.equal(
+    exported.sessions.some((s: any) => s.id === owner.id),
+    false,
+  );
+  assert.equal(
+    exported.surfaces.some((s: any) => s.id === surface.id),
+    true,
+  );
+  assert.equal(
+    exported.assets.some((a: any) => a.id === asset.id && a.data === b64([10, 20, 30])),
+    true,
+  );
+
+  const target = makeApp();
+  assert.equal((await target.app.request("/api/import", json(exported))).status, 200);
+  const served = await target.app.request(`/a/${asset.id}`);
+  assert.equal(served.status, 200);
+  assert.deepEqual([...new Uint8Array(await served.arrayBuffer())], [10, 20, 30]);
+});
+
 test("exported data can be imported into another server without changing shape", async () => {
   const source = makeApp();
   const created = (await (
