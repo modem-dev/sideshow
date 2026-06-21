@@ -515,6 +515,16 @@ test("version endpoint is quiet when current, unconfigured, or offline", async (
   });
 });
 
+test("version endpoint reports an update from a prerelease to its stable release", async () => {
+  // A beta user should see the stable release as an update. Per semver,
+  // 0.6.0 > 0.6.0-beta.1 (a version without a prerelease is greater than
+  // one with).
+  const app = makeVersionApp("0.6.0-beta.1", { version: "0.6.0" });
+  const res = (await (await app.request("/api/version")).json()) as any;
+  assert.equal(res.updateAvailable, true);
+  assert.equal(res.latest, "0.6.0");
+});
+
 test("long-poll resolves when a comment arrives", async () => {
   const app = makeApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;

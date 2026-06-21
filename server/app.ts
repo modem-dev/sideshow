@@ -123,15 +123,22 @@ export interface LatestRelease {
   notes?: string;
 }
 
-// Newer-than for plain x.y.z strings; prerelease suffixes compare as their
-// base version, and garbage compares as "not newer".
+// Newer-than for semver-ish strings. Compares the numeric base (x.y.z),
+// then the prerelease suffix: per semver, a version without a prerelease
+// is greater than one with (0.6.0 > 0.6.0-beta.1). Garbage in either part
+// compares as "not newer".
 function versionGt(a: string, b: string): boolean {
-  const pa = a.split("-")[0].split(".").map(Number);
-  const pb = b.split("-")[0].split(".").map(Number);
+  const [ba, pa] = a.split("-");
+  const [bb, pb] = b.split("-");
+  const na = ba.split(".").map(Number);
+  const nb = bb.split(".").map(Number);
   for (let i = 0; i < 3; i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    const d = (na[i] ?? 0) - (nb[i] ?? 0);
     if (d !== 0) return d > 0;
   }
+  // base versions are equal: no prerelease > has prerelease
+  if (pa === undefined && pb !== undefined) return true;
+  if (pa !== undefined && pb === undefined) return false;
   return false;
 }
 
