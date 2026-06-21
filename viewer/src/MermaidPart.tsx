@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import type { MermaidPart as MermaidPartData } from "./api.ts";
 import { SandboxedPart } from "./SandboxedPart.tsx";
+import { probeEl } from "./host.ts";
 import { activeTheme } from "./theme.ts";
 
 // Wrapper styles shipped into the sandbox iframe. Mermaid bakes theme colors
@@ -30,7 +31,7 @@ let seq = 0;
 // on a scheme change (below) is all that's needed to stay in sync. Returns the
 // `themeVariables` + `themeCSS` mermaid needs to match sideshow's look.
 function sideshowTheme() {
-  const css = getComputedStyle(document.documentElement);
+  const css = getComputedStyle(probeEl());
   const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
 
   const text = v("--text", "#1a1915");
@@ -43,7 +44,7 @@ function sideshowTheme() {
   const accentBg = v("--accent-bg", "#e6f1fb");
   // The viewer has no font token — its system stack lives on `body` — so match
   // the diagram font to whatever the rest of the viewer is actually rendering.
-  const font = getComputedStyle(document.body).fontFamily || "ui-sans-serif, system-ui, sans-serif";
+  const font = getComputedStyle(probeEl()).fontFamily || "ui-sans-serif, system-ui, sans-serif";
 
   return {
     themeVariables: {

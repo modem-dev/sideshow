@@ -13,30 +13,15 @@ import {
   type TraceStep,
   type VersionInfo,
 } from "./api.ts";
+import { host, root, type Route } from "./host.ts";
 import { applyTheme } from "./theme.ts";
 
 // --- URL routing ---
-// /session/:id            → viewer with that session selected
-// /session/:id/s/:sid     → viewer with session selected, surface focused
+// The host owns the URL. The engine renders whatever route host.router.get()
+// reports and asks host.router.navigate() to move; the default (self-hosted)
+// host maps that onto /session/:id and /session/:id/s/:sid over the History API.
 // /                       → redirect to last-viewed session (localStorage)
 const LAST_SESSION_KEY = "sideshow-last-session";
-
-export function parseRoute(pathname: string): { sessionId?: string; surfaceId?: string } {
-  const match = pathname.match(/^\/session\/([^/]+)(?:\/s\/([^/]+))?/);
-  if (match) return { sessionId: match[1], surfaceId: match[2] };
-  return {};
-}
-
-function pushSessionUrl(id: string) {
-  const target = `/session/${id}`;
-  if (window.location.pathname !== target) {
-    history.pushState(null, "", target);
-  }
-}
-
-function replaceSurfaceUrl(sessionId: string, surfaceId: string) {
-  history.replaceState(null, "", `/session/${sessionId}/s/${surfaceId}`);
-}
 
 // A comment as the viewer renders it: server comments plus the optimistic
 // local echo (pending until the POST confirms).
@@ -166,12 +151,15 @@ function syntheticSession(id: string): SessionRow {
 
 export async function refreshSessions(targetSurfaceId?: string | null) {
   if (isReadonly() && publicReadMode() === "session") {
-    const route = parseRoute(window.location.pathname);
+    const route = host().router.get();
     if (!route.sessionId) return;
     if (!sessions.some((s) => s.id === route.sessionId)) {
       setSessionsInternal(reconcile([syntheticSession(route.sessionId)], { key: "id" }));
     }
-    await select(route.sessionId, { replace: true, initialSurfaceId: route.surfaceId });
+    await select(route.sessionId, {
+      replace: true,
+      initialSurfaceId: route.surfaceId ?? undefined,
+    });
     return;
   }
 
@@ -188,8 +176,8 @@ export async function refreshSessions(targetSurfaceId?: string | null) {
   }
 
   if (!selected() && sessions.length > 0) {
-    // Check the URL first, then localStorage, then fall back to first session.
-    const route = parseRoute(window.location.pathname);
+    // Check the route first, then localStorage, then fall back to first session.
+    const route = host().router.get();
     const lastId = localStorage.getItem(LAST_SESSION_KEY);
     const target =
       (route.sessionId && sessions.some((s) => s.id === route.sessionId) && route.sessionId) ||
@@ -197,7 +185,7 @@ export async function refreshSessions(targetSurfaceId?: string | null) {
       sessions[0].id;
     await select(target, {
       replace: true,
-      initialSurfaceId: target === route.sessionId ? route.surfaceId : undefined,
+      initialSurfaceId: target === route.sessionId ? (route.surfaceId ?? undefined) : undefined,
     });
   }
 }
@@ -208,15 +196,11 @@ export async function select(
 ) {
   setSelectedInternal(id);
   if (opts?.fromPopState) {
-    // Browser already moved the history; don't touch it.
+    // The host already moved the route (back/forward); don't touch it.
   } else if (opts?.replace) {
-    history.replaceState(
-      null,
-      "",
-      opts.initialSurfaceId ? `/session/${id}/s/${opts.initialSurfaceId}` : `/session/${id}`,
-    );
+    host().router.navigate({ sessionId: id, surfaceId: opts.initialSurfaceId }, { replace: true });
   } else {
-    pushSessionUrl(id);
+    host().router.navigate({ sessionId: id });
   }
   localStorage.setItem(LAST_SESSION_KEY, id);
   setUnread((prev) => {
@@ -241,7 +225,7 @@ export async function select(
   // Scroll to a specific surface if requested (deep link).
   if (opts?.initialSurfaceId && details.some((s) => s.id === opts.initialSurfaceId)) {
     setScrollTarget(opts.initialSurfaceId);
-    replaceSurfaceUrl(id, opts.initialSurfaceId);
+    host().router.navigate({ sessionId: id, surfaceId: opts.initialSurfaceId }, { replace: true });
   }
   setStreamLoadingInternal(false);
   const res = await api<{ comments: Comment[] }>(`/api/comments?session=${id}`).catch(() => null);
@@ -249,18 +233,20 @@ export async function select(
   mergeComments(res.comments);
 }
 
-// Update the URL to reflect the currently visible surface (replaceState so
-// scrolling doesn't pollute browser history).
+// Reflect the currently visible surface in the route (replace, so scrolling
+// doesn't pollute history).
 export function focusSurface(surfaceId: string) {
   const sid = selected();
-  if (sid) replaceSurfaceUrl(sid, surfaceId);
+  if (sid) host().router.navigate({ sessionId: sid, surfaceId }, { replace: true });
 }
 
-// Handle browser back/forward by re-selecting the session from the URL.
-export function handlePopState() {
-  const route = parseRoute(window.location.pathname);
+// Re-select the session when the host's route changes (back/forward).
+export function applyRoute(route: Route) {
   if (route.sessionId && route.sessionId !== selected()) {
-    void select(route.sessionId, { fromPopState: true, initialSurfaceId: route.surfaceId });
+    void select(route.sessionId, {
+      fromPopState: true,
+      initialSurfaceId: route.surfaceId ?? undefined,
+    });
   }
 }
 
@@ -307,7 +293,7 @@ export async function fetchTrace(sessionId: string) {
 }
 
 export function nearBottom() {
-  const m = document.querySelector("main");
+  const m = root().querySelector("main");
   return !!m && m.scrollHeight - m.scrollTop - m.clientHeight < 200;
 }
 
@@ -366,7 +352,7 @@ interface FeedEvent {
 }
 
 export function connect() {
-  const route = parseRoute(window.location.pathname);
+  const route = host().router.get();
   const sessionId = route.sessionId ?? selected();
   const eventsPath =
     isReadonly() && publicReadMode() === "session" && sessionId

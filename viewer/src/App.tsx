@@ -1,17 +1,18 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { AgentMark } from "./agentMarks.tsx";
 import { api, isReadonly, publicReadMode, relTime, sessionLabel, type SessionRow } from "./api.ts";
+import { host, isShadow, navHostEl, root } from "./host.ts";
 import { Card, cardEls, frameForSource } from "./Card.tsx";
 import { applyFrameHeight } from "./SandboxedPart.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
 import { activeTheme, initTheme, setTheme, themeOptions } from "./theme.ts";
 import {
+  applyRoute,
   checkVersion,
   connect,
   dismissUpdate,
   groupSessions,
-  handlePopState,
   live,
   navOpen,
   nearBottom,
@@ -53,7 +54,7 @@ export default function App() {
   });
 
   onMount(() => {
-    refreshSessions(new URLSearchParams(location.search).get("surface"));
+    refreshSessions(host().router.get().surfaceId);
     connect();
     checkVersion();
     void initTheme();
@@ -91,17 +92,18 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeydown);
     onCleanup(() => window.removeEventListener("keydown", onKeydown));
-    // URL routing: handle browser back/forward
-    window.addEventListener("popstate", handlePopState);
-    onCleanup(() => window.removeEventListener("popstate", handlePopState));
+    // Routing: the host tells us when the route changes (back/forward).
+    onCleanup(host().router.subscribe(applyRoute));
   });
 
-  // unseen activity badges the tab title
+  // unseen activity badges the tab title — self-hosted only; an embedding host
+  // owns its own document title.
   createEffect(() => {
-    document.title = unread().size ? `(${unread().size}) sideshow` : "sideshow";
+    if (!isShadow()) document.title = unread().size ? `(${unread().size}) sideshow` : "sideshow";
   });
-  // the mobile drawer slides in via a body class (see styles.css)
-  createEffect(() => document.body.classList.toggle("nav-open", navOpen()));
+  // the mobile drawer slides in via a class on the host element (see styles.css
+  // `body.nav-open`; self-hosted that element is <body>)
+  createEffect(() => navHostEl().classList.toggle("nav-open", navOpen()));
 
   // sessions bucketed by recency for the sidebar; recomputes whenever the
   // session list changes (incl. the 45s quiet refresh, which keeps the
@@ -311,7 +313,7 @@ async function onBridgeMessage(ev: MessageEvent) {
 // comparison works across the opaque-origin boundary even though the frame's
 // document is unreadable.
 function isOwnFrame(source: unknown): boolean {
-  for (const f of document.querySelectorAll("iframe")) {
+  for (const f of root().querySelectorAll("iframe")) {
     if (f.contentWindow === source) return true;
   }
   return false;
@@ -429,7 +431,7 @@ function SessionTitle(props: { current: SessionRow | undefined }) {
   let el!: HTMLSpanElement;
   // contenteditable owns its text while focused; sync from state otherwise
   createEffect(() => {
-    if (props.current && document.activeElement !== el) {
+    if (props.current && root().activeElement !== el) {
       el.textContent = sessionLabel(props.current);
     }
   });

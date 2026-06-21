@@ -8,6 +8,7 @@
 // tabs re-theme via the theme-changed SSE event (see state.ts).
 import { createSignal } from "solid-js";
 import { api } from "./api.ts";
+import { isShadow, styleContainer } from "./host.ts";
 import { DEFAULT_THEME_ID, themeById, themeOptions, viewerThemeCss } from "../../server/themes.ts";
 
 export { themeOptions };
@@ -17,16 +18,20 @@ export const activeTheme = activeThemeState;
 
 const STYLE_ID = "ss-theme-vars";
 
-// Inject/replace the chrome-palette <style>. Appended to <head> so it follows
-// the bundled styles.css and wins the cascade for :root vars.
+// Inject/replace the chrome-palette <style>. Appended to the engine root (the
+// <head> self-hosted, the shadow root when embedded) so it follows the bundled
+// styles.css and wins the cascade for the palette vars. Inside a shadow root the
+// `:root` selector matches nothing, so the vars are re-homed onto `:host`.
 function applyPalette(id: string) {
-  let el = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
+  const container = styleContainer();
+  let el = container.querySelector<HTMLStyleElement>(`#${STYLE_ID}`);
   if (!el) {
     el = document.createElement("style");
     el.id = STYLE_ID;
-    document.head.appendChild(el);
+    container.appendChild(el);
   }
-  el.textContent = viewerThemeCss(themeById(id));
+  const css = viewerThemeCss(themeById(id));
+  el.textContent = isShadow() ? css.replace(/:root\b/g, ":host") : css;
 }
 
 // Apply locally without a server round-trip (used by initial load + SSE).

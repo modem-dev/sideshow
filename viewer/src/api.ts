@@ -13,6 +13,7 @@ import type {
   TracePart,
   TraceStep,
 } from "../../server/types.ts";
+import { host } from "./host.ts";
 
 export type {
   Comment,
@@ -48,14 +49,16 @@ export interface VersionInfo {
 
 declare global {
   interface Window {
-    __SIDESHOW_BASE_PATH__?: string;
+    // __SIDESHOW_BASE_PATH__ lives in host.ts (the default host reads it).
     __SIDESHOW_READONLY__?: boolean;
     __SIDESHOW_PUBLIC_READ__?: PublicReadMode;
   }
 }
 
+// The base path comes from the injected host (the default host derives it from
+// the hosted-wrapper global / URL prefix, matching the pre-engine viewer).
 export function appBasePath(): string {
-  return window.__SIDESHOW_BASE_PATH__ ?? location.pathname.match(/^\/u\/[^/]+/)?.[0] ?? "";
+  return host().basePath;
 }
 
 export function appPath(path: string): string {
