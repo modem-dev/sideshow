@@ -32,6 +32,35 @@ test("public read viewer globals are visible to the browser", async ({
     .toEqual({ readonly: true, mode: publicReadServer.mode });
 });
 
+test("readonly full-mode chrome hides sidebar write controls", async ({
+  page,
+  publicReadServer,
+}) => {
+  await publish(
+    publicReadServer.url,
+    { html: "<p>controls</p>", title: "Readonly chrome", agent: "e2e" },
+    publicReadServer.token,
+  );
+
+  await page.goto(publicReadServer.url);
+
+  await expect(page.locator("#sessionList .sess .x")).toHaveCount(0);
+  await expect(page.locator(".theme-picker")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "connect Claude Code" })).toHaveCount(0);
+  await expect(page.locator("#sessTitle")).toHaveAttribute("contenteditable", "false");
+});
+
+test("readonly empty board shows a simple empty state", async ({ page, publicReadServer }) => {
+  await page.goto(publicReadServer.url);
+
+  await expect(page.locator("#onboard")).toBeVisible();
+  await expect(page.locator("#onboard h1")).toHaveText("Nothing here yet");
+  await expect(page.locator("#onboard .snip")).toHaveCount(0);
+  await expect(page.locator("#onboard .connect-btn")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "design guide" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "agent setup" })).toBeVisible();
+});
+
 test("readonly cards hide comment and delete controls but keep read actions", async ({
   page,
   publicReadServer,

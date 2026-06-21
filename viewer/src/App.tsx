@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { AgentMark } from "./agentMarks.tsx";
-import { api, relTime, sessionLabel, type SessionRow } from "./api.ts";
+import { api, isReadonly, relTime, sessionLabel, type SessionRow } from "./api.ts";
 import { Card, cardEls, frameForSource } from "./Card.tsx";
 import { applyFrameHeight } from "./SandboxedPart.tsx";
 import { renderNotes } from "./notes.ts";
@@ -138,7 +138,9 @@ export default function App() {
             </For>
           </div>
           <div class="aside-foot">
-            <ThemePicker />
+            <Show when={!isReadonly()}>
+              <ThemePicker />
+            </Show>
             <a href="/guide" target="_blank">
               design guide
             </a>{" "}
@@ -146,16 +148,18 @@ export default function App() {
             <a href="/setup" target="_blank">
               agent setup
             </a>{" "}
-            &nbsp;·&nbsp;{" "}
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                setConnectOpen(true);
-              }}
-            >
-              connect Claude Code
-            </a>
+            <Show when={!isReadonly()}>
+              &nbsp;·&nbsp;{" "}
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setConnectOpen(true);
+                }}
+              >
+                connect Claude Code
+              </a>
+            </Show>
           </div>
         </aside>
         <main
@@ -334,18 +338,20 @@ function SessionItem(props: { session: SessionRow }) {
         {props.session.agent} · {relTime(props.session.lastActiveAt)}
       </div>
       <span class="dot"></span>
-      <button
-        class="x"
-        title="Delete session"
-        aria-label={`Delete session "${label()}"`}
-        onClick={async (e) => {
-          e.stopPropagation();
-          if (!confirm(`Delete "${label()}" and its surfaces?`)) return;
-          await api(`/api/sessions/${props.session.id}`, { method: "DELETE" });
-        }}
-      >
-        ✕
-      </button>
+      <Show when={!isReadonly()}>
+        <button
+          class="x"
+          title="Delete session"
+          aria-label={`Delete session "${label()}"`}
+          onClick={async (e) => {
+            e.stopPropagation();
+            if (!confirm(`Delete "${label()}" and its surfaces?`)) return;
+            await api(`/api/sessions/${props.session.id}`, { method: "DELETE" });
+          }}
+        >
+          ✕
+        </button>
+      </Show>
     </div>
   );
 }
@@ -416,7 +422,7 @@ function SessionTitle(props: { current: SessionRow | undefined }) {
     }
   });
   const commit = async () => {
-    if (!props.current) return;
+    if (isReadonly() || !props.current) return;
     const next = el.textContent?.trim() ?? "";
     if (next && next !== sessionLabel(props.current)) {
       await api(`/api/sessions/${props.current.id}`, {
@@ -429,7 +435,7 @@ function SessionTitle(props: { current: SessionRow | undefined }) {
     <span
       id="sessTitle"
       ref={(span) => (el = span)}
-      contentEditable={true}
+      contentEditable={!isReadonly()}
       spellcheck={false}
       role="textbox"
       aria-label="Session title"
@@ -458,19 +464,29 @@ const TRY_SNIP =
 function Onboard() {
   return (
     <div id="onboard" hidden={sessions.length > 0}>
-      <h1>The show hasn&rsquo;t started yet</h1>
-      <p class="sub">
-        sideshow is a live surface where coding agents draw HTML snippets — diagrams, sketches,
-        explainers — while they work in your terminal.
-      </p>
-      <h2>teach your agent about it</h2>
-      <Snip text={SETUP_SNIP} />
-      <h2>or try it yourself</h2>
-      <Snip text={TRY_SNIP} />
-      <h2>using claude code?</h2>
-      <button class="connect-btn" onClick={() => setConnectOpen(true)}>
-        Connect Claude Code →
-      </button>
+      <Show
+        when={!isReadonly()}
+        fallback={
+          <>
+            <h1>Nothing here yet</h1>
+            <p class="sub">This sideshow board does not have any sessions yet.</p>
+          </>
+        }
+      >
+        <h1>The show hasn&rsquo;t started yet</h1>
+        <p class="sub">
+          sideshow is a live surface where coding agents draw HTML snippets — diagrams, sketches,
+          explainers — while they work in your terminal.
+        </p>
+        <h2>teach your agent about it</h2>
+        <Snip text={SETUP_SNIP} />
+        <h2>or try it yourself</h2>
+        <Snip text={TRY_SNIP} />
+        <h2>using claude code?</h2>
+        <button class="connect-btn" onClick={() => setConnectOpen(true)}>
+          Connect Claude Code →
+        </button>
+      </Show>
     </div>
   );
 }
