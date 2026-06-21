@@ -5,11 +5,10 @@
 
 **A live visual surface for your terminal coding agent.**
 
-Your agent works in a wall of text. sideshow gives it a screen. It publishes
+Your agent works in a wall of text; Sideshow gives it a screen. It publishes
 **surfaces** — diagrams, UI sketches, rendered markdown, syntax-highlighted
 diffs, terminal output, images — and they render live in your browser while it
-works. You comment back, and your comments reach the agent. Publish, render,
-comment, revise: a two-way loop, right next to the conversation.
+works.
 
 <table>
   <tr>
@@ -30,14 +29,13 @@ comment, revise: a two-way loop, right next to the conversation.
 - **See what your agent means.** An architecture it's proposing, a flow it's
   tracing, a UI it's about to build — shown, not described in a paragraph you
   have to picture in your head.
+- **Multimodal.** Combine diffs with mermaid diagrams, terminal output with HTML
+  explainers, and more. Combine surfaces to illustrate ideas better.
 - **Faster, and fewer tokens.** sideshow surfaces are optimized for LLMs, so the
   agent produces higher-fidelity diagrams and visualizations faster and using
   fewer tokens.
-- **Comment instead of re-prompting.** Click a card, leave a note. The agent
-  reads it and revises — no copy-pasting screenshots or re-describing what you
-  meant.
-- **Works with the agent you already use.** Any agent with a shell can drive it
-  over `curl`; richer tiers exist for CLI, MCP, Pi, and Claude Code.
+- **Works with the agent you already use.** Works with any agent harness: Claude Code
+  (desktop or CLI), Codex (desktop or CLI), Opencode, Pi, etc.
 
 ## Quick start
 
