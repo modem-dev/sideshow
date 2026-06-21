@@ -39,7 +39,9 @@ function normalizeExport(data: any) {
     surfaces: [...data.surfaces].sort((a, b) => a.id.localeCompare(b.id)),
     comments: [...data.comments].sort((a, b) => a.seq - b.seq),
     assets: [...data.assets].sort((a, b) => a.id.localeCompare(b.id)),
+    trace: data.trace,
     settings: data.settings,
+    commentSeq: data.commentSeq,
   };
 }
 
@@ -101,6 +103,7 @@ test("GET /api/export returns sessions, surfaces, comments, assets, and all sett
   assert.equal(exported.surfaces[0].id, created.id);
   assert.equal(exported.comments.length, 1);
   assert.equal(exported.comments[0].text, "ship it");
+  assert.equal(exported.commentSeq, exported.comments[0].seq);
   assert.deepEqual(exported.settings, { theme: "gruvbox", sidebar: "collapsed" });
   assert.deepEqual(exported.trace, {
     [created.sessionId]: [{ kind: "tool", label: "npm test", detail: "passed" }],
@@ -249,6 +252,55 @@ test("GET /api/export includes referenced assets whose owning session was delete
   const served = await target.app.request(`/a/${asset.id}`);
   assert.equal(served.status, 200);
   assert.deepEqual([...new Uint8Array(await served.arrayBuffer())], [10, 20, 30]);
+});
+
+test("import preserves comment sequence high-water mark after deleted delivered feedback", async () => {
+  const source = makeApp();
+  const session = await source.store.createSession({ agent: "pi", title: "feedback cursor" });
+  const surface = await source.store.createSurface({
+    sessionId: session.id,
+    title: "Temporary",
+    parts: [{ kind: "html", html: "<p>old</p>" }],
+  });
+  assert.ok(surface);
+  const delivered = await source.store.createComment({
+    sessionId: session.id,
+    surfaceId: surface.id,
+    author: "user",
+    text: "already seen",
+  });
+  assert.ok(delivered);
+  await source.store.markAgentSeen(session.id, delivered.seq);
+  assert.equal(await source.store.removeSurface(surface.id), true);
+
+  const exported = (await (await source.app.request("/api/export")).json()) as any;
+  assert.equal(exported.comments.length, 0);
+  assert.equal(exported.sessions[0].agentSeq, delivered.seq);
+  assert.ok(exported.commentSeq >= delivered.seq);
+
+  const target = makeApp();
+  assert.equal((await target.app.request("/api/import", json(exported))).status, 200);
+  const importedSession = await target.store.getSession(session.id);
+  assert.ok(importedSession);
+  const newSurface = await target.store.createSurface({
+    sessionId: session.id,
+    title: "New",
+    parts: [{ kind: "html", html: "<p>new</p>" }],
+  });
+  assert.ok(newSurface);
+  const fresh = await target.store.createComment({
+    sessionId: session.id,
+    surfaceId: newSurface.id,
+    author: "user",
+    text: "must be delivered",
+  });
+  assert.ok(fresh);
+
+  assert.ok(fresh.seq > importedSession.agentSeq);
+  assert.deepEqual(
+    await target.store.listComments({ sessionId: session.id, afterSeq: importedSession.agentSeq }),
+    [fresh],
+  );
 });
 
 test("exported data can be imported into another server without changing shape", async () => {

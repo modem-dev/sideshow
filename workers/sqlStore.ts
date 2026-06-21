@@ -178,6 +178,22 @@ export class SqlStore implements Store {
     };
   }
 
+  private currentCommentSeq() {
+    const rowSeq = this.sql.exec("SELECT COALESCE(MAX(seq), 0) AS seq FROM comments").one()
+      .seq as number;
+    const autoRows = this.sql
+      .exec("SELECT seq FROM sqlite_sequence WHERE name = 'comments'")
+      .toArray();
+    const autoSeq = autoRows.length > 0 ? (autoRows[0].seq as number) : 0;
+    return Math.max(rowSeq, autoSeq);
+  }
+
+  private ensureCommentSeqAtLeast(seq: number) {
+    if (seq <= this.currentCommentSeq()) return;
+    this.sql.exec("DELETE FROM sqlite_sequence WHERE name = 'comments'");
+    this.sql.exec("INSERT INTO sqlite_sequence (name, seq) VALUES ('comments', ?)", seq);
+  }
+
   // --- sessions ---
 
   async listSessions() {
@@ -414,6 +430,10 @@ export class SqlStore implements Store {
     };
   }
 
+  async getCommentSeq() {
+    return this.currentCommentSeq();
+  }
+
   // --- trace ---
 
   private rowToTraceStep(r: Record<string, SqlStorageValue>): TraceStep {
@@ -558,7 +578,9 @@ export class SqlStore implements Store {
   }
 
   async importData(data: ImportData) {
+    let highWater = data.commentSeq ?? 0;
     for (const s of data.sessions ?? []) {
+      highWater = Math.max(highWater, s.agentSeq);
       this.sql.exec(
         "INSERT OR IGNORE INTO sessions (id, agent, title, cwd, createdAt, lastActiveAt, agentSeq) VALUES (?, ?, ?, ?, ?, ?, ?)",
         s.id,
@@ -584,6 +606,7 @@ export class SqlStore implements Store {
       );
     }
     for (const c of data.comments ?? []) {
+      highWater = Math.max(highWater, c.seq);
       const existing = this.sql.exec("SELECT 1 FROM comments WHERE id = ?", c.id).toArray();
       if (existing.length > 0) continue;
       this.sql.exec(
@@ -623,5 +646,6 @@ export class SqlStore implements Store {
     for (const [key, value] of Object.entries(data.settings ?? {})) {
       this.sql.exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, value);
     }
+    this.ensureCommentSeqAtLeast(highWater);
   }
 }

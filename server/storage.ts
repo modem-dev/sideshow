@@ -147,7 +147,7 @@ export class JsonFileStore implements Store {
         });
       }
       for (const [sid, steps] of Object.entries(data.trace ?? {})) this.trace.set(sid, steps);
-      this.lastSeq = data.lastSeq ?? 0;
+      this.lastSeq = Math.max(data.lastSeq ?? 0, ...this.comments.map((c) => c.seq));
       for (const [k, v] of Object.entries(data.settings ?? {})) this.settings.set(k, v);
     } catch (err: any) {
       if (err?.code !== "ENOENT") throw err;
@@ -371,6 +371,11 @@ export class JsonFileStore implements Store {
     return clone(comment);
   }
 
+  async getCommentSeq() {
+    await this.load();
+    return this.lastSeq;
+  }
+
   // --- trace ---
 
   async listTrace(sessionId: string) {
@@ -474,18 +479,21 @@ export class JsonFileStore implements Store {
 
   async importData(data: ImportData) {
     await this.load();
+    let highWater = data.commentSeq ?? 0;
     for (const s of data.sessions ?? []) {
+      highWater = Math.max(highWater, s.agentSeq);
       if (!this.sessions.has(s.id)) this.sessions.set(s.id, clone(s));
     }
     for (const s of data.surfaces ?? []) {
       if (!this.surfaces.has(s.id)) this.surfaces.set(s.id, clone(s));
     }
     for (const c of data.comments ?? []) {
+      highWater = Math.max(highWater, c.seq);
       if (!this.comments.some((x) => x.id === c.id || x.seq === c.seq)) {
         this.comments.push(clone(c));
-        if (c.seq > this.lastSeq) this.lastSeq = c.seq;
       }
     }
+    if (highWater > this.lastSeq) this.lastSeq = highWater;
     for (const a of data.assets ?? []) {
       if (!this.assets.has(a.id)) {
         this.assets.set(a.id, {

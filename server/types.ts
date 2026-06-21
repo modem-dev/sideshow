@@ -237,6 +237,9 @@ export interface Store {
 
   listComments(query: CommentQuery): Promise<Comment[]>;
   createComment(input: CreateCommentInput): Promise<Comment | null>;
+  // Highest comment seq allocated by this store. Export/import preserves it so
+  // new comments after migration stay above each session's delivered cursor.
+  getCommentSeq(): Promise<number>;
 
   // Session-scoped agent trace: the steps that produced a session's surfaces,
   // synced from the transcript. setTrace replaces the whole list (windowed
@@ -272,6 +275,7 @@ export interface ImportData {
   assets?: ImportAsset[];
   trace?: Record<string, TraceStep[]>;
   settings?: Record<string, string>;
+  commentSeq?: number;
 }
 
 export const HISTORY_LIMIT = 20;

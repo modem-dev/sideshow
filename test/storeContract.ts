@@ -659,6 +659,7 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
       assets: sourceAssets.map((a) => ({ ...a, data: base64(a.data) })),
       trace: { [session.id]: traceSteps },
       settings: { theme: "gruvbox", sidebar: "collapsed" },
+      commentSeq: Math.max(...(await source.listComments({})).map((c) => c.seq)),
     };
 
     const target = await makeStore();
@@ -738,6 +739,40 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.equal((await store.listComments({})).length, 1);
     assert.equal((await store.listAssets("session-1")).length, 1);
     assert.equal(await store.getSetting("theme"), "one");
+  });
+
+  test(`${name}: importData advances comment seq past imported agent cursors`, async () => {
+    const store = await makeStore();
+    await store.importData({
+      sessions: [
+        {
+          id: "seen-session",
+          agent: "pi",
+          title: null,
+          cwd: null,
+          createdAt: "2026-06-21T00:00:00.000Z",
+          lastActiveAt: "2026-06-21T00:00:00.000Z",
+          agentSeq: 5,
+        },
+      ],
+    });
+    const surface = await store.createSurface({
+      sessionId: "seen-session",
+      parts: [htmlPart("<p>new</p>")],
+    });
+    assert.ok(surface);
+    const comment = await store.createComment({
+      sessionId: "seen-session",
+      surfaceId: surface.id,
+      author: "user",
+      text: "new feedback",
+    });
+    assert.ok(comment);
+
+    assert.ok(comment.seq > 5);
+    assert.deepEqual(await store.listComments({ sessionId: "seen-session", afterSeq: 5 }), [
+      comment,
+    ]);
   });
 
   test(`${name}: importData accepts partial imports`, async () => {
