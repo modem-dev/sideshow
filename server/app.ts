@@ -442,7 +442,8 @@ export function createApp({
       q.author ? list.filter((cm) => cm.author === q.author) : list;
     const wait = Math.min(Math.max(q.waitSeconds, 0), MAX_WAIT_SECONDS);
 
-    let comments = matches(await store.listComments(query));
+    let all = await store.listComments(query);
+    let comments = matches(all);
     if (comments.length === 0 && wait > 0) {
       await new Promise<void>((resolve) => {
         const timer = setTimeout(done, wait * 1000);
@@ -458,12 +459,16 @@ export function createApp({
           resolve();
         }
       });
-      comments = matches(await store.listComments(query));
+      all = await store.listComments(query);
+      comments = matches(all);
     }
-    const lastSeq = comments.length > 0 ? comments[comments.length - 1].seq : (afterSeq ?? 0);
+    // The cursor advances past every comment in the window — not just the
+    // filtered ones — so the next call doesn't re-read the agent's own
+    // comments. collectFeedback already does this; mirror it here.
+    const lastSeq = all.length > 0 ? all[all.length - 1].seq : (afterSeq ?? 0);
     // An author=user query is the agent listening (the viewer never filters by
     // author) — what it receives here should not be re-delivered as piggyback.
-    if (q.author === "user" && q.sessionId && comments.length > 0) {
+    if (q.author === "user" && q.sessionId && all.length > 0) {
       await store.markAgentSeen(q.sessionId, lastSeq);
     }
     return { comments, lastSeq };

@@ -459,6 +459,24 @@ test("piggyback delivery advances the cursor seen by author=user waits", async (
   assert.equal(wait.comments.length, 0);
 });
 
+test("author=user lastSeq reflects the last comment overall, not the last user comment", async () => {
+  // When an agent reply lands after the user comment, the cursor returned
+  // to the caller (lastSeq) must be the agent comment's seq — otherwise
+  // the next call re-reads the agent comment and wastes a round-trip.
+  const app = makeApp();
+  const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
+  await app.request("/api/comments", json({ snippet: s.id, text: "first", author: "user" }));
+  await app.request("/api/comments", json({ snippet: s.id, text: "reply", author: "agent" }));
+
+  const res = (await (
+    await app.request(`/api/comments?session=${s.sessionId}&author=user&after=0`)
+  ).json()) as any;
+  assert.equal(res.comments.length, 1);
+  assert.equal(res.comments[0].text, "first");
+  // lastSeq is the agent comment's seq (2), not the user comment's (1)
+  assert.equal(res.lastSeq, 2);
+});
+
 function makeVersionApp(version?: string, latest?: { version: string; notes?: string } | Error) {
   const dir = mkdtempSync(join(tmpdir(), "sideshow-test-"));
   return createApp({
