@@ -66,12 +66,21 @@ function inferAssetKind(contentType: string): AssetKind {
 
 const isAssetKind = (v: unknown): v is AssetKind => v === "image" || v === "trace" || v === "file";
 
-// base64 -> bytes, runtime-agnostic (atob is a global in Node and Workers).
+// base64 <-> bytes, runtime-agnostic (atob/btoa are globals in Node and Workers).
 function decodeBase64(b64: string): Uint8Array {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
+}
+
+function encodeBase64(data: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < data.length; i += chunk) {
+    bin += String.fromCharCode(...data.subarray(i, i + chunk));
+  }
+  return btoa(bin);
 }
 // Docs and onboarding snippets are written against the local default; serve
 // them with the real origin so a deployed instance shows copy-pasteable URLs.
@@ -588,6 +597,44 @@ export function createApp({
   });
 
   // --- sessions ---
+
+  // Bulk import: accepts sessions, surfaces, comments, assets, and settings
+  // with original ids preserved. Idempotent — existing ids are skipped, so the
+  // endpoint is safe to call repeatedly with overlapping data.
+  app.post("/api/import", async (c) => {
+    if (!isAuthenticated(c)) return c.json({ error: "unauthorized" }, 401);
+    const body = await c.req.json().catch(() => null);
+    if (!body) return c.json({ error: "invalid JSON body" }, 400);
+    await store.importData(body);
+    return c.json({
+      ok: true,
+      sessions: body.sessions?.length ?? 0,
+      surfaces: body.surfaces?.length ?? 0,
+      comments: body.comments?.length ?? 0,
+      assets: body.assets?.length ?? 0,
+    });
+  });
+
+  // Bulk export: returns sessions, surfaces, comments, assets, and settings —
+  // the same shape /api/import accepts, so round-tripping is trivial.
+  app.get("/api/export", async (c) => {
+    if (!isAuthenticated(c)) return c.json({ error: "unauthorized" }, 401);
+    const [sessions, surfaces, comments, settings, rawAssets, commentSeq] = await Promise.all([
+      store.listSessions(),
+      store.listSurfaces(),
+      store.listComments({}),
+      store.listSettings(),
+      store.listAllAssets(),
+      store.getCommentSeq(),
+    ]);
+    const assets = rawAssets.map((asset) => ({ ...asset, data: encodeBase64(asset.data) }));
+    const trace: Record<string, TraceStep[]> = {};
+    for (const session of sessions) {
+      const steps = await store.listTrace(session.id);
+      if (steps.length > 0) trace[session.id] = steps;
+    }
+    return c.json({ sessions, surfaces, comments, assets, trace, settings, commentSeq });
+  });
 
   app.get("/api/sessions", async (c) => {
     const [sessions, surfaces] = await Promise.all([store.listSessions(), store.listSurfaces()]);

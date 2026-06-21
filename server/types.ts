@@ -227,6 +227,7 @@ export interface Store {
   // for an unset key.
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
+  listSettings(): Promise<Record<string, string>>;
 
   listSurfaces(sessionId?: string): Promise<Surface[]>;
   getSurface(id: string): Promise<Surface | null>;
@@ -236,6 +237,9 @@ export interface Store {
 
   listComments(query: CommentQuery): Promise<Comment[]>;
   createComment(input: CreateCommentInput): Promise<Comment | null>;
+  // Highest comment seq allocated by this store. Export/import preserves it so
+  // new comments after migration stay above each session's delivered cursor.
+  getCommentSeq(): Promise<number>;
 
   // Session-scoped agent trace: the steps that produced a session's surfaces,
   // synced from the transcript. setTrace replaces the whole list (windowed
@@ -250,10 +254,28 @@ export interface Store {
   // Bump lastAccessedAt (called when bytes are served), keeping live assets warm.
   touchAsset(id: string): Promise<void>;
   listAssets(sessionId: string): Promise<Asset[]>;
+  listAllAssets(): Promise<Asset[]>;
   removeAsset(id: string): Promise<boolean>;
   // Whether any live surface (current or historical version) references this
   // asset id. Drives the optimistic-read wait and reference-aware deletion.
   isAssetReferenced(id: string): Promise<boolean>;
+
+  // Bulk import: insert sessions, surfaces, comments, assets, and settings with
+  // their original ids preserved. Used for one-time migration between stores.
+  // Skips entities whose ids already exist.
+  importData(data: ImportData): Promise<void>;
+}
+
+export type ImportAsset = Omit<Asset, "data"> & { data: string };
+
+export interface ImportData {
+  sessions?: Session[];
+  surfaces?: Surface[];
+  comments?: Comment[];
+  assets?: ImportAsset[];
+  trace?: Record<string, TraceStep[]>;
+  settings?: Record<string, string>;
+  commentSeq?: number;
 }
 
 export const HISTORY_LIMIT = 20;

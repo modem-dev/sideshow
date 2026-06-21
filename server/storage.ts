@@ -12,6 +12,7 @@ import {
   hashAssetId,
   HISTORY_LIMIT,
   htmlPart,
+  type ImportData,
   MAX_BOARD_ASSET_BYTES,
   newId,
   selectEvictions,
@@ -146,7 +147,7 @@ export class JsonFileStore implements Store {
         });
       }
       for (const [sid, steps] of Object.entries(data.trace ?? {})) this.trace.set(sid, steps);
-      this.lastSeq = data.lastSeq ?? 0;
+      this.lastSeq = Math.max(data.lastSeq ?? 0, ...this.comments.map((c) => c.seq));
       for (const [k, v] of Object.entries(data.settings ?? {})) this.settings.set(k, v);
     } catch (err: any) {
       if (err?.code !== "ENOENT") throw err;
@@ -266,6 +267,11 @@ export class JsonFileStore implements Store {
     await this.persist();
   }
 
+  async listSettings() {
+    await this.load();
+    return Object.fromEntries(this.settings);
+  }
+
   // --- surfaces ---
 
   async listSurfaces(sessionId?: string) {
@@ -365,6 +371,11 @@ export class JsonFileStore implements Store {
     return clone(comment);
   }
 
+  async getCommentSeq() {
+    await this.load();
+    return this.lastSeq;
+  }
+
   // --- trace ---
 
   async listTrace(sessionId: string) {
@@ -449,6 +460,11 @@ export class JsonFileStore implements Store {
     return [...this.assets.values()].filter((a) => a.sessionId === sessionId).map(clone);
   }
 
+  async listAllAssets() {
+    await this.load();
+    return [...this.assets.values()].map(clone).sort((a, b) => a.id.localeCompare(b.id));
+  }
+
   async removeAsset(id: string) {
     await this.load();
     if (!this.assets.delete(id)) return false;
@@ -459,5 +475,40 @@ export class JsonFileStore implements Store {
   async isAssetReferenced(id: string) {
     await this.load();
     return this.referencedAssetIds().has(id);
+  }
+
+  async importData(data: ImportData) {
+    await this.load();
+    let highWater = data.commentSeq ?? 0;
+    for (const s of data.sessions ?? []) {
+      highWater = Math.max(highWater, s.agentSeq);
+      if (!this.sessions.has(s.id)) this.sessions.set(s.id, clone(s));
+    }
+    for (const s of data.surfaces ?? []) {
+      if (!this.surfaces.has(s.id)) this.surfaces.set(s.id, clone(s));
+    }
+    for (const c of data.comments ?? []) {
+      highWater = Math.max(highWater, c.seq);
+      if (!this.comments.some((x) => x.id === c.id || x.seq === c.seq)) {
+        this.comments.push(clone(c));
+      }
+    }
+    if (highWater > this.lastSeq) this.lastSeq = highWater;
+    for (const a of data.assets ?? []) {
+      if (!this.assets.has(a.id)) {
+        this.assets.set(a.id, {
+          ...a,
+          data: new Uint8Array(Buffer.from(a.data, "base64")),
+        });
+      }
+    }
+    for (const [sessionId, steps] of Object.entries(data.trace ?? {})) {
+      if (steps.length === 0) this.trace.delete(sessionId);
+      else this.trace.set(sessionId, clone(steps));
+    }
+    for (const [key, value] of Object.entries(data.settings ?? {})) {
+      this.settings.set(key, value);
+    }
+    await this.persist();
   }
 }
