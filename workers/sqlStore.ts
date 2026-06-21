@@ -310,30 +310,46 @@ export class SqlStore implements Store {
   }
 
   async updateSurface(id: string, patch: UpdateSurfaceInput) {
-    const surface = await this.getSurface(id);
-    if (!surface) return null;
-    surface.history.push({
-      version: surface.version,
-      title: surface.title,
-      parts: surface.parts,
-      at: surface.updatedAt,
-    });
-    if (surface.history.length > HISTORY_LIMIT) surface.history.shift();
-    if (patch.title !== undefined) surface.title = patch.title.trim() || surface.title;
-    if (patch.parts !== undefined) surface.parts = patch.parts;
-    surface.version += 1;
-    surface.updatedAt = new Date().toISOString();
-    this.sql.exec(
-      "UPDATE surfaces SET title = ?, parts = ?, updatedAt = ?, version = ?, history = ? WHERE id = ?",
-      surface.title,
-      JSON.stringify(surface.parts),
-      surface.updatedAt,
-      surface.version,
-      JSON.stringify(surface.history),
-      id,
-    );
-    this.touch(surface.sessionId);
-    return surface;
+    // Compare-and-set: the expected-version guard makes two concurrent
+    // updates serializable without a read-then-write gap. Only one UPDATE
+    // can match the WHERE clause; the loser sees 0 rows affected and retries
+    // with the now-current version.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const surface = await this.getSurface(id);
+      if (!surface) return null;
+      const expectedVersion = surface.version;
+      const history = [
+        ...surface.history,
+        {
+          version: surface.version,
+          title: surface.title,
+          parts: surface.parts,
+          at: surface.updatedAt,
+        },
+      ];
+      if (history.length > HISTORY_LIMIT) history.shift();
+      const title = patch.title !== undefined ? patch.title.trim() || surface.title : surface.title;
+      const parts = patch.parts !== undefined ? patch.parts : surface.parts;
+      const version = surface.version + 1;
+      const updatedAt = new Date().toISOString();
+      this.sql.exec(
+        "UPDATE surfaces SET title = ?, parts = ?, updatedAt = ?, version = ?, history = ? WHERE id = ? AND version = ?",
+        title,
+        JSON.stringify(parts),
+        updatedAt,
+        version,
+        JSON.stringify(history),
+        id,
+        expectedVersion,
+      );
+      const affected = this.sql.exec("SELECT changes() AS n").one().n as number;
+      if (affected > 0) {
+        this.touch(surface.sessionId);
+        return { ...surface, title, parts, version, updatedAt, history };
+      }
+      // Lost the race — retry with the now-current version.
+    }
+    return null;
   }
 
   async removeSurface(id: string) {

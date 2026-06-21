@@ -286,6 +286,31 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.deepEqual(final?.history[HISTORY_LIMIT - 1].parts, [htmlPart(`<p>v${updates}</p>`)]);
   });
 
+  contract("concurrent updates do not lose revisions or duplicate history", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    const surface = await store.createSurface({
+      sessionId: session.id,
+      parts: [htmlPart("<p>v1</p>")],
+    });
+    assert.ok(surface);
+    // Two updates racing against the same surface: each must land as its own
+    // version, with the prior version archived exactly once. A read-then-write
+    // gap that isn't serialized loses one revision and duplicates the history
+    // entry for the version both callers read.
+    await Promise.all([
+      store.updateSurface(surface.id, { parts: [htmlPart("<p>A</p>")] }),
+      store.updateSurface(surface.id, { parts: [htmlPart("<p>B</p>")] }),
+    ]);
+    const final = await store.getSurface(surface.id);
+    assert.ok(final);
+    // both updates landed: v1 → v2 → v3
+    assert.equal(final.version, 3);
+    assert.equal(final.history.length, 2);
+    // both v1 and v2 are archived exactly once — no duplicates
+    const archived = final.history.map((h) => h.version).sort((x, y) => x - y);
+    assert.deepEqual(archived, [1, 2]);
+  });
+
   // --- cascade deletes ---
 
   contract("removing a session cascades to its surfaces and comments", async (store) => {
