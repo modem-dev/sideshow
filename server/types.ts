@@ -227,6 +227,7 @@ export interface Store {
   // for an unset key.
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
+  listSettings(): Promise<Record<string, string>>;
 
   listSurfaces(sessionId?: string): Promise<Surface[]>;
   getSurface(id: string): Promise<Surface | null>;
@@ -254,6 +255,21 @@ export interface Store {
   // Whether any live surface (current or historical version) references this
   // asset id. Drives the optimistic-read wait and reference-aware deletion.
   isAssetReferenced(id: string): Promise<boolean>;
+
+  // Bulk import: insert sessions, surfaces, comments, assets, and settings with
+  // their original ids preserved. Used for one-time migration between stores.
+  // Skips entities whose ids already exist.
+  importData(data: ImportData): Promise<void>;
+}
+
+export type ImportAsset = Omit<Asset, "data"> & { data: string };
+
+export interface ImportData {
+  sessions?: Session[];
+  surfaces?: Surface[];
+  comments?: Comment[];
+  assets?: ImportAsset[];
+  settings?: Record<string, string>;
 }
 
 export const HISTORY_LIMIT = 20;

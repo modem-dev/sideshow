@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HISTORY_LIMIT, htmlPart, type Store } from "../server/types.ts";
+import { HISTORY_LIMIT, htmlPart, type ImportData, type Store } from "../server/types.ts";
 
 const bytes = (...values: number[]) => new Uint8Array(values);
+const base64 = (data: Uint8Array) => Buffer.from(data).toString("base64");
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -613,5 +614,143 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     const got = await store.getAsset(asset.id);
     assert.ok(got, "referenced asset should survive its owning session's deletion");
     assert.deepEqual([...got.data], [7, 7, 7]);
+  });
+
+  // --- import ---
+
+  test(`${name}: importData round-trips sessions, surfaces, comments, assets, and settings`, async () => {
+    const source = await makeStore();
+    const session = await source.createSession({ agent: "pi", title: "Import me", cwd: "/tmp/x" });
+    await source.markAgentSeen(session.id, 42);
+    await source.setSetting("theme", "gruvbox");
+    await source.setSetting("sidebar", "collapsed");
+    const asset = await source.putAsset({
+      sessionId: session.id,
+      kind: "image",
+      contentType: "image/png",
+      filename: "pixel.png",
+      data: bytes(137, 80, 78, 71),
+    });
+    assert.ok(asset);
+    const surface = await source.createSurface({
+      sessionId: session.id,
+      title: "Card",
+      parts: [htmlPart("<p>v1</p>"), { kind: "image", assetId: asset.id, alt: "pixel" }],
+    });
+    assert.ok(surface);
+    await source.updateSurface(surface.id, { title: "Card v2", parts: [htmlPart("<p>v2</p>")] });
+    await source.createComment({
+      sessionId: session.id,
+      surfaceId: surface.id,
+      author: "user",
+      text: "looks good",
+    });
+
+    const sourceAssets = await source.listAssets(session.id);
+    const data: ImportData = {
+      sessions: await source.listSessions(),
+      surfaces: await source.listSurfaces(),
+      comments: await source.listComments({}),
+      assets: sourceAssets.map((a) => ({ ...a, data: base64(a.data) })),
+      settings: { theme: "gruvbox", sidebar: "collapsed" },
+    };
+
+    const target = await makeStore();
+    await target.importData(data);
+
+    assert.deepEqual(await target.getSession(session.id), await source.getSession(session.id));
+    assert.deepEqual(await target.listSurfaces(), data.surfaces);
+    assert.deepEqual(await target.listComments({}), data.comments);
+    assert.equal(await target.getSetting("theme"), "gruvbox");
+    assert.equal(await target.getSetting("sidebar"), "collapsed");
+
+    const importedAsset = await target.getAsset(asset.id);
+    assert.ok(importedAsset);
+    assert.deepEqual({ ...importedAsset, data: base64(importedAsset.data) }, data.assets?.[0]);
+  });
+
+  test(`${name}: importData is idempotent`, async () => {
+    const data: ImportData = {
+      sessions: [
+        {
+          id: "session-1",
+          agent: "pi",
+          title: "Imported",
+          cwd: null,
+          createdAt: "2026-06-21T00:00:00.000Z",
+          lastActiveAt: "2026-06-21T00:00:01.000Z",
+          agentSeq: 7,
+        },
+      ],
+      surfaces: [
+        {
+          id: "surface-1",
+          sessionId: "session-1",
+          title: "Surface",
+          parts: [htmlPart("<p>x</p>")],
+          createdAt: "2026-06-21T00:00:02.000Z",
+          updatedAt: "2026-06-21T00:00:02.000Z",
+          version: 1,
+          history: [],
+        },
+      ],
+      comments: [
+        {
+          id: "comment-1",
+          seq: 12,
+          sessionId: "session-1",
+          surfaceId: "surface-1",
+          surfaceTitle: "Surface",
+          author: "user",
+          text: "hello",
+          createdAt: "2026-06-21T00:00:03.000Z",
+        },
+      ],
+      assets: [
+        {
+          id: "asset-1",
+          sessionId: "session-1",
+          kind: "file",
+          contentType: "application/octet-stream",
+          byteLength: 3,
+          filename: "blob.bin",
+          data: base64(bytes(1, 2, 3)),
+          createdAt: "2026-06-21T00:00:04.000Z",
+          lastAccessedAt: "2026-06-21T00:00:05.000Z",
+        },
+      ],
+      settings: { theme: "one" },
+    };
+
+    const store = await makeStore();
+    await store.importData(data);
+    await store.importData(data);
+
+    assert.equal((await store.listSessions()).length, 1);
+    assert.equal((await store.listSurfaces()).length, 1);
+    assert.equal((await store.listComments({})).length, 1);
+    assert.equal((await store.listAssets("session-1")).length, 1);
+    assert.equal(await store.getSetting("theme"), "one");
+  });
+
+  test(`${name}: importData accepts partial imports`, async () => {
+    const store = await makeStore();
+    await store.importData({
+      sessions: [
+        {
+          id: "session-only",
+          agent: "pi",
+          title: null,
+          cwd: null,
+          createdAt: "2026-06-21T00:00:00.000Z",
+          lastActiveAt: "2026-06-21T00:00:00.000Z",
+          agentSeq: 0,
+        },
+      ],
+    });
+
+    assert.equal((await store.getSession("session-only"))?.agent, "pi");
+    assert.deepEqual(await store.listSurfaces(), []);
+    assert.deepEqual(await store.listComments({}), []);
   });
 }

@@ -10,6 +10,7 @@ import {
   hashAssetId,
   HISTORY_LIMIT,
   htmlPart,
+  type ImportData,
   MAX_BOARD_ASSET_BYTES,
   newId,
   selectEvictions,
@@ -21,6 +22,13 @@ import {
   type TraceStep,
   type UpdateSurfaceInput,
 } from "../server/types.ts";
+
+function decodeBase64(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
 
 // Store implementation on Durable Object SQLite. One board = one DO = one
 // database, so plain SQL with no tenant columns.
@@ -261,6 +269,15 @@ export class SqlStore implements Store {
       "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
       key,
       value,
+    );
+  }
+
+  async listSettings() {
+    return Object.fromEntries(
+      this.sql
+        .exec("SELECT key, value FROM settings ORDER BY key ASC")
+        .toArray()
+        .map((r) => [r.key as string, r.value as string]),
     );
   }
 
@@ -531,5 +548,70 @@ export class SqlStore implements Store {
 
   async isAssetReferenced(id: string) {
     return this.referencedAssetIds().has(id);
+  }
+
+  async importData(data: ImportData) {
+    for (const s of data.sessions ?? []) {
+      this.sql.exec(
+        "INSERT OR IGNORE INTO sessions (id, agent, title, cwd, createdAt, lastActiveAt, agentSeq) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        s.id,
+        s.agent,
+        s.title,
+        s.cwd,
+        s.createdAt,
+        s.lastActiveAt,
+        s.agentSeq,
+      );
+    }
+    for (const s of data.surfaces ?? []) {
+      this.sql.exec(
+        "INSERT OR IGNORE INTO surfaces (id, sessionId, title, parts, createdAt, updatedAt, version, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        s.id,
+        s.sessionId,
+        s.title,
+        JSON.stringify(s.parts),
+        s.createdAt,
+        s.updatedAt,
+        s.version,
+        JSON.stringify(s.history),
+      );
+    }
+    for (const c of data.comments ?? []) {
+      const existing = this.sql.exec("SELECT 1 FROM comments WHERE id = ?", c.id).toArray();
+      if (existing.length > 0) continue;
+      this.sql.exec(
+        "INSERT OR IGNORE INTO comments (seq, id, sessionId, surfaceId, surfaceTitle, author, text, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        c.seq,
+        c.id,
+        c.sessionId,
+        c.surfaceId,
+        c.surfaceTitle,
+        c.author,
+        c.text,
+        c.createdAt,
+      );
+    }
+    for (const a of data.assets ?? []) {
+      const bytes = decodeBase64(a.data);
+      const buf = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
+      this.sql.exec(
+        "INSERT OR IGNORE INTO assets (id, sessionId, kind, contentType, byteLength, filename, data, createdAt, lastAccessedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        a.id,
+        a.sessionId,
+        a.kind,
+        a.contentType,
+        a.byteLength,
+        a.filename,
+        buf,
+        a.createdAt,
+        a.lastAccessedAt,
+      );
+    }
+    for (const [key, value] of Object.entries(data.settings ?? {})) {
+      this.sql.exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, value);
+    }
   }
 }

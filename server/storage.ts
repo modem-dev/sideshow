@@ -12,6 +12,7 @@ import {
   hashAssetId,
   HISTORY_LIMIT,
   htmlPart,
+  type ImportData,
   MAX_BOARD_ASSET_BYTES,
   newId,
   selectEvictions,
@@ -266,6 +267,11 @@ export class JsonFileStore implements Store {
     await this.persist();
   }
 
+  async listSettings() {
+    await this.load();
+    return Object.fromEntries(this.settings);
+  }
+
   // --- surfaces ---
 
   async listSurfaces(sessionId?: string) {
@@ -459,5 +465,33 @@ export class JsonFileStore implements Store {
   async isAssetReferenced(id: string) {
     await this.load();
     return this.referencedAssetIds().has(id);
+  }
+
+  async importData(data: ImportData) {
+    await this.load();
+    for (const s of data.sessions ?? []) {
+      if (!this.sessions.has(s.id)) this.sessions.set(s.id, clone(s));
+    }
+    for (const s of data.surfaces ?? []) {
+      if (!this.surfaces.has(s.id)) this.surfaces.set(s.id, clone(s));
+    }
+    for (const c of data.comments ?? []) {
+      if (!this.comments.some((x) => x.id === c.id || x.seq === c.seq)) {
+        this.comments.push(clone(c));
+        if (c.seq > this.lastSeq) this.lastSeq = c.seq;
+      }
+    }
+    for (const a of data.assets ?? []) {
+      if (!this.assets.has(a.id)) {
+        this.assets.set(a.id, {
+          ...a,
+          data: new Uint8Array(Buffer.from(a.data, "base64")),
+        });
+      }
+    }
+    for (const [key, value] of Object.entries(data.settings ?? {})) {
+      this.settings.set(key, value);
+    }
+    await this.persist();
   }
 }
