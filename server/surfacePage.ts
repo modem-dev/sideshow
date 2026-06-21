@@ -129,15 +129,20 @@ svg { font-family: var(--font-sans); fill: var(--color-text-primary); }
 // referencing line's stroke color via context-stroke.
 const SVG_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg>`;
 
-// Bridge to the host viewer: sendPrompt/openLink mirror Claude's widget
-// globals, and a ResizeObserver reports content height so the parent can
-// size the sandboxed (opaque-origin) iframe.
+// Bridge to the host viewer: sendPrompt/openLink/copyToClipboard mirror
+// Claude's widget globals, and a ResizeObserver reports content height so the
+// parent can size the sandboxed (opaque-origin) iframe. copyToClipboard posts
+// to the parent (trusted origin) which has clipboard API access; the sandbox
+// itself is opaque-origin so navigator.clipboard is unavailable there.
 const BRIDGE_JS = `
 window.sendPrompt = function (text) {
   parent.postMessage({ __sideshow: true, type: 'send-prompt', text: String(text) }, '*');
 };
 window.openLink = function (url) {
   parent.postMessage({ __sideshow: true, type: 'open-link', url: String(url) }, '*');
+};
+window.copyToClipboard = function (text) {
+  parent.postMessage({ __sideshow: true, type: 'copy', text: String(text) }, '*');
 };
 document.addEventListener('click', function (e) {
   var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;

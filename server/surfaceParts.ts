@@ -188,6 +188,45 @@ const looseTerminalPart = z.object({
   title: optionalLooseString,
 });
 
+// A json part carries a pre-parsed JSON value (`data: unknown`). Strict mode
+// rejects a missing `data` key (null is valid — it's a JSON value); loose mode
+// drops the part if `data` is absent. The transform fixes zod's inference:
+// z.unknown() marks the key optional, but data is always present after the
+// refine, so the output type must be { kind: "json"; data: unknown }.
+const strictJsonPart = z
+  .object({
+    kind: z.literal("json"),
+    data: z.unknown(),
+  })
+  .refine((p) => p.data !== undefined, {
+    message: 'json part requires "data"',
+  })
+  .transform((p) => ({ kind: "json" as const, data: p.data }));
+const looseJsonPart = z
+  .object({
+    kind: z.literal("json"),
+    data: z.unknown(),
+  })
+  .refine((p) => p.data !== undefined, {
+    message: 'json part requires "data"',
+  })
+  .transform((p) => ({ kind: "json" as const, data: p.data }));
+
+const strictCodePart = z.object({
+  kind: z.literal("code"),
+  code: requiredString("code"),
+  language: z.string().optional(),
+  title: z.string().optional(),
+  lineStart: z.number().int().min(1).optional(),
+});
+const looseCodePart = z.object({
+  kind: z.literal("code"),
+  code: z.string(),
+  language: optionalLooseString,
+  title: optionalLooseString,
+  lineStart: optionalLooseNumber,
+});
+
 const looseSurfacePart = z.union([
   looseHtmlPart,
   looseMarkdownPart,
@@ -196,6 +235,8 @@ const looseSurfacePart = z.union([
   looseImagePart,
   looseTracePart,
   looseTerminalPart,
+  looseJsonPart,
+  looseCodePart,
 ]);
 
 // Runtime SurfacePart parser shared by REST and MCP. REST uses strict mode to
@@ -248,7 +289,7 @@ function parseStrictPart(
     : { part: null, errors: formatZodErrors(parsed.error, path) };
 }
 
-function schemaForKind(kind: unknown): z.ZodType<SurfacePart> | null {
+function schemaForKind(kind: unknown): z.ZodType<SurfacePart, z.ZodTypeDef, any> | null {
   switch (kind) {
     case "html":
       return strictHtmlPart;
@@ -264,6 +305,10 @@ function schemaForKind(kind: unknown): z.ZodType<SurfacePart> | null {
       return strictTracePart;
     case "terminal":
       return strictTerminalPart;
+    case "json":
+      return strictJsonPart;
+    case "code":
+      return strictCodePart;
     default:
       return null;
   }

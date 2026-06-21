@@ -25,7 +25,9 @@ export type SurfacePartKind =
   | "trace"
   | "markdown"
   | "terminal"
-  | "mermaid";
+  | "mermaid"
+  | "json"
+  | "code";
 
 export interface HtmlPart {
   kind: "html";
@@ -117,6 +119,36 @@ export interface TerminalPart {
   title?: string;
 }
 
+// A json part is a pre-parsed JSON value the trusted viewer renders as a
+// collapsible tree (objects/arrays expand and collapse; primitives show inline).
+// Like image/trace it is DATA, not markup: the viewer renders it with Solid
+// text nodes, which escape by construction — so agent-authored JSON can never
+// execute in the trusted viewer origin, and no sandboxed iframe is needed.
+// `data` is `unknown` (any JSON value, including null); the wire body already
+// parsed it, so the viewer never needs to JSON.parse.
+export interface JsonPart {
+  kind: "json";
+  data: unknown;
+}
+
+// A code part is source code the trusted viewer highlights with shiki (the
+// same highlighter MarkdownPart uses for fenced code blocks) and renders in a
+// sandboxed iframe. Like markdown/mermaid it is DATA, not markup: the viewer
+// produces the HTML string via shiki, then SandboxedPart parses it inside an
+// opaque-origin iframe. `language` is a shiki lang id (ts, js, python, rust,
+// go, ...); omit or use "text" for plain monospace. `title` is an optional
+// label (e.g. a filename) shown above the code.
+export interface CodePart {
+  kind: "code";
+  code: string;
+  language?: string;
+  title?: string;
+  // 1-based line number the displayed code starts at (e.g. 80 for "lines
+  // 80-150 of x.ts"). The viewer renders line numbers starting here instead
+  // of 1, so an agent can show an excerpt with its original line numbers.
+  lineStart?: number;
+}
+
 export type SurfacePart =
   | HtmlPart
   | DiffPart
@@ -124,7 +156,9 @@ export type SurfacePart =
   | TracePart
   | MarkdownPart
   | TerminalPart
-  | MermaidPart;
+  | MermaidPart
+  | JsonPart
+  | CodePart;
 
 export interface SurfaceVersion {
   version: number;
@@ -307,6 +341,11 @@ export function partsByteLength(parts: SurfacePart[]): number {
       n += p.text.length + (p.title?.length ?? 0);
     } else if (p.kind === "mermaid") {
       n += p.mermaid.length;
+    } else if (p.kind === "json") {
+      n += JSON.stringify(p.data).length;
+    } else if (p.kind === "code") {
+      n +=
+        p.code.length + (p.language?.length ?? 0) + (p.title?.length ?? 0) + (p.lineStart ? 4 : 0);
     } else {
       n += (p.assetId?.length ?? 0) + (p.title?.length ?? 0);
       for (const s of p.steps ?? []) {

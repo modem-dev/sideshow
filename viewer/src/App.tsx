@@ -304,6 +304,8 @@ async function onBridgeMessage(ev: MessageEvent) {
     toast("Sent to agent: " + d.text);
   } else if (d.type === "open-link" && isOwnFrame(ev.source)) {
     if (confirm(`Open external link?\n\n${d.url}`)) window.open(d.url, "_blank", "noopener");
+  } else if (d.type === "copy" && isOwnFrame(ev.source)) {
+    void navigator.clipboard?.writeText(String(d.text)).catch(() => {});
   }
 }
 

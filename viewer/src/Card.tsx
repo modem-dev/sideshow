@@ -18,6 +18,8 @@ import {
   sessionLabel,
   type DiffPart as DiffPartData,
   type ImagePart as ImagePartData,
+  type JsonPart as JsonPartData,
+  type CodePart as CodePartData,
   type MarkdownPart as MarkdownPartData,
   type MermaidPart as MermaidPartData,
   type Surface,
@@ -26,9 +28,11 @@ import {
   surfaceLink,
 } from "./api.ts";
 import { escapeHtml } from "../../server/surfacePage.ts";
+import { CodePart } from "./CodePart.tsx";
 import { DiffPart } from "./DiffPart.tsx";
 import { CommentIcon, LinkIcon, OpenIcon, TrashIcon } from "./icons.tsx";
 import { ImagePart } from "./ImagePart.tsx";
+import { JsonPart } from "./JsonPart.tsx";
 import { MarkdownPart } from "./MarkdownPart.tsx";
 import { MermaidPart } from "./MermaidPart.tsx";
 import { SandboxedPart } from "./SandboxedPart.tsx";
@@ -266,6 +270,12 @@ export function Card(props: { surface: Surface }) {
             </Match>
             <Match when={part().kind === "terminal"}>
               <TerminalPart part={part() as TerminalPartData} />
+            </Match>
+            <Match when={part().kind === "json"}>
+              <JsonPart part={part() as JsonPartData} />
+            </Match>
+            <Match when={part().kind === "code"}>
+              <CodePart part={part() as CodePartData} />
             </Match>
           </Switch>
         )}

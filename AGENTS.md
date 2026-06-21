@@ -7,7 +7,7 @@ _use_ a running sideshow lives in `guide/AGENT_SETUP.md`, served at `/setup`.)
 ## What this is and why
 
 A live visual surface for terminal coding agents: agents publish surfaces
-(multi-part cards — html, markdown, diff, terminal, image, mermaid) over
+(multi-part cards — html, markdown, diff, terminal, image, mermaid, json, code) over
 CLI/MCP/HTTP; the user watches them render in a browser and comments back. The
 two-way loop — publish → live render → comment → revise/reply — is the product.
 When in doubt, optimize for the loop.
@@ -33,7 +33,7 @@ consciously, not as a side effect):
   (`/api/assets`, `/a/:id`), and the shared flow functions both REST and MCP call.
 - `server/types.ts` — data model + `Store` interface; no runtime imports. A
   surface is an ordered list of parts (`html` | `markdown` | `diff` | `terminal`
-  | `image` | `mermaid`); a snippet is sugar for a single html part.
+  | `image` | `mermaid` | `json` | `code`); a snippet is sugar for a single html part.
   `htmlPart` bridges the legacy snippet shape. Assets (uploaded blobs)
   are a separate entity, referenced by `image` parts; `selectEvictions`
   is the reference-aware LRU policy.

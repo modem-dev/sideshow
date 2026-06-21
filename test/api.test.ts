@@ -316,6 +316,100 @@ test("publishes a mermaid part; /s has no html doc for it", async () => {
   assert.equal((await app.request(`/s/${surface.id}?part=0`)).status, 404);
 });
 
+test("publishes a json part; round-trips data and 404s on /s", async () => {
+  const app = makeApp();
+  const data = {
+    name: "sideshow",
+    version: "1.2.3",
+    deps: ["a", "b"],
+    nested: { x: true, y: null },
+  };
+  const res = await app.request(
+    "/api/surfaces",
+    json({ title: "Config", parts: [{ kind: "json", data }] }),
+  );
+  assert.equal(res.status, 201);
+  const surface = (await res.json()) as any;
+  assert.deepEqual(surface.kinds, ["json"]);
+
+  const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
+  assert.equal(full.parts[0].kind, "json");
+  assert.deepEqual(full.parts[0].data, data);
+  // json is viewer-rendered data, not a sandboxed html doc
+  assert.equal((await app.request(`/s/${surface.id}?part=0`)).status, 404);
+});
+
+test("json part with null data is valid (null is a JSON value)", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/surfaces",
+    json({ title: "Null", parts: [{ kind: "json", data: null }] }),
+  );
+  assert.equal(res.status, 201);
+  const surface = (await res.json()) as any;
+  const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
+  assert.equal(full.parts[0].data, null);
+});
+
+test("json part without data key is rejected", async () => {
+  const app = makeApp();
+  const res = await app.request("/api/surfaces", json({ title: "Bad", parts: [{ kind: "json" }] }));
+  assert.equal(res.status, 400);
+});
+
+test("publishes a code part; round-trips code/lang/title and 404s on /s", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/surfaces",
+    json({
+      title: "Entry",
+      parts: [{ kind: "code", code: "const x = 42;\n", language: "ts", title: "a.ts" }],
+    }),
+  );
+  assert.equal(res.status, 201);
+  const surface = (await res.json()) as any;
+  assert.deepEqual(surface.kinds, ["code"]);
+
+  const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
+  assert.equal(full.parts[0].kind, "code");
+  assert.equal(full.parts[0].code, "const x = 42;\n");
+  assert.equal(full.parts[0].language, "ts");
+  assert.equal(full.parts[0].title, "a.ts");
+  assert.equal((await app.request(`/s/${surface.id}?part=0`)).status, 404);
+});
+
+test("code part without code is rejected", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/surfaces",
+    json({ title: "Bad", parts: [{ kind: "code", language: "ts" }] }),
+  );
+  assert.equal(res.status, 400);
+});
+
+test("code part with lineStart round-trips", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/surfaces",
+    json({
+      title: "Excerpt",
+      parts: [
+        {
+          kind: "code",
+          code: "const x = 1;\nconst y = 2;\n",
+          language: "ts",
+          title: "a.ts",
+          lineStart: 80,
+        },
+      ],
+    }),
+  );
+  assert.equal(res.status, 201);
+  const surface = (await res.json()) as any;
+  const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
+  assert.equal(full.parts[0].lineStart, 80);
+});
+
 test("publish_surface MCP tool keeps mermaid parts and drops empty ones", async () => {
   const app = makeApp();
   const published = (await (

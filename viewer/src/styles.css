@@ -592,6 +592,65 @@ iframe {
   white-space: pre-wrap;
   overflow-x: auto;
 }
+.jsonpart {
+  border-top: 0.5px solid var(--border);
+  padding: 10px 14px 12px;
+  font: 13px/1.5 var(--font-mono, ui-monospace, monospace);
+  overflow-x: auto;
+}
+.json-container {
+  white-space: pre-wrap;
+}
+.json-toggle {
+  cursor: pointer;
+  color: var(--faint);
+  user-select: none;
+  white-space: nowrap;
+}
+.json-toggle:hover {
+  color: var(--muted);
+}
+.json-summary,
+.json-empty {
+  color: var(--faint);
+}
+.json-children {
+  display: block;
+  padding-left: 18px;
+}
+.json-child {
+  display: block;
+}
+.json-close {
+  display: block;
+}
+.json-key {
+  color: var(--text);
+}
+.json-colon,
+.json-comma {
+  color: var(--faint);
+}
+.json-value {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.json-string {
+  color: var(--muted);
+}
+.json-number,
+.json-boolean {
+  color: var(--accent);
+}
+.json-null {
+  color: var(--faint);
+}
+.codepart {
+  border-top: 0.5px solid var(--border);
+}
+.codeframe {
+  border-top: 0.5px solid var(--border);
+}
 /* The thread is layout only — the comment list and the footer toolbar each draw
    their own full-width separator and padding. That keeps every divider spanning
    the whole card and the spacing identical whether or not the card has comments

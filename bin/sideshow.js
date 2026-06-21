@@ -24,6 +24,8 @@ usage:
       --mermaid <file|-> add a mermaid part (diagram source → SVG) — combine with html
       --diff <file|->   add a diff part from a unified/git patch (combine with html)
       --terminal <file|->  add a terminal part from monospace/ANSI output
+      --json <file|->    add a json part from a JSON file (collapsible tree)
+      --code <file|->    add a code part from a file (shiki-highlighted)
       --kit <id>        opt the html part into a kit (repeatable; see "sideshow kits")
       --image <file>    upload an image and append it as an image part
       --session <id>    target session (default: auto per agent session)
@@ -55,6 +57,18 @@ usage:
       (also: --session, --session-title, --agent, --new-session)
   sideshow mermaid <file|-> [options]     publish a mermaid surface (diagram → SVG)
       --title <t>       surface title
+      (also: --session, --session-title, --agent, --new-session)
+  sideshow json <file|-> [options]        publish a JSON surface (collapsible tree)
+      --title <t>       surface title
+      (also: --session, --session-title, --agent, --new-session)
+  sideshow code <file|-> [options]        publish a code surface (shiki-highlighted)
+      --title <t>       surface (card) title
+      --filename <f>    filename shown in the code header bar (defaults to the
+                        file argument's basename)
+      --language <lang>  shiki language id (ts, js, python, ...); inferred from
+                        filename if omitted, "text" if uninferrable
+      --line-start <n>  1-based line number the excerpt starts at (shows
+                        original line numbers instead of 1-based)
       (also: --session, --session-title, --agent, --new-session)
   sideshow kits                           list the opt-in html kits this board offers
   sideshow update <id> <file|->           revise a surface (new version, same card)
@@ -326,6 +340,78 @@ const CONTENT_TYPES = {
 function contentTypeFor(file) {
   const ext = file.split(".").pop()?.toLowerCase() ?? "";
   return CONTENT_TYPES[ext] ?? "application/octet-stream";
+}
+
+// Map a filename extension to a shiki language id. Only common languages —
+// shiki knows many more, but this covers the files an agent is likely to
+// `sideshow code`. Unmapped extensions return undefined (shiki "text").
+const LANG_BY_EXT = {
+  ts: "typescript",
+  tsx: "tsx",
+  mts: "typescript",
+  cts: "typescript",
+  js: "javascript",
+  jsx: "jsx",
+  mjs: "javascript",
+  cjs: "javascript",
+  py: "python",
+  rb: "ruby",
+  go: "go",
+  rs: "rust",
+  java: "java",
+  kt: "kotlin",
+  swift: "swift",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  cc: "cpp",
+  hpp: "cpp",
+  cs: "csharp",
+  php: "php",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  fish: "bash",
+  yml: "yaml",
+  yaml: "yaml",
+  toml: "toml",
+  json: "json",
+  jsonl: "json",
+  html: "html",
+  htm: "html",
+  css: "css",
+  scss: "scss",
+  sql: "sql",
+  md: "markdown",
+  markdown: "markdown",
+  dockerfile: "docker",
+  makefile: "make",
+  lua: "lua",
+  r: "r",
+  scala: "scala",
+  clj: "clojure",
+  ex: "elixir",
+  exs: "elixir",
+  erl: "erlang",
+  hs: "haskell",
+  ml: "ocaml",
+  nim: "nim",
+  dart: "dart",
+  groovy: "groovy",
+  gradle: "groovy",
+  vue: "vue",
+  svelte: "svelte",
+  xml: "xml",
+  graphql: "graphql",
+  gql: "graphql",
+};
+
+function inferLang(file) {
+  const base = file.split("/").pop() ?? file;
+  if (/^Dockerfile/i.test(base)) return "docker";
+  if (/^Makefile/i.test(base)) return "make";
+  const ext = base.split(".").pop()?.toLowerCase() ?? "";
+  return LANG_BY_EXT[ext];
 }
 
 // Upload raw file bytes to /api/assets. Returns { id, url, contentType, ... }.
@@ -681,6 +767,8 @@ const commands = {
         diff: { type: "string" },
         image: { type: "string" },
         terminal: { type: "string" },
+        json: { type: "string" },
+        code: { type: "string" },
         kit: { type: "string", multiple: true },
         layout: { type: "string" },
         session: { type: "string" },
@@ -708,6 +796,22 @@ const commands = {
     }
     if (flags.terminal !== undefined) {
       parts.push({ kind: "terminal", text: readContent(flags.terminal || "-") });
+    }
+    if (flags.json !== undefined) {
+      const text = readContent(flags.json || "-");
+      try {
+        parts.push({ kind: "json", data: JSON.parse(text) });
+      } catch {
+        fail(`--json: invalid JSON${flags.json ? ` in ${flags.json}` : ""}`);
+      }
+    }
+    if (flags.code !== undefined) {
+      const codeFile = flags.code || "-";
+      const part = { kind: "code", code: readContent(codeFile) };
+      const codeLang = codeFile !== "-" ? inferLang(codeFile) : undefined;
+      if (codeLang) part.language = codeLang;
+      if (codeFile !== "-") part.title = codeFile.split("/").pop() || codeFile;
+      parts.push(part);
     }
     // Resolve the session first so the image upload and the surface share it.
     const session = await resolveSession(flags, { create: true });
@@ -867,6 +971,61 @@ const commands = {
     outSurface(await publishSurface(parts, flags));
   },
 
+  async json() {
+    const { values: flags, positionals } = parse({
+      allowPositionals: true,
+      options: {
+        title: { type: "string" },
+        session: { type: "string" },
+        "session-title": { type: "string" },
+        agent: { type: "string" },
+        "new-session": { type: "boolean" },
+      },
+    });
+    if (!positionals[0]) fail("usage: sideshow json <file|-> [--title t]");
+    const text = readContent(positionals[0]);
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      fail(`invalid JSON${positionals[0] !== "-" ? ` in ${positionals[0]}` : ""}`);
+    }
+    const parts = [{ kind: "json", data }];
+    outSurface(await publishSurface(parts, flags));
+  },
+  async code() {
+    const { values: flags, positionals } = parse({
+      allowPositionals: true,
+      options: {
+        title: { type: "string" },
+        filename: { type: "string" },
+        language: { type: "string" },
+        "line-start": { type: "string" },
+        session: { type: "string" },
+        "session-title": { type: "string" },
+        agent: { type: "string" },
+        "new-session": { type: "boolean" },
+      },
+    });
+    if (!positionals[0])
+      fail(
+        "usage: sideshow code <file|-> [--title t] [--filename f] [--language lang] [--line-start n]",
+      );
+    const code = readContent(positionals[0]);
+    const lang = flags.language ?? (positionals[0] !== "-" ? inferLang(positionals[0]) : undefined);
+    const part = { kind: "code", code };
+    if (lang) part.language = lang;
+    const ls = Number(flags["line-start"]);
+    if (Number.isFinite(ls) && ls >= 1) part.lineStart = Math.floor(ls);
+    // The part's title (filename) shows inside the code surface's header bar.
+    // Default to the basename of the file argument; --filename overrides; use
+    // --title for the surface (card) title instead.
+    const filename =
+      flags.filename ??
+      (positionals[0] !== "-" ? positionals[0].split("/").pop() || positionals[0] : undefined);
+    if (filename) part.title = filename;
+    outSurface(await publishSurface([part], flags));
+  },
   async update() {
     const { values: flags, positionals } = parse({
       allowPositionals: true,

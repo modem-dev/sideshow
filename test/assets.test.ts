@@ -87,12 +87,32 @@ test("validateSurfaceParts accepts all supported part kinds", () => {
     { kind: "image", assetId: "img", alt: "shot", caption: "cap" },
     { kind: "trace", steps: [{ label: "read", kind: "tool" }], title: "Trace" },
     { kind: "trace", assetId: "trace-file" },
+    { kind: "json", data: { a: 1, b: [true, null, "hi"] } },
+    { kind: "json", data: null },
+    { kind: "json", data: 42 },
+    { kind: "code", code: "const x = 1;", language: "ts", title: "a.ts" },
+    { kind: "code", code: "print('hi')" },
+    { kind: "code", code: "x = 1\ny = 2", language: "python", lineStart: 80 },
   ]);
   assert.equal(result.ok, true);
   if (result.ok)
     assert.deepEqual(
       result.parts.map((p) => p.kind),
-      ["html", "html", "diff", "diff", "image", "trace", "trace"],
+      [
+        "html",
+        "html",
+        "diff",
+        "diff",
+        "image",
+        "trace",
+        "trace",
+        "json",
+        "json",
+        "json",
+        "code",
+        "code",
+        "code",
+      ],
     );
 });
 
@@ -105,6 +125,8 @@ test("validateSurfaceParts rejects malformed parts", () => {
     [{ kind: "diff", patch: "x", layout: "sideways" }],
     [{ kind: "image" }],
     [{ kind: "trace", steps: [{ detail: "missing label" }] }],
+    [{ kind: "json" }], // missing data
+    [{ kind: "code" }], // missing code
     [{ kind: "unknown" }],
   ]) {
     const result = validateSurfaceParts(parts);
