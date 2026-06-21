@@ -964,6 +964,22 @@ test("rejects empty and oversized uploads", async () => {
   );
 });
 
+test("rejects an oversize Content-Length before buffering the body", async () => {
+  const app = makeApp();
+  // A raw-bytes POST whose declared Content-Length exceeds the cap must 413
+  // without reading the body — the handler checks the header first.
+  const res = await app.request("/api/assets?kind=file", {
+    method: "POST",
+    headers: {
+      "content-type": "application/octet-stream",
+      "content-length": String(5 * 1024 * 1024 + 1),
+    },
+    body: new Uint8Array(0), // no bytes actually sent — the check fires first
+  });
+  assert.equal(res.status, 413);
+  assert.match(((await res.json()) as any).error, /exceeds/);
+});
+
 test("uploading to an unknown session 404s; serving a missing asset 404s", async () => {
   const app = makeApp();
   const res = await app.request(
