@@ -82,6 +82,7 @@ export type AuthenticateHook = (
 ) => boolean | Response | Promise<boolean | Response>;
 
 export type BasePathHook = string | ((request: Request) => string | null | undefined);
+export type PublicReadMode = "session" | "full";
 
 export interface AppOptions {
   store: Store;
@@ -104,6 +105,10 @@ export interface AppOptions {
   // stripped routes like /api/sessions and /s/:id?part=0; this prefix is only
   // used when the server/viewer generate browser-visible URLs.
   basePath?: BasePathHook;
+  // When set, unauthenticated GET routes can be read without bypassing the
+  // write token. "session" exposes only session-scoped reads; "full" exposes
+  // every GET route.
+  publicRead?: PublicReadMode;
   // Update notice: the running version and the upgrade hint that fits this
   // deployment (npm install vs redeploy). Without `version`, /api/version
   // reports nothing and the viewer shows no notice.
@@ -172,6 +177,22 @@ const surfaceMeta = (s: Surface) => ({
   parts: stripParts(s.parts),
 });
 
+function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
+  if (mode === "full") return true;
+  if (path.startsWith("/session/")) return true;
+  if (path.startsWith("/s/")) return true;
+  if (path.startsWith("/a/")) return true;
+  if (path.startsWith("/api/sessions/")) return true;
+  if (path.startsWith("/api/surfaces/")) return true;
+  if (path.startsWith("/api/snippets/")) return true;
+  if (path === "/api/comments") return true;
+  if (path === "/api/events") return true;
+  if (path === "/api/theme") return true;
+  if (path === "/api/version") return true;
+  if (path === "/api/kits") return true;
+  return false;
+}
+
 // Response to an agent's own write: it already holds the parts it just sent,
 // so echo only the identifiers (a diff patch can be large — never send it
 // back). Reads (`surfaceMeta`, GET /api/surfaces/:id) still carry parts.
@@ -217,6 +238,7 @@ export function createApp({
   authenticate,
   authToken,
   basePath,
+  publicRead,
   version,
   upgradeCommand,
   fetchLatestRelease,
@@ -449,6 +471,16 @@ export function createApp({
 
   // --- auth ---
 
+  const isAuthenticated = (c: any): boolean => {
+    if (!authToken) return true;
+    if (c.req.header("authorization") === `Bearer ${authToken}`) return true;
+    if (getCookie(c, "sideshow_key") === authToken) return true;
+    return c.req.query("key") === authToken;
+  };
+
+  const isUnauthenticatedSessionRead = (c: any): boolean =>
+    publicRead === "session" && !isAuthenticated(c);
+
   app.use("*", async (c, next) => {
     const path = new URL(c.req.url).pathname;
 
@@ -465,9 +497,6 @@ export function createApp({
     if (!authToken) return next();
     if (path === "/guide" || path === "/setup" || path === "/agent-howto") return next();
 
-    const bearer = c.req.header("authorization");
-    if (bearer === `Bearer ${authToken}`) return next();
-    if (getCookie(c, "sideshow_key") === authToken) return next();
     const key = c.req.query("key");
     if (key === authToken) {
       setCookie(c, "sideshow_key", authToken, {
@@ -479,6 +508,10 @@ export function createApp({
       });
       return next();
     }
+    if (publicRead && c.req.method === "GET" && isPublicReadAllowed(path, publicRead)) {
+      return next();
+    }
+    if (isAuthenticated(c)) return next();
     if (path.startsWith("/api") || path === "/mcp") {
       return c.json({ error: "unauthorized — send Authorization: Bearer <token>" }, 401);
     }
@@ -501,8 +534,22 @@ export function createApp({
   const configuredViewerHtml = (request: Request, url: string) =>
     withViewerConfig(withOrigin(viewerHtml, { req: { url } }), request);
   app.get("/", (c) => c.html(configuredViewerHtml(c.req.raw, c.req.url)));
-  app.get("/session/:id", (c) => c.html(configuredViewerHtml(c.req.raw, c.req.url)));
-  app.get("/session/:id/s/:surfaceId", (c) => c.html(configuredViewerHtml(c.req.raw, c.req.url)));
+  app.get("/session/:id", async (c) => {
+    if (isUnauthenticatedSessionRead(c) && !(await store.getSession(c.req.param("id")))) {
+      return c.text("Session not found", 404);
+    }
+    return c.html(configuredViewerHtml(c.req.raw, c.req.url));
+  });
+  app.get("/session/:id/s/:surfaceId", async (c) => {
+    if (isUnauthenticatedSessionRead(c)) {
+      const session = await store.getSession(c.req.param("id"));
+      const surface = await store.getSurface(c.req.param("surfaceId"));
+      if (!session || !surface || surface.sessionId !== session.id) {
+        return c.text("Session or surface not found", 404);
+      }
+    }
+    return c.html(configuredViewerHtml(c.req.raw, c.req.url));
+  });
   app.get("/guide", (c) => c.text(withOrigin(guideMarkdown, c)));
   app.get("/setup", (c) => c.text(withOrigin(setupText, c)));
   app.get("/agent-howto", (c) => c.text(withOrigin(agentHowtoText, c)));
@@ -742,9 +789,23 @@ export function createApp({
   // Long-poll friendly: ?wait=N holds the request open up to N seconds until
   // a matching comment arrives. This is how terminal agents block on feedback.
   app.get("/api/comments", async (c) => {
+    const sessionId = c.req.query("session");
+    const surfaceId = c.req.query("surface") ?? c.req.query("snippet");
+    if (isUnauthenticatedSessionRead(c)) {
+      if (!sessionId && !surfaceId) return c.json({ error: "session or surface required" }, 401);
+      if (sessionId && !(await store.getSession(sessionId))) {
+        return c.json({ error: "session not found" }, 404);
+      }
+      if (surfaceId) {
+        const surface = await store.getSurface(surfaceId);
+        if (!surface || (sessionId && surface.sessionId !== sessionId)) {
+          return c.json({ error: "surface not found" }, 404);
+        }
+      }
+    }
     const result = await waitForComments({
-      sessionId: c.req.query("session"),
-      surfaceId: c.req.query("surface") ?? c.req.query("snippet"),
+      sessionId,
+      surfaceId,
       author: c.req.query("author"),
       afterSeq: c.req.query("after") ? Number(c.req.query("after")) : undefined,
       waitSeconds: Number(c.req.query("wait") ?? 0) || 0,
@@ -866,38 +927,55 @@ export function createApp({
 
   // --- live feed ---
 
-  app.get("/api/events", (c) =>
-    streamSSE(c, async (stream) => {
+  app.get("/api/events", async (c) => {
+    const sessionId = c.req.query("session");
+    if (isUnauthenticatedSessionRead(c)) {
+      if (!sessionId) return c.json({ error: "session required" }, 401);
+      if (!(await store.getSession(sessionId))) return c.json({ error: "session not found" }, 404);
+    }
+    const eventSessionId = (event: Parameters<Parameters<EventBus["subscribe"]>[0]>[0]) => {
+      if ("sessionId" in event) return event.sessionId;
+      if (event.type.startsWith("session-")) return event.id;
+      return undefined;
+    };
+    return streamSSE(c, async (stream) => {
       const queue: Parameters<Parameters<EventBus["subscribe"]>[0]>[0][] = [];
       let wake: (() => void) | null = null;
       const unsubscribe = bus.subscribe((event) => {
+        if (sessionId && eventSessionId(event) !== sessionId) return;
         queue.push(event);
         wake?.();
       });
       let open = true;
-      stream.onAbort(() => {
+      const close = () => {
         open = false;
         unsubscribe();
         wake?.();
-      });
+      };
+      stream.onAbort(close);
+      c.req.raw.signal.addEventListener("abort", close, { once: true });
       await stream.writeSSE({ event: "hello", data: "{}" });
       while (open) {
         while (queue.length > 0) {
           await stream.writeSSE({ data: JSON.stringify(queue.shift()) });
         }
+        let pingTimer: ReturnType<typeof setTimeout> | null = null;
         await Promise.race([
           new Promise<void>((resolve) => {
             wake = resolve;
           }),
-          stream.sleep(15000),
+          new Promise<void>((resolve) => {
+            pingTimer = setTimeout(resolve, 15000);
+          }),
         ]);
         wake = null;
+        if (pingTimer) clearTimeout(pingTimer);
         if (open && queue.length === 0) {
           await stream.writeSSE({ event: "ping", data: "{}" });
         }
       }
-    }),
-  );
+    });
+  });
 
   // --- MCP over streamable HTTP (works locally and deployed) ---
 

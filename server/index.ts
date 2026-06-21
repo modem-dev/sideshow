@@ -22,6 +22,9 @@ const [viewerHtml, guideMarkdown, setupText, agentHowtoText, pkgJson] = await Pr
   readFile(join(root, "package.json"), "utf8"),
 ]);
 
+const pr = process.env.SIDESHOW_PUBLIC_READ;
+const publicRead = pr === "session" || pr === "full" ? pr : undefined;
+
 const app = createApp({
   store: new JsonFileStore(process.env.SIDESHOW_DATA ?? join(root, "data", "sideshow.json")),
   viewerHtml,
@@ -29,6 +32,7 @@ const app = createApp({
   setupText,
   agentHowtoText,
   authToken: process.env.SIDESHOW_TOKEN,
+  publicRead,
   // SIDESHOW_VERSION fakes the running version (manual testing of the
   // notice); set it to the empty string to disable the update check
   version: process.env.SIDESHOW_VERSION ?? (JSON.parse(pkgJson) as { version: string }).version,

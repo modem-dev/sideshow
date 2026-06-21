@@ -10,6 +10,7 @@ import { SqlStore } from "./sqlStore.ts";
 interface Env {
   BOARD: DurableObjectNamespace<SideshowBoard>;
   SIDESHOW_TOKEN?: string;
+  SIDESHOW_PUBLIC_READ?: string;
 }
 
 // The whole app lives inside one Durable Object: a single instance per board
@@ -20,6 +21,8 @@ export class SideshowBoard extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    const pr = env.SIDESHOW_PUBLIC_READ;
+    const publicRead = pr === "session" || pr === "full" ? pr : undefined;
     this.app = createApp({
       store: new SqlStore(ctx.storage.sql),
       viewerHtml,
@@ -27,6 +30,7 @@ export class SideshowBoard extends DurableObject<Env> {
       setupText,
       agentHowtoText,
       authToken: env.SIDESHOW_TOKEN,
+      publicRead,
       version: pkg.version,
       upgradeCommand: "git pull && npm run deploy",
     });

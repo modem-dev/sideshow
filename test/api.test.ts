@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { createApp } from "../server/app.ts";
 import { JsonFileStore } from "../server/storage.ts";
 
-function makeApp(authToken?: string) {
+function makeApp(authToken?: string, opts?: { publicRead?: "session" | "full" }) {
   const dir = mkdtempSync(join(tmpdir(), "sideshow-test-"));
   const store = new JsonFileStore(join(dir, "data.json"));
   return createApp({
@@ -16,6 +16,7 @@ function makeApp(authToken?: string) {
     setupText: "# setup",
     agentHowtoText: "# agent how-to",
     authToken,
+    ...opts,
   });
 }
 
@@ -23,6 +24,11 @@ const json = (body: unknown) => ({
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify(body),
+});
+
+const authedJson = (body: unknown, token = "secret") => ({
+  ...json(body),
+  headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
 });
 
 test("publish without session auto-creates one", async () => {
@@ -564,10 +570,7 @@ test("auth token guards mutating routes when configured", async () => {
   const app = makeApp("secret");
   const denied = await app.request("/api/snippets", json({ html: "<p>x</p>" }));
   assert.equal(denied.status, 401);
-  const allowed = await app.request("/api/snippets", {
-    ...json({ html: "<p>x</p>" }),
-    headers: { "content-type": "application/json", authorization: "Bearer secret" },
-  });
+  const allowed = await app.request("/api/snippets", authedJson({ html: "<p>x</p>" }));
   assert.equal(allowed.status, 201);
   // full surface is guarded, including reads and the viewer
   assert.equal((await app.request("/api/sessions")).status, 401);
@@ -585,6 +588,158 @@ test("auth token guards mutating routes when configured", async () => {
     headers: { cookie: "sideshow_key=secret" },
   });
   assert.equal(viaCookie.status, 200);
+});
+
+async function readSseUntil(res: Response, needle: string, abort?: () => void): Promise<string> {
+  assert.ok(res.body);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  try {
+    await Promise.race([
+      (async () => {
+        while (!text.includes(needle)) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          text += decoder.decode(chunk.value, { stream: true });
+        }
+      })(),
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error(`timed out waiting for ${needle}`)), 1000),
+      ),
+    ]);
+  } finally {
+    abort?.();
+    await reader.cancel().catch(() => undefined);
+  }
+  return text;
+}
+
+// --- public read auth modes ---
+
+test("public read full mode allows unauthenticated GETs but not writes", async () => {
+  const app = makeApp("secret", { publicRead: "full" });
+
+  assert.equal((await app.request("/")).status, 200);
+  assert.equal((await app.request("/session/anything")).status, 200);
+  assert.equal((await app.request("/api/sessions")).status, 200);
+  assert.equal((await app.request("/api/theme")).status, 200);
+  assert.equal((await app.request("/api/version")).status, 200);
+
+  const created = (await (
+    await app.request("/api/snippets", authedJson({ html: "<p>x</p>" }))
+  ).json()) as any;
+  assert.equal((await app.request(`/s/${created.id}`)).status, 200);
+  assert.equal((await app.request(`/api/surfaces/${created.id}`)).status, 200);
+
+  assert.equal((await app.request("/api/snippets", json({ html: "<p>x</p>" }))).status, 401);
+  assert.equal((await app.request("/api/comments", json({ text: "hi" }))).status, 401);
+});
+
+test("public read session mode allows scoped reads and denies root/session list", async () => {
+  const app = makeApp("secret", { publicRead: "session" });
+
+  assert.equal((await app.request("/")).status, 401);
+  assert.equal((await app.request("/api/sessions")).status, 401);
+  assert.equal((await app.request("/api/theme")).status, 200);
+  assert.equal((await app.request("/api/version")).status, 200);
+
+  const created = (await (
+    await app.request("/api/snippets", authedJson({ html: "<p>x</p>" }))
+  ).json()) as any;
+  assert.equal((await app.request(`/session/${created.sessionId}`)).status, 200);
+  assert.equal((await app.request(`/session/${created.sessionId}/s/${created.id}`)).status, 200);
+  assert.equal((await app.request(`/s/${created.id}`)).status, 200);
+  assert.equal((await app.request(`/api/surfaces/${created.id}`)).status, 200);
+  assert.equal((await app.request(`/api/snippets/${created.id}`)).status, 200);
+  assert.equal((await app.request(`/api/sessions/${created.sessionId}/surfaces`)).status, 200);
+
+  assert.equal((await app.request("/api/snippets", json({ html: "<p>x</p>" }))).status, 401);
+});
+
+test("public read session mode validates unauthenticated session viewer URLs", async () => {
+  const app = makeApp("secret", { publicRead: "session" });
+  const created = (await (
+    await app.request("/api/snippets", authedJson({ html: "<p>x</p>" }))
+  ).json()) as any;
+
+  assert.equal((await app.request("/session/missing")).status, 404);
+  assert.equal((await app.request(`/session/${created.sessionId}/s/missing`)).status, 404);
+  assert.equal((await app.request(`/session/missing/s/${created.id}`)).status, 404);
+
+  const authed = await app.request("/session/missing", {
+    headers: { authorization: "Bearer secret" },
+  });
+  assert.equal(authed.status, 200);
+});
+
+test("public read session mode protects unscoped comments reads", async () => {
+  const app = makeApp("secret", { publicRead: "session" });
+  const created = (await (
+    await app.request("/api/snippets", authedJson({ html: "<p>x</p>" }))
+  ).json()) as any;
+  await app.request("/api/comments", authedJson({ snippet: created.id, text: "hi" }));
+
+  assert.equal((await app.request("/api/comments")).status, 401);
+  assert.equal((await app.request("/api/comments?session=missing")).status, 404);
+  assert.equal((await app.request(`/api/comments?session=${created.sessionId}`)).status, 200);
+  assert.equal((await app.request(`/api/comments?surface=${created.id}`)).status, 200);
+
+  const owner = await app.request("/api/comments", {
+    headers: { authorization: "Bearer secret" },
+  });
+  assert.equal(owner.status, 200);
+});
+
+test("public read session mode protects and scopes event streams", async () => {
+  const app = makeApp("secret", { publicRead: "session" });
+  const first = (await (
+    await app.request("/api/snippets", authedJson({ html: "<p>one</p>" }))
+  ).json()) as any;
+  const second = (await (
+    await app.request("/api/snippets", authedJson({ html: "<p>two</p>" }))
+  ).json()) as any;
+
+  assert.equal((await app.request("/api/events")).status, 401);
+  assert.equal((await app.request("/api/events?session=missing")).status, 404);
+
+  const ac = new AbortController();
+  const stream = await app.request(`/api/events?session=${first.sessionId}`, { signal: ac.signal });
+  assert.equal(stream.status, 200);
+  const other = (await (
+    await app.request(
+      "/api/snippets",
+      authedJson({ html: "<p>other</p>", session: second.sessionId }),
+    )
+  ).json()) as any;
+  const matching = (await (
+    await app.request(
+      "/api/snippets",
+      authedJson({ html: "<p>matching</p>", session: first.sessionId }),
+    )
+  ).json()) as any;
+
+  const text = await readSseUntil(stream, matching.id, () => ac.abort());
+  assert.ok(text.includes(matching.id));
+  assert.ok(!text.includes(other.id));
+});
+
+test("public read does not bypass custom authenticate hooks", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sideshow-test-"));
+  const app = createApp({
+    store: new JsonFileStore(join(dir, "data.json")),
+    viewerHtml: "<html>viewer</html>",
+    guideMarkdown: "# guide",
+    setupText: "# setup",
+    authenticate: (request) => request.headers.get("x-sideshow-internal") === "ok",
+    publicRead: "full",
+  });
+
+  assert.equal((await app.request("/api/sessions")).status, 401);
+  assert.equal(
+    (await app.request("/api/sessions", { headers: { "x-sideshow-internal": "ok" } })).status,
+    200,
+  );
 });
 
 const mcpCall = (id: number, method: string, params?: unknown) =>
