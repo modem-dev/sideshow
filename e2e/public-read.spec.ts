@@ -69,6 +69,32 @@ test("readonly session-mode viewer loads without fetching the session list", asy
   }
 });
 
+test("readonly session-mode viewer renders without sidebar chrome", async ({ page }) => {
+  const token = "secret";
+  const server = await startSideshowServer({
+    SIDESHOW_TOKEN: token,
+    SIDESHOW_PUBLIC_READ: "session",
+  });
+  try {
+    const surface = await publish(
+      server.url,
+      { html: "<p>single session</p>", title: "Single session", agent: "e2e" },
+      token,
+    );
+
+    await page.goto(`${server.url}/session/${surface.sessionId}`);
+
+    await expect(page.locator("aside")).toHaveCount(0);
+    await expect(page.locator("button.menu")).toHaveCount(0);
+    await expect(page.locator("#scrim")).toHaveCount(0);
+    await expect(page.locator("#onboard")).toHaveCount(0);
+    await expect(page.locator(".topbar .brand")).toContainText("sideshow");
+    await expect(page.locator(".card:not(#whatsNew)")).toBeVisible();
+  } finally {
+    server.stop();
+  }
+});
+
 test("readonly full-mode chrome hides sidebar write controls", async ({
   page,
   publicReadServer,
