@@ -61,6 +61,33 @@ test("readonly empty board shows a simple empty state", async ({ page, publicRea
   await expect(page.getByRole("link", { name: "agent setup" })).toBeVisible();
 });
 
+test("readonly iframe send-prompt bridge messages do not write comments", async ({
+  page,
+  publicReadServer,
+}) => {
+  await publish(
+    publicReadServer.url,
+    {
+      html: `<script>parent.postMessage({__sideshow:true,type:"send-prompt",text:"please write"},"*")</script>`,
+      title: "Prompt bridge",
+      agent: "e2e",
+    },
+    publicReadServer.token,
+  );
+  let commentPosts = 0;
+  await page.route("**/api/comments", async (route) => {
+    if (route.request().method() === "POST") commentPosts += 1;
+    await route.continue();
+  });
+
+  await page.goto(publicReadServer.url);
+  await expect(page.locator(".card:not(#whatsNew) iframe")).toBeVisible();
+  await page.waitForTimeout(500);
+
+  expect(commentPosts).toBe(0);
+  await expect(page.locator("#toast")).not.toHaveClass(/show/);
+});
+
 test("readonly cards hide comment and delete controls but keep read actions", async ({
   page,
   publicReadServer,

@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { AgentMark } from "./agentMarks.tsx";
-import { api, isReadonly, relTime, sessionLabel, type SessionRow } from "./api.ts";
+import { api, isReadonly, publicReadMode, relTime, sessionLabel, type SessionRow } from "./api.ts";
 import { Card, cardEls, frameForSource } from "./Card.tsx";
 import { applyFrameHeight } from "./SandboxedPart.tsx";
 import { renderNotes } from "./notes.ts";
@@ -272,6 +272,7 @@ async function onBridgeMessage(ev: MessageEvent) {
   // check that recognizes any embedded iframe.)
   if (d.type === "switch-session") {
     if (!isOwnFrame(ev.source)) return;
+    if (isReadonly() && publicReadMode() === "session") return;
     // A surface iframe forwarded the session-switch shortcut because focus was
     // inside it (see server/surfacePage.ts). Mirror the parent keydown handler.
     void selectAdjacent(d.key === "ArrowUp" ? -1 : 1);
@@ -283,6 +284,7 @@ async function onBridgeMessage(ev: MessageEvent) {
   if (d.type === "resize" && src) {
     applyFrameHeight(src.iframe, d.height);
   } else if (d.type === "send-prompt" && src) {
+    if (isReadonly()) return;
     await api("/api/comments", {
       method: "POST",
       body: JSON.stringify({ surface: src.id, text: String(d.text), author: "user" }),
