@@ -1,0 +1,10 @@
+const MAX_ATTEMPTS = 5;
+const BASE_MS = 200;
+const MAX_MS = 30_000;
+
+// Full-jitter exponential backoff (AWS architecture blog). The jitter — not
+// the exponent — is what prevents a synchronized retry herd.
+function backoff(attempt: number): number {
+  const ceil = Math.min(MAX_MS, BASE_MS * 2 ** attempt);
+  return Math.round(ceil * (0.5 + Math.random() / 2));
+}

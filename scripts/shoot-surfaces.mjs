@@ -164,6 +164,24 @@ const cards = [
     parts: [{ kind: "mermaid", mermaid: read("loop.mmd") }],
   },
   {
+    file: "json",
+    title: "json part — a JSON value as a collapsible tree",
+    parts: [{ kind: "json", data: JSON.parse(read("queue-stats.json")) }],
+  },
+  {
+    file: "code",
+    title: "code part — source highlighted with line numbers",
+    parts: [
+      {
+        kind: "code",
+        code: read("backoff.ts.txt"),
+        language: "ts",
+        title: "worker.ts",
+        lineStart: 4,
+      },
+    ],
+  },
+  {
     file: "combined",
     title: "markdown + diff — two parts composed in one card",
     parts: [

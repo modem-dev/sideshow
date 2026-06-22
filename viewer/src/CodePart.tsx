@@ -134,9 +134,18 @@ export function CodePart(props: { part: CodePartData }) {
       ? highlighted.replace(/\n*(<\/span>)\n*(<span class="line")/g, "$1$2")
       : plainHtml(code);
     // counter-reset starts the counter at lineStart-1 so the first .line
-    // increments to lineStart. Injected as an inline style on the <pre>.
-    const counterStyle = lineStart > 1 ? ` style="counter-reset:line ${lineStart - 1}"` : "";
-    const preWithStart = pre.replace(/<(pre class="(shiki|plain)")/, `<$1${counterStyle}`);
+    // increments to lineStart. Merged into the <pre> as an inline style —
+    // shiki emits its own `style` (and multiple classes), so prepend the
+    // declaration to any existing style attribute, or add one when absent.
+    const preWithStart =
+      lineStart > 1
+        ? pre.replace(/<pre\b[^>]*>/, (open) => {
+            const decl = `counter-reset:line ${lineStart - 1};`;
+            return /\sstyle="/.test(open)
+              ? open.replace(/\sstyle="/, ` style="${decl}`)
+              : open.replace(/<pre\b/, `<pre style="${decl}"`);
+          })
+        : pre;
     const hasHead = !!(props.part.title || (lang && lang !== "text"));
     const wrapClass = hasHead ? "code-wrap code-wrap-head" : "code-wrap";
     const lineEnd = lineStart + code.split("\n").length - 1;

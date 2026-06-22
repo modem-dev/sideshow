@@ -1,0 +1,13 @@
+{
+  "queue": "worker",
+  "policy": {
+    "maxAttempts": 5,
+    "backoff": { "strategy": "full-jitter", "baseMs": 200, "maxMs": 30000 }
+  },
+  "inFlight": 3,
+  "lastHour": { "processed": 1284, "retried": 47, "dropped": 4 },
+  "recent": [
+    { "id": "job_9c3d8e1", "attempt": 2, "status": "ok", "tookMs": 412 },
+    { "id": "job_5f1a2b0", "attempt": 5, "status": "exhausted", "tookMs": null }
+  ]
+}

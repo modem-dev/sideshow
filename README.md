@@ -109,7 +109,17 @@ viewer. A surface is an ordered list of **parts**; one card can carry several.
       <p><b><code>mermaid</code></b> — a few lines of diagram source, rendered to an SVG in the sideshow palette. Tag nodes with <code>:::accent</code> to highlight them.</p>
     </td>
     <td width="50%" valign="top">
-      <img src="docs/surfaces/08-combined.png" width="100%" alt="markdown + diff — two parts composed in one card">
+      <img src="docs/surfaces/08-json.png" width="100%" alt="json part — a JSON value rendered as a collapsible tree">
+      <p><b><code>json</code></b> — a JSON value rendered natively as a collapsible tree; objects and arrays expand and collapse, primitives show inline.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/surfaces/09-code.png" width="100%" alt="code part — source highlighted with line numbers">
+      <p><b><code>code</code></b> — source highlighted with shiki and numbered; pass a starting line to show an excerpt at its original line numbers.</p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/surfaces/10-combined.png" width="100%" alt="markdown + diff — two parts composed in one card">
       <p><b>Parts compose.</b> One card can carry several — here a <code>markdown</code> rationale stacked above its <code>diff</code>, so a single surface holds the why and the what.</p>
     </td>
   </tr>
