@@ -236,6 +236,12 @@ function buildRichCsp(origin: string): string {
 // mermaid / DOMPurify / @pierre-diffs sanitizer bypass can no longer reach the
 // board. `css` is the part-specific stylesheet (prose/diff/mermaid rules);
 // chrome theme vars come from viewerThemeCss so the part matches the viewer.
+// `mode` PINS those vars (and any shiki dark-flip the css carries) to the
+// scheme the chrome resolved, so this frame can't diverge from it. Unlike an
+// html part, it deliberately does NOT force `color-scheme`: these frames are
+// transparent so the themed card surface shows through, and a forced
+// `color-scheme` would paint an opaque UA canvas behind them. They carry no
+// native scrollbars/controls that need it, so the var pinning alone suffices.
 export function renderSandboxedPart(doc: {
   body: string;
   css: string;
@@ -256,7 +262,7 @@ export function renderSandboxedPart(doc: {
      img-src in buildRichCsp allows that origin. (html parts don't need this —
      they load via /s/:id, whose URL is already the base.) -->
 <base href="${doc.origin}/">
-<style>${viewerThemeCss(theme, doc.mode)}${doc.css}${colorSchemeCss(doc.mode)}</style>
+<style>${viewerThemeCss(theme, doc.mode)}${doc.css}</style>
 </head>
 <body>
 ${doc.body}

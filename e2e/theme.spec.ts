@@ -113,6 +113,32 @@ test.describe("with the OS in dark mode", () => {
       .poll(() => body.evaluate((el) => getComputedStyle(el).backgroundColor))
       .toBe("rgb(28, 33, 40)");
   });
+
+  // The opaque html part forces `color-scheme` (so its UA scrollbars/controls
+  // match), but a markdown part's frame is transparent so the themed card shows
+  // through — forcing `color-scheme:dark` there would paint an opaque UA canvas
+  // behind it. Its tokens are still pinned dark; only color-scheme stays unset.
+  test("a transparent markdown frame is pinned dark but keeps no forced color-scheme", async ({
+    page,
+    server,
+  }) => {
+    await publishParts(server.url, {
+      title: "Prose",
+      agent: "e2e",
+      parts: [{ kind: "markdown", markdown: "regular **prose** body" }],
+    });
+    await page.goto(server.url);
+
+    const frame = page.locator(".card iframe.mdframe").contentFrame();
+    // pinned dark: the chrome text var resolved to the github dark ink
+    await expect
+      .poll(() => frame.locator("body").evaluate((el) => getComputedStyle(el).color))
+      .toBe("rgb(230, 237, 243)");
+    // but the root color-scheme is NOT forced, so the UA canvas stays transparent
+    await expect
+      .poll(() => frame.locator("html").evaluate((el) => getComputedStyle(el).colorScheme))
+      .not.toBe("dark");
+  });
 });
 
 test.describe("with the OS in light mode", () => {

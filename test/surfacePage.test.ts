@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { escapeHtml, renderHtmlPage, renderSandboxedPart } from "../server/surfacePage.ts";
+import { themeById } from "../server/themes.ts";
 
 const ORIGIN = "http://localhost:4000";
 
@@ -117,7 +118,7 @@ test("theme tokens are injected and resolve unknown/absent themes to the default
   );
 });
 
-test("a pinned mode forces color-scheme and the matching tokens into the iframe", () => {
+test("a pinned mode forces the scheme into html parts but not transparent rich frames", () => {
   const gh = renderHtmlPage({ title: "t", html: "<p>x</p>", origin: ORIGIN, mode: "dark" });
   // the document's used color-scheme is forced so the UA canvas/scrollbars/
   // controls follow it, overriding the static `color-scheme: light dark` default
@@ -138,9 +139,24 @@ test("a pinned mode forces color-scheme and the matching tokens into the iframe"
   assert.ok(!auto.includes("color-scheme:dark"), "no mode → no forced scheme");
   assert.ok(auto.includes("@media (prefers-color-scheme: dark)"), "no mode → OS media query kept");
 
-  // rich/comment frames pin the same way
+  // rich/comment frames pin the same way — EXCEPT color-scheme. Those frames are
+  // transparent so the themed card surface shows through; a forced color-scheme
+  // would paint an opaque UA canvas behind them. So the tokens are pinned (flat
+  // :root, dark --text, no media query) but color-scheme is left unset.
   const rich = renderSandboxedPart({ body: "x", css: "", origin: ORIGIN, mode: "dark" });
-  assert.ok(/:root\{color-scheme:dark\}/.test(rich), "rich part pins color-scheme too");
+  const dark = themeById("github").dark;
+  assert.ok(
+    !rich.includes("color-scheme:"),
+    "rich frame must NOT force color-scheme (stays transparent)",
+  );
+  assert.ok(
+    !rich.includes("@media (prefers-color-scheme: dark)"),
+    "rich tokens are pinned, no media query",
+  );
+  assert.ok(
+    rich.includes(`--text: ${dark.text}`),
+    "rich frame carries the pinned dark chrome vars",
+  );
 });
 
 test("renderSandboxedPart embeds the body and css inside the sandbox doc", () => {
