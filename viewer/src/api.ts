@@ -70,11 +70,21 @@ export function appPath(path: string): string {
 }
 
 export function isReadonly(): boolean {
-  return !!window.__SIDESHOW_READONLY__;
+  // Host-first (cloud embed), falling back to the self-hosted global so the
+  // self-hosted public-read page is byte-for-byte unchanged.
+  return host().readonly ?? !!window.__SIDESHOW_READONLY__;
 }
 
 export function publicReadMode(): PublicReadMode | undefined {
   return window.__SIDESHOW_PUBLIC_READ__;
+}
+
+// The engine's layout. "full" shows the sidebar + stream; "stream" shows only
+// the current session's stream (no sidebar/session list). An embedder requests
+// it through the host; the self-hosted public-read "session" link maps to
+// "stream", so that flow is unchanged with no host field set.
+export function layoutMode(): "full" | "stream" {
+  return host().layout ?? (publicReadMode() === "session" ? "stream" : "full");
 }
 
 export function surfaceLink(id: string): string {

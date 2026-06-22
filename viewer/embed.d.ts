@@ -19,6 +19,17 @@ export interface SideshowHost {
   router: HostRouter;
   /** The caller's own identity, when the host knows it. */
   identity?: { login: string; accountSlug?: string; role?: string };
+  /**
+   * Layout the engine renders. "full" (default) shows the sidebar + stream;
+   * "stream" shows only the current session's stream — no sidebar, session list,
+   * or session chrome. (Self-hosted public-read "session" links map to "stream".)
+   */
+  layout?: "full" | "stream";
+  /**
+   * Read-only embed: hide write affordances (delete, comment-as-owner, connect).
+   * Orthogonal to `layout`. Self-hosted drives the same flag via a window global.
+   */
+  readonly?: boolean;
 }
 
 export interface ViewerHandle {

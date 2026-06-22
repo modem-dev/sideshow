@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { AgentMark } from "./agentMarks.tsx";
-import { api, isReadonly, publicReadMode, relTime, sessionLabel, type SessionRow } from "./api.ts";
+import { api, isReadonly, layoutMode, relTime, sessionLabel, type SessionRow } from "./api.ts";
 import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
 import { Card, cardEls, frameForSource } from "./Card.tsx";
 import { applyFrameHeight } from "./SandboxedPart.tsx";
@@ -40,7 +40,10 @@ import {
 // The "Connect Claude Code" integrations modal — module-level so the sidebar
 // footer, the onboarding screen, and the overlay can all reach it.
 const [connectOpen, setConnectOpen] = createSignal(false);
-const readonlySessionMode = () => isReadonly() && publicReadMode() === "session";
+// Stream-only layout: no sidebar, session list, or session chrome — just the
+// current session's stream. Driven by the host's `layout` (cloud embed) or the
+// self-hosted public-read "session" link (see api.ts `layoutMode`).
+const streamMode = () => layoutMode() === "stream";
 
 export default function App() {
   // Escape closes the integrations modal while it is open.
@@ -80,7 +83,7 @@ export default function App() {
     // Cmd+Option+Up/Down jumps between sessions without reaching for the
     // sidebar — Down moves to the next session in the list, Up the previous.
     const onKeydown = (e: KeyboardEvent) => {
-      if (readonlySessionMode()) return;
+      if (streamMode()) return;
       if (!e.metaKey || !e.altKey || e.ctrlKey || e.shiftKey) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -114,7 +117,7 @@ export default function App() {
     <>
       <div id="app">
         <header class="topbar">
-          <Show when={!readonlySessionMode()}>
+          <Show when={!streamMode()}>
             <button
               class="menu"
               id="menuBtn"
@@ -128,7 +131,7 @@ export default function App() {
             <span class="livedot" classList={{ on: live() }}></span>sideshow
           </div>
         </header>
-        <Show when={!readonlySessionMode()}>
+        <Show when={!streamMode()}>
           <aside>
             <div class="brand">
               <span class="livedot" classList={{ on: live() }}></span>sideshow
@@ -184,13 +187,13 @@ export default function App() {
             if (nearBottom()) setPillTarget(null);
           }}
         >
-          <Show when={!readonlySessionMode()}>
+          <Show when={!streamMode()}>
             <Onboard />
           </Show>
           <SessionView />
         </main>
       </div>
-      <Show when={!readonlySessionMode()}>
+      <Show when={!streamMode()}>
         <div id="scrim" onClick={() => setNavOpen(false)}></div>
       </Show>
       <Show when={connectOpen()}>
@@ -293,7 +296,7 @@ async function onBridgeMessage(ev: MessageEvent) {
   // check that recognizes any embedded iframe.)
   if (d.type === "switch-session") {
     if (!isOwnFrame(ev.source)) return;
-    if (readonlySessionMode()) return;
+    if (streamMode()) return;
     // A surface iframe forwarded the session-switch shortcut because focus was
     // inside it (see server/surfacePage.ts). Mirror the parent keydown handler.
     void selectAdjacent(d.key === "ArrowUp" ? -1 : 1);

@@ -28,6 +28,15 @@ export interface SideshowHost {
   // The caller's own identity, when the host knows it (cloud chrome). Optional —
   // self-hosted has no identity.
   identity?: { login: string; accountSlug?: string; role?: string };
+  // Layout the engine renders. "full" (default) shows the sidebar + stream;
+  // "stream" shows only the current session's stream — no sidebar, session list,
+  // or session chrome. Self-hosted public-read "session" links map to "stream"
+  // (see api.ts `layoutMode`), so that flow is unchanged.
+  layout?: "full" | "stream";
+  // Read-only embed: hide write affordances (delete, comment-as-owner, the
+  // connect action). Orthogonal to `layout` — a host can have either without the
+  // other. Self-hosted drives the same flag via window.__SIDESHOW_READONLY__.
+  readonly?: boolean;
 }
 
 // Host-overridable surfaces. A handful of the engine's layout regions carry
