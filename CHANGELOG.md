@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.7.0
+
+### Minor Changes
+
+- ee75c8d: Add an embeddable viewer engine. `mountViewer(el, host)` (the new
+  `sideshow/viewer-embed` export) renders the viewer into a shadow root with its
+  own runtime, reading its base path, route, and theme from an injected host
+  instead of `window`/`location` — so a host application can own the page shell
+  and URL while embedding the viewer. The self-hosted page is unchanged: it now
+  uses a trivial default History-API host and behaves identically.
+- a4033cf: Add host-overridable slots to the embeddable viewer engine. Two layout regions
+  that carry deployment-specific guidance — the empty-board onboarding and the
+  sidebar footer's instructional links — are now wrapped in named `<slot>`s whose
+  fallback content is the existing self-hosted markup. An embedder projects
+  light-DOM children with a matching `slot=` attribute into the mount element to
+  replace a whole region; with nothing projected (and self-hosted, outside a
+  shadow root) the fallback renders unchanged, so self-hosted parity is preserved.
+  The new `SLOTS` registry and `SlotName` type are exported from the embed entry
+  and `embed.d.ts` so embedders share one typed source of truth.
+- 91db9a3: Add hosted wrapper seams, including injectable public base-path support for deployments mounted below an origin root while preserving default self-hosted routes.
+- 3f45e76: Add `json` and `code` part kinds for surfaces.
+  - **`json`** — a pre-parsed JSON value rendered natively by the trusted viewer
+    as a collapsible tree. Objects and arrays expand/collapse on click; primitives
+    show inline with type-colored values (strings, numbers, booleans, null). Reach
+    for it for API responses, config files, test results — any structured data
+    where a tree beats a fenced code block. Like image/trace it is data, not
+    markup: the viewer renders it with escaped text nodes, so no sandbox is needed.
+
+  - **`code`** — source code highlighted with shiki (the same highlighter as
+    markdown fenced code blocks), rendered in a sandboxed iframe with line
+    numbers, an optional filename header, and a copy button. `language` is a
+    shiki lang id; `title` is a filename shown in the header; `lineStart` shows
+    original line numbers for excerpts ("lines 80-150 of x.ts"). CLI:
+    `sideshow code app.ts --title "app.ts" --line-start 80`.
+
+  Also extracts the shared shiki highlighter into `viewer/src/highlight.ts` so
+  MarkdownPart and CodePart share one lazy-loaded highlighter.
+
+- ddbfab2: Add `SIDESHOW_PUBLIC_READ` env var for public read-only access to deployed boards. Set to `session` for unlisted-link style sharing or `full` to expose the entire board read-only.
+
+### Patch Changes
+
+- 5e3f292: Fix invisible markdown/mermaid/diff/terminal surfaces caused by a Chrome field trial that breaks layout measurement in opaque-origin srcdoc iframes. The viewer now retries the srcdoc parse after 2 seconds if the iframe is still stuck at minimum height.
+- c2e4443: fix(viewer): honor `lineStart` in code-part gutter numbers. The code part's range label already reflected `lineStart`, but the gutter still counted from 1 — shiki emits `<pre class="shiki …" style="…">`, which the counter-reset injection didn't match. The starting line number now applies, so excerpts render at their original line numbers.
+- 3c56cc1: Deep links to `/session/:id/s/:surfaceId` now scroll to the target surface card instead of showing the session from the top.
+- 84e7057: Reject oversize asset uploads before buffering the body into memory. The /api/assets handler previously read the entire request body before checking the 5 MB cap, so a multi-GB upload could exhaust Node's heap on `sideshow serve` before the 413 fired.
+- 6962019: Fix cursor lag in `waitForComments`. The `lastSeq` returned to the caller and the `agentSeq` cursor were both derived from the filtered (author-matched) comment list, not the full list. When an agent reply landed after the last user comment, the cursor stayed behind the agent's seq, so every subsequent `author=user` call re-read the agent's own comment, filtered it out, and advanced in a wasted round-trip. Both `lastSeq` and `markAgentSeen` now use the last seq from the unfiltered list, mirroring `collectFeedback`.
+- a18f210: Fix surface iframes rendering in the wrong color scheme when it diverges from
+  the chrome (e.g. dark chrome with a white, light-inked html part). Light/dark
+  was resolved independently in every layer purely from the OS
+  `prefers-color-scheme`, but a surface part is a separate iframe document whose
+  scheme resolution can diverge from its embedder across the frame boundary. The
+  viewer now resolves the scheme once and pins each sandboxed frame to it — html
+  parts via a `mode` query param on `/s/:id` (with a forced `color-scheme`), and
+  markdown/code/comment frames via `renderSandboxedPart` — so a frame always
+  matches the chrome instead of re-deriving the scheme on its own. The theme
+  tokens, the kit's teal/coral SVG accents, and shiki's dark flip are all pinned
+  together. With no mode passed the OS media query is kept, so self-hosted parity
+  is preserved.
+- f0c6cd4: Fix a lost-update race in `SqlStore.updateSurface`. Two concurrent `PUT /api/surfaces/:id` calls could both read the same version, push a duplicate history entry, and write the same version number — silently losing one caller's parts. The fix uses compare-and-set (`WHERE id=? AND version=?`) with `SELECT changes()` to detect whether the update landed, retrying with the current version if it lost the race.
+- db463ce: Improve intro readme.
+
 ## 0.6.0
 
 Sideshow 0.6 focuses on richer surfaces, safer rendering, and better agent setup.
