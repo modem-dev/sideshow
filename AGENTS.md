@@ -51,11 +51,11 @@ consciously, not as a side effect):
   wraps an html part (CDN-allowlist CSP + the postMessage bridge: resize,
   sendPrompt, openLink) and injects any opted-in kits (`kits.ts`).
   `renderSandboxedPart` wraps markup the viewer rendered
-  to a string (markdown/mermaid/diff/terminal) under a tighter CSP (no
-  `connect-src`, no CDN) — see `viewer/src/SandboxedPart.tsx`. Image and trace
-  parts stay native because they have no HTML sink (the viewer renders them with
-  text nodes / `<img>` / JSX). No agent markup is ever set as `innerHTML` in the
-  trusted viewer origin.
+  to a string (markdown/mermaid/diff/terminal/code) under a tighter CSP (nonce-only
+  bridge script, no `connect-src`, no CDN) — see
+  `viewer/src/SandboxedPart.tsx`. Image and trace parts stay native because
+  they have no HTML sink (the viewer renders them with text nodes / `<img>` /
+  JSX). No agent markup is ever set as `innerHTML` in the trusted viewer origin.
 - `server/themes.ts` — theme registry (github/gruvbox/one), runtime-agnostic so
   both server and viewer import it. One `Palette` per light/dark per theme; the
   viewer-chrome vars and the html-part `--color-*` tokens are both _derived_
@@ -91,15 +91,17 @@ consciously, not as a side effect):
   user, and inject prompts back to the agent. The rule applies to every part
   kind, comments, and anything else agent-authored. The two safe ways to render
   it: (a) **build a STRING and hand it to a sandbox iframe** — `SandboxedPart`
-  for viewer-rendered parts (markdown/mermaid/diff/terminal, comments) and
+  for viewer-rendered parts (markdown/mermaid/diff/terminal/code, comments) and
   `renderHtmlPage` at `/s/:id` for html parts; or (b) **keep it as data and
   render with Solid text nodes / element attributes**, which escape by
   construction (image, trace). String-building in the viewer is fine — a string
   is not a DOM sink; danger only starts when it reaches the DOM, which must
-  happen at an opaque origin. When you add a part kind, pick (a) or (b); never a
-  third way. The iframes are sandboxed without `allow-same-origin` (opaque
-  origin) and `connect-src`-free for rich parts (no exfil even if contained
-  script runs); never weaken this.
+  happen inside a sandboxed iframe. When you add a part kind, pick (a) or (b);
+  never a third way. HTML-part iframes stay sandboxed without
+  `allow-same-origin` (opaque origin). Rich `srcdoc` iframes use
+  `allow-same-origin` to avoid Chrome's opaque-origin srcdoc layout bug, so
+  their CSP must stay nonce-only for scripts and `connect-src`-free; never
+  weaken this.
 - WebKit quirk in sandboxed iframes: ResizeObserver's initial callback may not
   fire and `documentElement.scrollHeight` ratchets to viewport height — the
   bridge reports `body.scrollHeight` on `load` plus staggered timers. Don't

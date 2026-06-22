@@ -162,8 +162,8 @@ export function MermaidPart(props: { part: MermaidPartData }) {
           <pre>{props.part.mermaid}</pre>
         </div>
       ) : (
-        // The SVG string is produced here (trusted), then parsed inside an
-        // opaque-origin iframe — a second boundary behind mermaid's DOMPurify.
+        // The SVG string is produced here (trusted), then parsed inside a
+        // sandboxed iframe with nonce-gated scripts.
         <SandboxedPart class="partframe mermaidframe" body={svg()} css={MERMAID_CSS} />
       )}
     </div>

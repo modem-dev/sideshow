@@ -17,9 +17,12 @@ test("a terminal part renders ANSI in a sandbox iframe, escaping raw HTML", asyn
   await page.goto(server.url);
   const card = page.locator(".card:not(#whatsNew)").first();
 
-  // terminal output renders inside an opaque-origin sandbox iframe — ansi_up's
-  // escaping is no longer the only thing between agent text and the board
-  await expect(card.locator("iframe.termframe")).toHaveAttribute("sandbox", "allow-scripts");
+  // terminal output renders inside a sandbox iframe. It is same-origin to avoid
+  // Chrome 149's opaque-origin srcdoc layout bug; CSP blocks non-nonced scripts.
+  await expect(card.locator("iframe.termframe")).toHaveAttribute(
+    "sandbox",
+    "allow-scripts allow-same-origin",
+  );
   const frame = card.frameLocator("iframe.termframe");
 
   // SGR escape became an inline-styled span (a color), not literal text

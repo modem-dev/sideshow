@@ -21,9 +21,12 @@ test("a diff part renders a highlighted diff inside a sandbox iframe", async ({ 
   await page.goto(server.url);
   const card = page.locator(".card:not(#whatsNew)").first();
 
-  // the diff renders in an opaque-origin sandbox iframe (no allow-same-origin),
-  // so a @pierre/diffs DOM-building regression can't reach the board
-  await expect(card.locator("iframe.diffframe")).toHaveAttribute("sandbox", "allow-scripts");
+  // the diff renders in a sandbox iframe. It is same-origin to avoid Chrome
+  // 149's opaque-origin srcdoc layout bug; CSP blocks all non-nonced scripts.
+  await expect(card.locator("iframe.diffframe")).toHaveAttribute(
+    "sandbox",
+    "allow-scripts allow-same-origin",
+  );
   const frame = card.frameLocator("iframe.diffframe");
 
   // the @pierre/diffs SSR fragment mounts in a declarative shadow root; its

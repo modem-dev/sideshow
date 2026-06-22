@@ -131,9 +131,8 @@ const SVG_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidde
 
 // Bridge to the host viewer: sendPrompt/openLink/copyToClipboard mirror
 // Claude's widget globals, and a ResizeObserver reports content height so the
-// parent can size the sandboxed (opaque-origin) iframe. copyToClipboard posts
-// to the parent (trusted origin) which has clipboard API access; the sandbox
-// itself is opaque-origin so navigator.clipboard is unavailable there.
+// parent can size the sandboxed iframe. copyToClipboard posts to the parent
+// because clipboard access belongs to the trusted viewer, not surface markup.
 const BRIDGE_JS = `
 window.sendPrompt = function (text) {
   parent.postMessage({ __sideshow: true, type: 'send-prompt', text: String(text) }, '*');
@@ -147,6 +146,20 @@ window.copyToClipboard = function (text) {
 document.addEventListener('click', function (e) {
   var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
   if (a && /^https?:/.test(a.href)) { e.preventDefault(); window.openLink(a.href); }
+  var copy = e.target && e.target.closest ? e.target.closest('[data-sideshow-copy]') : null;
+  if (copy) {
+    var wrap = copy.closest('.code-wrap');
+    var source = wrap && wrap.querySelector('.code-copy-source');
+    var text = '';
+    try { text = JSON.parse(source ? source.textContent : '""'); } catch (_) {}
+    window.copyToClipboard(text);
+    copy.textContent = 'Copied!';
+    copy.classList.add('copied');
+    setTimeout(function () {
+      copy.textContent = 'Copy';
+      copy.classList.remove('copied');
+    }, 1500);
+  }
 });
 // Cmd+Option+Up/Down switches sessions in the sidebar, but keydowns fire in
 // whichever document holds focus — once the user clicks into a snippet, this
@@ -182,21 +195,42 @@ if (window.ResizeObserver) {
 export const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+function randomNonce(): string {
+  const bytes = new Uint8Array(16);
+  const webCrypto = (
+    globalThis as typeof globalThis & {
+      crypto: { getRandomValues(array: Uint8Array): Uint8Array };
+    }
+  ).crypto;
+  webCrypto.getRandomValues(bytes);
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i]!;
+    const b = bytes[i + 1];
+    const c = bytes[i + 2];
+    out += alphabet[a >> 2];
+    out += alphabet[((a & 3) << 4) | ((b ?? 0) >> 4)];
+    out += b === undefined ? "=" : alphabet[((b & 15) << 2) | ((c ?? 0) >> 6)];
+    out += c === undefined ? "=" : alphabet[c & 63];
+  }
+  return out;
+}
+
 // Wrap one html part in the themed, sandboxed document the iframe loads. The
 // board's color tokens (theme-dependent) are injected first so the static base
 // + kit resolve against them; `theme` defaults to the github preset.
-// CSP for a rich part (markdown/mermaid/diff). These render markup our own
+// CSP for a rich part (markdown/mermaid/diff/terminal/code). These render markup our own
 // libraries produced — they never load CDN scripts and never need the network,
-// so the policy is *tighter* than an html part's: only the inline bridge runs,
-// and there is no `connect-src`, so even if a sanitizer regression let agent
-// markup execute, the script is boxed into an opaque origin with no way to
-// phone home. `img-src origin` lets inline markdown images at <origin>/a/:id
-// load (the iframe is opaque-origin, so `'self'` matches nothing — same reason
-// buildCsp adds it explicitly).
-function buildRichCsp(origin: string): string {
+// so the policy is *tighter* than an html part's: only the nonce-bearing bridge
+// runs, and there is no `connect-src`. The frame uses allow-same-origin to avoid
+// Chrome 149's opaque-origin srcdoc layout bug, so injected scripts must not be
+// able to run at all. `img-src origin` lets inline markdown images at
+// <origin>/a/:id load without making the board origin a script/connect source.
+function buildRichCsp(origin: string, nonce: string): string {
   return [
     `default-src 'none'`,
-    `script-src 'unsafe-inline'`,
+    `script-src 'nonce-${nonce}'`,
     `style-src 'unsafe-inline'`,
     `img-src https: data: blob: ${origin}`,
     `font-src data:`,
@@ -204,12 +238,13 @@ function buildRichCsp(origin: string): string {
 }
 
 // Wrap pre-rendered, *untrusted* markup (markdown HTML, a mermaid SVG, a diff's
-// SSR output) in the same opaque-origin sandbox html parts get. The markup was
-// built as a STRING in the trusted viewer (string building is not a DOM sink),
-// and only becomes live DOM here, inside the iframe — so a markdown-it / shiki /
-// mermaid / DOMPurify / @pierre-diffs sanitizer bypass can no longer reach the
-// board. `css` is the part-specific stylesheet (prose/diff/mermaid rules);
-// chrome theme vars come from viewerThemeCss so the part matches the viewer.
+// SSR output) in a sandboxed iframe document. The markup was built as a STRING
+// in the trusted viewer (string building is not a DOM sink), and only becomes
+// live DOM here, inside a document whose CSP allows only the nonce-bearing
+// bridge script — so a markdown-it / shiki / mermaid / DOMPurify /
+// @pierre-diffs sanitizer bypass can no longer run script in the board origin.
+// `css` is the part-specific stylesheet (prose/diff/mermaid rules); chrome
+// theme vars come from viewerThemeCss so the part matches the viewer.
 export function renderSandboxedPart(doc: {
   body: string;
   css: string;
@@ -218,12 +253,13 @@ export function renderSandboxedPart(doc: {
 }): string {
   const theme =
     typeof doc.theme === "string" || doc.theme == null ? themeById(doc.theme) : doc.theme;
+  const nonce = randomNonce();
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="${buildRichCsp(doc.origin)}">
+<meta http-equiv="Content-Security-Policy" content="${buildRichCsp(doc.origin, nonce)}">
 <!-- srcdoc's base URL is about:srcdoc, so relative URLs (e.g. a markdown
      image at /a/:id) would not resolve; pin the base to the server origin.
      img-src in buildRichCsp allows that origin. (html parts don't need this —
@@ -233,7 +269,7 @@ export function renderSandboxedPart(doc: {
 </head>
 <body>
 ${doc.body}
-<script>${BRIDGE_JS}</script>
+<script nonce="${nonce}">${BRIDGE_JS}</script>
 </body>
 </html>`;
 }

@@ -18,9 +18,12 @@ test("a mermaid part renders a diagram as inline SVG in the viewer", async ({ pa
   const card = page.locator(".card:not(#sessionThread)");
   const mermaid = card.locator(".mermaidpart");
 
-  // the diagram renders inside an opaque-origin sandbox iframe — a second
-  // boundary behind mermaid's DOMPurify. No allow-same-origin.
-  await expect(mermaid.locator("iframe.mermaidframe")).toHaveAttribute("sandbox", "allow-scripts");
+  // the diagram renders inside a sandbox iframe. It is same-origin to avoid
+  // Chrome 149's opaque-origin srcdoc layout bug; CSP blocks non-nonced scripts.
+  await expect(mermaid.locator("iframe.mermaidframe")).toHaveAttribute(
+    "sandbox",
+    "allow-scripts allow-same-origin",
+  );
   const frame = mermaid.frameLocator("iframe.mermaidframe");
 
   const svg = frame.locator("svg");

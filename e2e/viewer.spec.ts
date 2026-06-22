@@ -112,7 +112,7 @@ test("comment typed in the composer round-trips to the API", async ({ page, serv
   await input.press("Enter");
 
   // renders in the thread (via SSE) and is persisted server-side. The comment
-  // text renders inside its own opaque-origin sandbox iframe.
+  // text renders inside its own sandbox iframe.
   await expect(card.frameLocator(".cmtframe").locator("body")).toContainText("ship it");
   await expect(card.locator(".cmt .who")).toHaveText("you");
   await expect
@@ -226,8 +226,11 @@ test("a comment containing raw HTML is sandboxed and escaped, never a live node"
   await input.fill("<img src=x onerror=alert(1)> hi");
   await input.press("Enter");
 
-  // the comment renders inside an opaque-origin sandbox iframe...
-  await expect(card.locator(".cmtframe")).toHaveAttribute("sandbox", "allow-scripts");
+  // the comment renders inside a sandbox iframe with nonce-gated scripts.
+  await expect(card.locator(".cmtframe")).toHaveAttribute(
+    "sandbox",
+    "allow-scripts allow-same-origin",
+  );
   const frame = card.frameLocator(".cmtframe");
   // ...with the raw HTML escaped to text, never a live <img>
   await expect(frame.locator("img")).toHaveCount(0);

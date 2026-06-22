@@ -88,8 +88,8 @@ export function DiffPart(props: { part: DiffPartData }) {
     // Render to an HTML STRING (per file, via the SSR API) whenever the board
     // theme or color scheme changes — string building is not a DOM sink, so
     // doing it in the trusted viewer is safe; SandboxedPart parses it inside an
-    // opaque-origin iframe. Each file's fragment goes in its own declarative
-    // shadow root so its scoped :host stylesheet applies.
+    // iframe with nonce-gated scripts. Each file's fragment goes in its own
+    // declarative shadow root so its scoped :host stylesheet applies.
     createEffect(() => {
       const dark = isDark();
       const shiki = shikiPair();

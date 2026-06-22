@@ -17,13 +17,15 @@ export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unkn
   iframe.style.height = Math.min(Math.max(Number(reportedHeight), MIN_H), MAX_H) + "px";
 }
 
-// Renders agent-produced markup (markdown, mermaid, diff) inside the SAME
-// opaque-origin sandbox html parts use, instead of innerHTML in the trusted
-// viewer. The caller renders the part to a STRING (string building is not a DOM
-// sink, so it is safe in the trusted origin); the markup only becomes live DOM
-// inside this iframe, where an opaque origin + tight CSP contain any sanitizer
-// regression. `body`/`css` are reactive — a theme switch rebuilds the doc and
-// reloads the frame (the same way Card reloads html-part iframes on theme).
+// Renders agent-produced markup (markdown, mermaid, diff, terminal, code) inside a sandboxed
+// iframe, instead of innerHTML in the trusted viewer. The caller renders the
+// part to a STRING (string building is not a DOM sink, so it is safe in the
+// trusted origin); the markup only becomes live DOM inside this iframe, where
+// CSP allows only the nonce-bearing bridge script. The frame is same-origin to
+// avoid Chrome 149's opaque-origin srcdoc layout bug, so blocking injected
+// scripts is the isolation boundary. `body`/`css` are reactive — a theme switch
+// rebuilds the doc and reloads the frame (the same way Card reloads html-part
+// iframes on theme).
 //
 // Resize is handled locally: the bridge in the doc posts its content height, and
 // each frame sizes itself from messages whose source is its own contentWindow.
@@ -50,32 +52,13 @@ export function SandboxedPart(props: { body: string; css: string; class?: string
     };
     window.addEventListener("message", onMessage);
     onCleanup(() => window.removeEventListener("message", onMessage));
-
-    // Chrome field-trial workaround: certain Chrome 149 A/B experiments break
-    // layout measurement in opaque-origin srcdoc iframes — scrollHeight,
-    // offsetHeight, innerWidth all read as 0.  The bridge may fire with only
-    // the body-padding height (≤ MIN_H) because the content was never laid
-    // out, then never re-fire because no resize occurs.  Re-setting the
-    // srcdoc attribute forces a fresh HTML parse that consistently recovers
-    // layout.  One retry after 2 s is enough; the re-parsed bridge fires
-    // within ~60 ms.
-    const retryId = setTimeout(() => {
-      if (frame.isConnected && frame.srcdoc && frame.offsetHeight <= MIN_H) {
-        const s = frame.srcdoc;
-        frame.srcdoc = "";
-        requestAnimationFrame(() => {
-          frame.srcdoc = s;
-        });
-      }
-    }, 2000);
-    onCleanup(() => clearTimeout(retryId));
   });
 
   return (
     <iframe
       ref={(el) => (frame = el)}
       class={props.class ?? "partframe"}
-      sandbox="allow-scripts"
+      sandbox="allow-scripts allow-same-origin"
       srcdoc={doc()}
     ></iframe>
   );

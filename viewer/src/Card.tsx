@@ -52,9 +52,10 @@ import {
 
 // Comment text is plain text — it already renders as an escaped text node — but
 // it is shown right beside agent-rendered surfaces, so for consistency it goes
-// through the same opaque-origin sandbox: the text is escaped to a string here
-// and only parsed inside the iframe. `pre-wrap` preserves the author's line
-// breaks; the height comes from the resize bridge (a one-liner clamps to ~24px).
+// through the same sandboxed rich-part path: the text is escaped to a string
+// here and only parsed inside the iframe. `pre-wrap` preserves the author's
+// line breaks; the height comes from the resize bridge (a one-liner clamps to
+// ~24px).
 const CMT_CSS = `
 body {
   margin: 0;

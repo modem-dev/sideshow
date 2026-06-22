@@ -157,14 +157,18 @@ export function CodePart(props: { part: CodePartData }) {
         : "";
     const langBadge =
       lang && lang !== "text" ? `<span class="code-lang">${escapeHtml(lang)}</span>` : "";
-    const copyBtn = `<button class="copy-btn" onclick="__codeCopy(this)">Copy</button>`;
+    // Copy behavior lives in the nonce-bearing frame bridge. Rich-part bodies
+    // never carry executable script or event handlers: the bridge reads this
+    // escaped hidden text only after a user clicks the marked button.
+    const copyBtn = `<button class="copy-btn" data-sideshow-copy>Copy</button>`;
     const head = hasHead
       ? `<div class="code-head">${filename}${langBadge}${copyBtn}</div>`
       : copyBtn;
-    // Embed the raw code as a JS string for the copy handler. Escape < so a
-    // </script> in the code can't break out of the inline script tag.
-    const codeJs = JSON.stringify(code).replace(/</g, "\\u003c");
-    return `<div class="${wrapClass}">${head}${preWithStart}<script>(function(){var c=${codeJs};window.__codeCopy=function(b){copyToClipboard(c);b.textContent="Copied!";b.classList.add("copied");setTimeout(function(){b.textContent="Copy";b.classList.remove("copied")},1500)}})();</script></div>`;
+    // JSON keeps exact newlines (including CRLF) across the HTML parser. Escape
+    // `<` so code containing a closing span cannot terminate this inert node.
+    const copyJson = JSON.stringify(code).replace(/</g, "\\u003c");
+    const copySource = `<span class="code-copy-source" hidden>${copyJson}</span>`;
+    return `<div class="${wrapClass}">${head}${preWithStart}${copySource}</div>`;
   };
 
   const render = () => setHtml(buildBody());

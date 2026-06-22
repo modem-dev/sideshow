@@ -127,7 +127,8 @@ export function MarkdownPart(props: { part: MarkdownPartData }) {
   });
 
   // The rendered HTML is a STRING built here in the trusted viewer (safe — no
-  // DOM sink); SandboxedPart parses it inside an opaque-origin iframe, so even a
-  // markdown-it/shiki regression can't touch the board.
+  // DOM sink); SandboxedPart parses it inside an iframe whose CSP blocks
+  // injected scripts, so even a markdown-it/shiki regression can't run code in
+  // the board origin.
   return <SandboxedPart class="partframe mdframe" body={html()} css={MD_CSS} />;
 }

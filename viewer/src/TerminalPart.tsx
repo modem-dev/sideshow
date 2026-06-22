@@ -46,12 +46,12 @@ function resolveCarriageReturns(text: string): string {
     .join("\n");
 }
 
-// Render terminal output as a styled terminal window inside the same
-// opaque-origin sandbox as the other rich parts. AnsiUp converts SGR escapes to
+// Render terminal output as a styled terminal window inside the same sandboxed
+// iframe path as the other rich parts. AnsiUp converts SGR escapes to
 // inline-styled <span>s and HTML-escapes everything else (escape_html defaults
 // to true); the whole window is built as a STRING here (safe — not a DOM sink)
-// and only parsed inside the iframe, so even an ansi_up regression can't reach
-// the board. SGR-only for now: cursor-addressing sequences are ignored — the
+// and only parsed inside the iframe, where CSP blocks injected scripts. SGR-only
+// for now: cursor-addressing sequences are ignored — the
 // wire shape (see TerminalPart in server/types.ts) is renderer-agnostic so a
 // full VT emulator can replace this later without changing storage, CLI, or MCP.
 export function TerminalPart(props: { part: TerminalPartData }) {

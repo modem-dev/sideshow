@@ -321,8 +321,7 @@ async function onBridgeMessage(ev: MessageEvent) {
 // True when `source` is the contentWindow of an iframe the viewer embedded
 // (html or rich part). frameForSource only tracks html-part frames; this is the
 // broader gate for messages rich-part frames also send (open-link). Identity
-// comparison works across the opaque-origin boundary even though the frame's
-// document is unreadable.
+// comparison works for both opaque html-part frames and same-origin rich frames.
 function isOwnFrame(source: unknown): boolean {
   for (const f of root().querySelectorAll("iframe")) {
     if (f.contentWindow === source) return true;

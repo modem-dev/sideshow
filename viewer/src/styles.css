@@ -438,10 +438,10 @@ iframe {
   border-top: 0.5px solid var(--border);
   background: transparent;
 }
-/* Rich parts (markdown, mermaid, diff) render inside opaque-origin sandbox
-   iframes — their content styles live in each component's CSS string, shipped
-   into the frame. These rules only size the frame in the card; the bridge sets
-   its height from the reported content height. */
+/* Rich parts (markdown, mermaid, diff) render inside sandbox iframes — their
+   content styles live in each component's CSS string, shipped into the frame.
+   These rules only size the frame in the card; the bridge sets its height from
+   the reported content height. */
 .partframe {
   display: block;
   width: 100%;
@@ -673,9 +673,9 @@ iframe {
 .cmt.user .who {
   color: var(--accent);
 }
-/* Comment text renders in an opaque-origin sandbox iframe (its text styles ship
-   in CMT_CSS). flex:1 takes the row's free space; the resize bridge sets height,
-   but seed a one-line height so there's no tall-iframe flash before it reports. */
+/* Comment text renders in a sandbox iframe (its text styles ship in CMT_CSS).
+   flex:1 takes the row's free space; the resize bridge sets height, but seed a
+   one-line height so there's no tall-iframe flash before it reports. */
 .cmtframe {
   flex: 1;
   min-width: 0;

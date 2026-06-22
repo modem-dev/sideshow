@@ -28,10 +28,12 @@ test("a markdown part renders typed prose with a highlighted code block", async 
   await page.goto(server.url);
   const card = page.locator(".card");
 
-  // markdown renders inside an opaque-origin sandbox iframe (defense in depth:
-  // even a markdown-it/shiki regression can't reach the board). The sandbox has
-  // NO allow-same-origin — that's the isolation guarantee.
-  await expect(card.locator("iframe.mdframe")).toHaveAttribute("sandbox", "allow-scripts");
+  // markdown renders inside a sandbox iframe. It is same-origin to avoid Chrome
+  // 149's opaque-origin srcdoc layout bug; CSP blocks all non-nonced scripts.
+  await expect(card.locator("iframe.mdframe")).toHaveAttribute(
+    "sandbox",
+    "allow-scripts allow-same-origin",
+  );
   const md = card.frameLocator("iframe.mdframe");
 
   // structured typography inside the frame

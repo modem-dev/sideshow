@@ -26,6 +26,12 @@ function cspDirectives(doc: string): Record<string, string[]> {
   return out;
 }
 
+function bridgeNonce(doc: string): string {
+  const m = /<script nonce="([^"]+)">/.exec(doc);
+  assert.ok(m, "bridge script must carry a nonce");
+  return m![1]!;
+}
+
 // The CDN allowlist html parts may load from. This is a deliberate, fixed set —
 // the test pins it so widening it (a new origin, a wildcard) is a conscious edit
 // that updates this list, never an accident.
@@ -130,28 +136,39 @@ test("renderSandboxedPart embeds the body and css inside the sandbox doc", () =>
   assert.ok(doc.includes(`<base href="${ORIGIN}/">`), "base href pins the origin");
   // the resize/openLink bridge ships in the frame so it can self-size
   assert.ok(doc.includes("postMessage"), "bridge is present");
+  assert.match(bridgeNonce(doc), /^[A-Za-z0-9+/]+={0,2}$/, "bridge nonce is base64");
   // chrome theme vars are injected (viewerThemeCss) so the part matches the viewer
   assert.ok(doc.includes("--bg:"), "theme vars are injected");
 });
 
 test("renderSandboxedPart uses a tighter CSP than html parts: no connect-src, no CDN", () => {
-  const d = cspDirectives(renderSandboxedPart({ body: "x", css: "", origin: ORIGIN }));
+  const doc = renderSandboxedPart({ body: "x", css: "", origin: ORIGIN });
+  const nonce = bridgeNonce(doc);
+  const d = cspDirectives(doc);
   assert.deepEqual(d["default-src"], ["'none'"], "locked-down default");
-  // script-src is EXACTLY the inline bridge — no CDN sources leak in
-  assert.deepEqual(d["script-src"], ["'unsafe-inline'"], "only the inline bridge runs");
+  // script-src is EXACTLY the nonce-bearing bridge — no injected inline script
+  // and no CDN sources can run in the same-origin rich srcdoc frame.
+  assert.deepEqual(d["script-src"], [`'nonce-${nonce}'`], "only the trusted bridge runs");
+  assert.ok(!d["script-src"]?.includes("'unsafe-inline'"), "rich scripts must require a nonce");
   // a contained script must have no way to phone home
   assert.ok(!("connect-src" in d), "no connect-src");
   // uploaded images still embed by absolute origin URL
   assert.ok(d["img-src"]?.includes(ORIGIN), "origin allowed for images");
 });
 
+test("renderSandboxedPart generates a fresh nonce per document", () => {
+  const a = renderSandboxedPart({ body: "x", css: "", origin: ORIGIN });
+  const b = renderSandboxedPart({ body: "x", css: "", origin: ORIGIN });
+  assert.notEqual(bridgeNonce(a), bridgeNonce(b), "nonce must be per-render");
+});
+
 test("html parts keep their CDN allowlist (rich-part tightening did not leak)", () => {
   const html = cspDirectives(renderHtmlPage({ title: "t", html: "<b>x</b>", origin: ORIGIN }));
-  const rich = cspDirectives(renderSandboxedPart({ body: "x", css: "", origin: ORIGIN }));
-  // rich parts lock script-src to the inline bridge alone; html parts add the
-  // CDN sources on top, so html's source list is strictly larger. (Asserting on
-  // the count rather than a host literal keeps this off the URL-substring path.)
-  assert.deepEqual(rich["script-src"], ["'unsafe-inline'"], "rich = inline bridge only");
+  const richDoc = renderSandboxedPart({ body: "x", css: "", origin: ORIGIN });
+  const rich = cspDirectives(richDoc);
+  // rich parts lock script-src to the nonce-bearing bridge alone; html parts add
+  // inline scripts and CDN sources for agent-authored html widgets.
+  assert.deepEqual(rich["script-src"], [`'nonce-${bridgeNonce(richDoc)}'`], "rich = bridge only");
   assert.ok(
     html["script-src"].length > rich["script-src"].length,
     "html parts keep extra (CDN) script sources",
