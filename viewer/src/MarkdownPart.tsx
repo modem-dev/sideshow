@@ -3,8 +3,8 @@ import MarkdownIt from "markdown-it";
 import type { MarkdownPart as MarkdownPartData } from "./api.ts";
 import { themeById } from "../../server/themes.ts";
 import { SandboxedPart } from "./SandboxedPart.tsx";
-import { activeTheme } from "./theme.ts";
-import { setCurrentThemes, highlight, loadLangs } from "./highlight.ts";
+import { activeTheme, resolvedMode } from "./theme.ts";
+import { setCurrentThemes, highlight, loadLangs, shikiSchemeCss } from "./highlight.ts";
 
 // Prose styles for the rendered markdown — shipped INTO the sandbox iframe (the
 // markup no longer lives in the trusted viewer DOM, so styles.css can't reach
@@ -44,15 +44,9 @@ pre {
   overflow: auto;
 }
 pre code { background: none; padding: 0; font-size: 12.5px; }
-/* shiki dual-theme: light values render inline; this flips to the dark theme's
-   --shiki-dark / --shiki-dark-bg under a dark color scheme (shiki sets both on
-   each span). Matches DiffPart's syntax theme. */
-@media (prefers-color-scheme: dark) {
-  .shiki, .shiki span {
-    color: var(--shiki-dark) !important;
-    background-color: var(--shiki-dark-bg) !important;
-  }
-}
+/* shiki dual-theme: light values render inline; the dark flip is appended at
+   render time via shikiSchemeCss(resolvedMode()) — pinned to the chrome's scheme
+   so this sandboxed iframe doesn't re-derive light/dark from the OS. */
 blockquote {
   margin-left: 0;
   padding-left: 12px;
@@ -67,11 +61,11 @@ hr { border: none; border-top: 0.5px solid var(--border); margin: 1em 0; }
 `;
 
 // Dual-theme highlighting: shiki emits both themes inline (color +
-// --shiki-dark), and a prefers-color-scheme CSS rule (styles.css) flips
-// between them — so a code block never needs re-rendering when the OS theme
-// changes. Which light/dark PAIR is used follows the board theme (DiffPart
-// and CodePart use the same pair so code blocks, diffs, and code parts read
-// as one syntax theme). The shared highlighter lives in highlight.ts.
+// --shiki-dark), and shikiSchemeCss flips between them for the resolved scheme
+// (pinned to the chrome, not the OS — see highlight.ts). Which light/dark PAIR
+// is used follows the board theme (DiffPart and CodePart use the same pair so
+// code blocks, diffs, and code parts read as one syntax theme). The shared
+// highlighter lives in highlight.ts.
 
 const md = new MarkdownIt({
   html: false,
@@ -129,5 +123,11 @@ export function MarkdownPart(props: { part: MarkdownPartData }) {
   // The rendered HTML is a STRING built here in the trusted viewer (safe — no
   // DOM sink); SandboxedPart parses it inside an opaque-origin iframe, so even a
   // markdown-it/shiki regression can't touch the board.
-  return <SandboxedPart class="partframe mdframe" body={html()} css={MD_CSS} />;
+  return (
+    <SandboxedPart
+      class="partframe mdframe"
+      body={html()}
+      css={MD_CSS + shikiSchemeCss(resolvedMode())}
+    />
+  );
 }

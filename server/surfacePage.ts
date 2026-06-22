@@ -1,5 +1,41 @@
 import { kitAssets } from "./kits.ts";
-import { type Theme, themeById, tokenThemeCss, viewerThemeCss } from "./themes.ts";
+import {
+  type Mode,
+  schemeCss,
+  type Theme,
+  themeById,
+  tokenThemeCss,
+  viewerThemeCss,
+} from "./themes.ts";
+
+// The kit's two custom SVG accent ramps (teal, coral) aren't in the theme
+// palette, so they carry their own light/dark values. Like the theme tokens
+// they pin to a forced mode (no media query) when one is given, else flip with
+// the OS — kept in sync via the shared schemeCss. Dark overrides only bg/text;
+// the line color is shared, so it's repeated in both maps.
+const KIT_ACCENTS_LIGHT: Record<string, string> = {
+  "c-teal-bg": "#e1f4f1",
+  "c-teal-line": "#1fa996",
+  "c-teal-text": "#0c6e62",
+  "c-coral-bg": "#fdece5",
+  "c-coral-line": "#e8835e",
+  "c-coral-text": "#a44f28",
+};
+const KIT_ACCENTS_DARK: Record<string, string> = {
+  ...KIT_ACCENTS_LIGHT,
+  "c-teal-bg": "rgba(31, 169, 150, 0.18)",
+  "c-teal-text": "#6fd0c2",
+  "c-coral-bg": "rgba(232, 131, 94, 0.18)",
+  "c-coral-text": "#f0a987",
+};
+const kitAccentCss = (mode?: Mode): string => schemeCss(KIT_ACCENTS_LIGHT, KIT_ACCENTS_DARK, mode);
+
+// When a scheme is pinned, force the document's used color-scheme to match so
+// the UA-painted canvas, scrollbars, and native form controls follow it too
+// (the token vars alone don't drive those). Overrides the static
+// `color-scheme: light dark` default the kit/base CSS sets. Empty when the
+// scheme is left to the OS, preserving the media-query behavior unchanged.
+const colorSchemeCss = (mode?: Mode): string => (mode ? `:root{color-scheme:${mode}}` : "");
 
 // Origins html parts may load external resources from. Mirrors the allowlist
 // agents already know from Claude's inline widget surface.
@@ -63,17 +99,7 @@ body {
 // attributes (fill/font-size on text, etc.) — that's why text styling is
 // opt-in via classes.
 const KIT_CSS = `
-:root {
-  color-scheme: light dark;
-  --c-teal-bg: #e1f4f1; --c-teal-line: #1fa996; --c-teal-text: #0c6e62;
-  --c-coral-bg: #fdece5; --c-coral-line: #e8835e; --c-coral-text: #a44f28;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --c-teal-bg: rgba(31, 169, 150, 0.18); --c-teal-text: #6fd0c2;
-    --c-coral-bg: rgba(232, 131, 94, 0.18); --c-coral-text: #f0a987;
-  }
-}
+:root { color-scheme: light dark; }
 button {
   font: 500 14px/1.4 var(--font-sans);
   color: var(--color-text-primary);
@@ -215,6 +241,7 @@ export function renderSandboxedPart(doc: {
   css: string;
   origin: string;
   theme?: Theme | string;
+  mode?: Mode;
 }): string {
   const theme =
     typeof doc.theme === "string" || doc.theme == null ? themeById(doc.theme) : doc.theme;
@@ -229,7 +256,7 @@ export function renderSandboxedPart(doc: {
      img-src in buildRichCsp allows that origin. (html parts don't need this —
      they load via /s/:id, whose URL is already the base.) -->
 <base href="${doc.origin}/">
-<style>${viewerThemeCss(theme)}${doc.css}</style>
+<style>${viewerThemeCss(theme, doc.mode)}${doc.css}${colorSchemeCss(doc.mode)}</style>
 </head>
 <body>
 ${doc.body}
@@ -243,6 +270,9 @@ export function renderHtmlPage(doc: {
   html: string;
   origin: string;
   theme?: Theme | string;
+  // Pins the iframe's color scheme to the one the chrome resolved (see Mode).
+  // Omitted → the scheme follows the OS via tokenThemeCss's media query.
+  mode?: Mode;
   // Opt-in kits (kits.ts): their CSS/JS is injected after the base kit. The JS
   // is plain inline script — same trust level as the bridge, already covered by
   // the html-part CSP's `script-src 'unsafe-inline'`. Unknown ids are ignored.
@@ -258,7 +288,7 @@ export function renderHtmlPage(doc: {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${buildCsp(doc.origin)}">
 <title>${escapeHtml(doc.title)}</title>
-<style>${tokenThemeCss(theme)}${TOKENS_CSS}${KIT_CSS}${kit.css}</style>
+<style>${tokenThemeCss(theme, doc.mode)}${TOKENS_CSS}${KIT_CSS}${kitAccentCss(doc.mode)}${kit.css}${colorSchemeCss(doc.mode)}</style>
 </head>
 <body>
 ${SVG_DEFS}

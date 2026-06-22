@@ -37,7 +37,7 @@ import { MarkdownPart } from "./MarkdownPart.tsx";
 import { MermaidPart } from "./MermaidPart.tsx";
 import { SandboxedPart } from "./SandboxedPart.tsx";
 import { TerminalPart } from "./TerminalPart.tsx";
-import { activeTheme } from "./theme.ts";
+import { activeTheme, resolvedMode } from "./theme.ts";
 import { TracePart } from "./TracePart.tsx";
 import {
   comments,
@@ -204,7 +204,7 @@ export function Card(props: { surface: Surface }) {
                   const ver = e.currentTarget.value;
                   const cb = Date.now();
                   for (const [part, frame] of htmlFrames) {
-                    frame.src = `/s/${props.surface.id}?part=${part}&ver=${ver}&cb=${cb}&theme=${activeTheme()}`;
+                    frame.src = `/s/${props.surface.id}?part=${part}&ver=${ver}&cb=${cb}&theme=${activeTheme()}&mode=${resolvedMode()}`;
                   }
                 }}
               >
@@ -221,8 +221,8 @@ export function Card(props: { surface: Surface }) {
           know — which happens when a long-open tab predates a newly added part
           type. It must NOT assume diff (an unknown part is not a broken diff),
           so it shows a neutral refresh hint instead. An html iframe src changes
-          only when the version or the active theme does, so unrelated refetches
-          never reload it. */}
+          only when the version, the active theme, or the resolved light/dark
+          mode does, so unrelated refetches never reload it. */}
       <Index each={props.surface.parts}>
         {(part, i) => (
           <Switch
@@ -249,7 +249,7 @@ export function Card(props: { surface: Surface }) {
                     : props.surface.title
                 }
                 src={appPath(
-                  `/s/${props.surface.id}?part=${i}&ver=${props.surface.version}&cb=${props.surface.version}&theme=${activeTheme()}`,
+                  `/s/${props.surface.id}?part=${i}&ver=${props.surface.version}&cb=${props.surface.version}&theme=${activeTheme()}&mode=${resolvedMode()}`,
                 )}
               ></iframe>
             </Match>

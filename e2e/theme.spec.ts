@@ -85,6 +85,56 @@ test("the picked theme persists across a reload", async ({ page, server }) => {
     .toBe("#f9f5d7");
 });
 
+// Regression: the chrome resolves light/dark from the OS via a CSS media query,
+// but an html part is a separate iframe document whose own scheme resolution can
+// diverge from the chrome's across the frame boundary — producing dark chrome
+// with a white, light-inked iframe. The viewer now pins each frame to the mode
+// it resolved (`&mode=` on the src + a forced `color-scheme`), so the iframe
+// renders the SAME scheme as the chrome regardless. The github dark html-part
+// surface (--color-background-primary) is #1c2128 = rgb(28, 33, 40).
+test.describe("with the OS in dark mode", () => {
+  test.use({ colorScheme: "dark" });
+
+  test("the html-part iframe is pinned to dark, matching the chrome", async ({ page, server }) => {
+    await publishParts(server.url, {
+      title: "Themed",
+      agent: "e2e",
+      parts: [{ kind: "html", html: "<p>surface body</p>" }],
+    });
+    await page.goto(server.url);
+
+    const iframe = page.locator(".card iframe[src]");
+    await expect(iframe).toHaveAttribute("src", /mode=dark/);
+
+    // the iframe document actually paints the dark surface — not the light
+    // default it would fall back to if it re-derived the scheme on its own
+    const body = page.locator(".card iframe[src]").contentFrame().locator("body");
+    await expect
+      .poll(() => body.evaluate((el) => getComputedStyle(el).backgroundColor))
+      .toBe("rgb(28, 33, 40)");
+  });
+});
+
+test.describe("with the OS in light mode", () => {
+  test.use({ colorScheme: "light" });
+
+  test("the html-part iframe is pinned to light", async ({ page, server }) => {
+    await publishParts(server.url, {
+      title: "Themed",
+      agent: "e2e",
+      parts: [{ kind: "html", html: "<p>surface body</p>" }],
+    });
+    await page.goto(server.url);
+
+    const iframe = page.locator(".card iframe[src]");
+    await expect(iframe).toHaveAttribute("src", /mode=light/);
+    const body = page.locator(".card iframe[src]").contentFrame().locator("body");
+    await expect
+      .poll(() => body.evaluate((el) => getComputedStyle(el).backgroundColor))
+      .toBe("rgb(255, 255, 255)");
+  });
+});
+
 test("a theme switch in one tab re-themes another open tab via SSE", async ({
   page,
   server,

@@ -2,8 +2,8 @@ import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import type { CodePart as CodePartData } from "./api.ts";
 import { themeById } from "../../server/themes.ts";
 import { SandboxedPart } from "./SandboxedPart.tsx";
-import { activeTheme } from "./theme.ts";
-import { setCurrentThemes, highlight, loadLangs } from "./highlight.ts";
+import { activeTheme, resolvedMode } from "./theme.ts";
+import { setCurrentThemes, highlight, loadLangs, shikiSchemeCss } from "./highlight.ts";
 
 // Styles shipped INTO the sandbox iframe. shiki produces <pre class="shiki">
 // with each line wrapped in <span class="line"> — CSS counters turn those into
@@ -79,12 +79,9 @@ pre.shiki, pre.plain {
   border-radius: 0 0 8px 8px;
 }
 pre.shiki code, pre.plain code { background: none; padding: 0; }
-@media (prefers-color-scheme: dark) {
-  .shiki, .shiki span {
-    color: var(--shiki-dark) !important;
-    background-color: var(--shiki-dark-bg) !important;
-  }
-}
+/* shiki's dark flip is appended at render time via shikiSchemeCss(resolvedMode())
+   — pinned to the chrome's scheme so this sandboxed iframe matches it (same as
+   MarkdownPart). */
 /* Line numbers via CSS counters on shiki's .line spans. min-height keeps
    empty lines from collapsing to 0 (a block with no inline content has no
    line box, so blank lines would vanish without this). */
@@ -179,5 +176,11 @@ export function CodePart(props: { part: CodePartData }) {
     }
   });
 
-  return <SandboxedPart class="partframe codeframe" body={html()} css={CODE_CSS} />;
+  return (
+    <SandboxedPart
+      class="partframe codeframe"
+      body={html()}
+      css={CODE_CSS + shikiSchemeCss(resolvedMode())}
+    />
+  );
 }

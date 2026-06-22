@@ -1,7 +1,23 @@
 import type { Highlighter } from "shiki";
-import { THEMES as REGISTRY } from "../../server/themes.ts";
+import { type Mode, THEMES as REGISTRY } from "../../server/themes.ts";
 
 export type ShikiPair = { light: string; dark: string };
+
+// shiki emits dual-theme output: the light theme inline (`color:`) plus a
+// `--shiki-dark` custom prop on every span. This rule overrides color/background
+// with those vars to render the dark theme. Code/markdown parts render inside a
+// sandboxed iframe, so — like the surface tokens — the flip is PINNED to the
+// scheme the chrome resolved when a mode is given (no media query), keeping the
+// frame in lockstep with the chrome instead of re-deriving from the OS across
+// the frame boundary. Without a mode it follows the OS (self-hosted default).
+const SHIKI_DARK_RULE =
+  ".shiki, .shiki span { color: var(--shiki-dark) !important; background-color: var(--shiki-dark-bg) !important; }";
+
+export function shikiSchemeCss(mode?: Mode): string {
+  if (mode === "dark") return SHIKI_DARK_RULE;
+  if (mode === "light") return "";
+  return `@media (prefers-color-scheme: dark){${SHIKI_DARK_RULE}}`;
+}
 
 // Every shiki theme any registry theme might select — preloaded once so a
 // theme switch is just a re-highlight, no async load.

@@ -858,12 +858,18 @@ export function createApp({
     // Theme: an explicit ?theme= (the viewer keys iframe srcs by it so a switch
     // reloads the frame) wins; otherwise the persisted board theme; else default.
     const themeId = c.req.query("theme") ?? (await store.getSetting("theme")) ?? DEFAULT_THEME_ID;
+    // Scheme: the viewer passes the light/dark mode it resolved so the iframe is
+    // pinned to it rather than re-deriving from the OS (which can diverge from
+    // the chrome across the frame boundary). Absent/invalid → follow the OS.
+    const modeParam = c.req.query("mode");
+    const mode = modeParam === "light" || modeParam === "dark" ? modeParam : undefined;
     return c.html(
       renderHtmlPage({
         title,
         html: part.html,
         origin: new URL(c.req.url).origin,
         theme: themeById(themeId),
+        mode,
         kits: part.kits,
       }),
     );

@@ -9,12 +9,31 @@
 import { createSignal } from "solid-js";
 import { api } from "./api.ts";
 import { isShadow, styleContainer } from "./host.ts";
-import { DEFAULT_THEME_ID, themeById, themeOptions, viewerThemeCss } from "../../server/themes.ts";
+import {
+  DEFAULT_THEME_ID,
+  type Mode,
+  themeById,
+  themeOptions,
+  viewerThemeCss,
+} from "../../server/themes.ts";
 
 export { themeOptions };
 
 const [activeThemeState, setActiveTheme] = createSignal(DEFAULT_THEME_ID);
 export const activeTheme = activeThemeState;
+
+// The OS light/dark resolution — the same signal the chrome's injected
+// `@media (prefers-color-scheme: dark)` rules key off. Surface parts render in
+// separate iframes whose own scheme resolution can diverge from the chrome's
+// (an embedder doesn't reliably propagate it across the frame boundary), so
+// each frame is pinned to this mode instead (Card html parts via the `mode`
+// query param; SandboxedPart rich/comment frames via renderSandboxedPart). It
+// is reactive, so an OS flip rebuilds the frames in lockstep with the chrome.
+const darkQuery =
+  typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+const [prefersDark, setPrefersDark] = createSignal(!!darkQuery?.matches);
+darkQuery?.addEventListener("change", (e) => setPrefersDark(e.matches));
+export const resolvedMode = (): Mode => (prefersDark() ? "dark" : "light");
 
 const STYLE_ID = "ss-theme-vars";
 

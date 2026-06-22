@@ -1,7 +1,7 @@
 import { createMemo, onCleanup, onMount } from "solid-js";
 import { renderSandboxedPart } from "../../server/surfacePage.ts";
 import { themeById } from "../../server/themes.ts";
-import { activeTheme } from "./theme.ts";
+import { activeTheme, resolvedMode } from "./theme.ts";
 
 // location.origin is constant for the page lifetime — read it once, not per
 // srcdoc rebuild.
@@ -38,6 +38,7 @@ export function SandboxedPart(props: { body: string; css: string; class?: string
       css: props.css,
       origin: ORIGIN,
       theme: themeById(activeTheme()),
+      mode: resolvedMode(),
     }),
   );
 

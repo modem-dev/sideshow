@@ -41,6 +41,12 @@ export interface Theme {
   dark: Palette;
 }
 
+// A resolved color scheme. The chrome resolves this from the OS via a CSS
+// `@media (prefers-color-scheme)` query; surface iframes are separate documents
+// that don't reliably inherit that resolution, so the viewer passes the mode it
+// resolved into each frame to pin it to the chrome (see surfacePage / Card).
+export type Mode = "light" | "dark";
+
 // Viewer chrome variables (styles.css names). Accent maps to the info state.
 function viewerVars(p: Palette): Record<string, string> {
   return {
@@ -105,21 +111,35 @@ const block = (vars: Record<string, string>) =>
     .join("");
 
 // `:root` light + a `prefers-color-scheme: dark` override — emitted as a
-// <style> so the automatic OS light/dark flip keeps working with no JS.
-function schemeCss(light: Record<string, string>, dark: Record<string, string>): string {
+// <style> so the automatic OS light/dark flip keeps working with no JS. When
+// `mode` is given the scheme is PINNED to it instead: a single flat `:root`
+// block with no media query, so the document renders that mode regardless of
+// the OS preference. The viewer uses this to force a surface iframe to the mode
+// the chrome already resolved, since an iframe is a separate document whose
+// `prefers-color-scheme` evaluation can diverge from its embedder's.
+export function schemeCss(
+  light: Record<string, string>,
+  dark: Record<string, string>,
+  mode?: Mode,
+): string {
+  if (mode === "light") return `:root{${block(light)}}`;
+  if (mode === "dark") return `:root{${block(dark)}}`;
   return `:root{${block(light)}}@media (prefers-color-scheme: dark){:root{${block(dark)}}}`;
 }
 
 // Viewer chrome palette CSS (injected into the viewer document head). The
 // scheme-flipping chrome vars, plus the terminal vars which are scheme-
 // independent (always the dark palette) so they sit outside the media query.
-export function viewerThemeCss(t: Theme): string {
-  return `${schemeCss(viewerVars(t.light), viewerVars(t.dark))}:root{${block(termVars(t.dark))}}`;
+// `mode` pins the scheme (see schemeCss) — used for the rich-part iframes the
+// chrome renders via renderSandboxedPart, not the chrome's own <head>.
+export function viewerThemeCss(t: Theme, mode?: Mode): string {
+  return `${schemeCss(viewerVars(t.light), viewerVars(t.dark), mode)}:root{${block(termVars(t.dark))}}`;
 }
 
-// Html-part token CSS (injected into each sandboxed surface iframe).
-export function tokenThemeCss(t: Theme): string {
-  return schemeCss(tokenVars(t.light), tokenVars(t.dark));
+// Html-part token CSS (injected into each sandboxed surface iframe). `mode`
+// pins the scheme so the iframe matches the chrome (see schemeCss).
+export function tokenThemeCss(t: Theme, mode?: Mode): string {
+  return schemeCss(tokenVars(t.light), tokenVars(t.dark), mode);
 }
 
 export const THEMES: Theme[] = [

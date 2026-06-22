@@ -99,3 +99,37 @@ test("tokenThemeCss emits the agent-facing --color-* tokens for each theme", () 
     );
   }
 });
+
+// A pinned mode emits a single flat :root with that scheme's values and NO
+// media query, so a surface iframe renders the mode the chrome resolved rather
+// than re-deriving it from the OS across the frame boundary.
+test("a pinned mode forces the scheme with no prefers-color-scheme media query", () => {
+  const gh = themeById("github");
+
+  const dark = tokenThemeCss(gh, "dark");
+  assert.ok(!dark.includes("@media"), "dark mode must not emit a media query");
+  // github dark surface is the html-part background-primary token
+  assert.ok(dark.includes(`--color-background-primary: ${gh.dark.surface}`), "dark bg token");
+  assert.ok(!dark.includes(gh.light.surface), "dark output must not carry light values");
+
+  const light = tokenThemeCss(gh, "light");
+  assert.ok(!light.includes("@media"), "light mode must not emit a media query");
+  assert.ok(light.includes(`--color-background-primary: ${gh.light.surface}`), "light bg token");
+
+  // viewerThemeCss pins the same way (used for rich-part iframes)
+  const vdark = viewerThemeCss(gh, "dark");
+  assert.ok(!vdark.includes("@media"), "viewer dark mode must not emit a media query");
+  assert.ok(vdark.includes(`--bg: ${gh.dark.bg}`), "viewer dark --bg");
+  // terminal vars still ride along (always the dark palette, scheme-independent)
+  assert.ok(vdark.includes("--term-bg:"), "viewer keeps terminal vars when pinned");
+});
+
+test("omitting the mode preserves the OS media-query behavior unchanged", () => {
+  const gh = themeById("github");
+  for (const css of [tokenThemeCss(gh), tokenThemeCss(gh, undefined), viewerThemeCss(gh)]) {
+    assert.ok(
+      css.includes("@media (prefers-color-scheme: dark)"),
+      "no-mode output keeps the dark-scheme override",
+    );
+  }
+});
