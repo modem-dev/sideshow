@@ -395,6 +395,10 @@ function SessionView() {
         </span>
         <span class="head-sp"></span>
         <ViewToggle />
+        {/* Host-overridable region (SLOTS.sessionActions): session-scoped controls
+            an embedder projects beside the toggle (e.g. cloud "Share"). Empty
+            fallback — self-hosted renders nothing here. */}
+        <slot name={SLOTS.sessionActions}></slot>
       </div>
       <div id="stream">
         <Show

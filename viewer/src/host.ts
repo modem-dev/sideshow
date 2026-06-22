@@ -55,6 +55,10 @@ export const SLOTS = {
   asideFoot: "ss:aside-foot",
   // Empty-board onboarding shown before any session exists. (`#onboard`, App.tsx)
   empty: "ss:empty",
+  // Per-session actions in the session header, beside the stream/timeline toggle.
+  // Empty by default (self-hosted has no actions here); an embedder projects
+  // session-scoped controls such as a cloud "Share" button. (`.session-head`, App.tsx)
+  sessionActions: "ss:session-actions",
 } as const;
 
 export type SlotName = (typeof SLOTS)[keyof typeof SLOTS];
