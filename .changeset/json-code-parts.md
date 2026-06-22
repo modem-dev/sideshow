@@ -1,4 +1,6 @@
-## "sideshow": minor
+---
+"sideshow": minor
+---
 
 Add `json` and `code` part kinds for surfaces.
 
