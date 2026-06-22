@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { AgentMark } from "./agentMarks.tsx";
 import { api, isReadonly, publicReadMode, relTime, sessionLabel, type SessionRow } from "./api.ts";
-import { host, isShadow, navHostEl, root } from "./host.ts";
+import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
 import { Card, cardEls, frameForSource } from "./Card.tsx";
 import { applyFrameHeight } from "./SandboxedPart.tsx";
 import { renderNotes } from "./notes.ts";
@@ -145,28 +145,37 @@ export default function App() {
               </For>
             </div>
             <div class="aside-foot">
+              {/* ThemePicker is a generic feature, not deployment-specific
+                  guidance — it stays engine-owned and works under any host. */}
               <Show when={!isReadonly()}>
                 <ThemePicker />
               </Show>
-              <a href="/guide" target="_blank">
-                design guide
-              </a>{" "}
-              &nbsp;·&nbsp;{" "}
-              <a href="/setup" target="_blank">
-                agent setup
-              </a>{" "}
-              <Show when={!isReadonly()}>
+              {/* Host-overridable region (SLOTS.asideFoot): the footer's
+                  instructional links/actions. An embedder projects
+                  deployment-appropriate ones here; the children below are the
+                  self-hosted fallback — shown verbatim when nothing is projected
+                  (and outside a shadow root, where <slot> just renders them). */}
+              <slot name={SLOTS.asideFoot}>
+                <a href="/guide" target="_blank">
+                  design guide
+                </a>{" "}
                 &nbsp;·&nbsp;{" "}
-                <a
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setConnectOpen(true);
-                  }}
-                >
-                  connect Claude Code
-                </a>
-              </Show>
+                <a href="/setup" target="_blank">
+                  agent setup
+                </a>{" "}
+                <Show when={!isReadonly()}>
+                  &nbsp;·&nbsp;{" "}
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setConnectOpen(true);
+                    }}
+                  >
+                    connect Claude Code
+                  </a>
+                </Show>
+              </slot>
             </div>
           </aside>
         </Show>
@@ -478,29 +487,36 @@ const TRY_SNIP =
 function Onboard() {
   return (
     <div id="onboard" hidden={sessions.length > 0}>
-      <Show
-        when={!isReadonly()}
-        fallback={
-          <>
-            <h1>Nothing here yet</h1>
-            <p class="sub">This sideshow board does not have any sessions yet.</p>
-          </>
-        }
-      >
-        <h1>The show hasn&rsquo;t started yet</h1>
-        <p class="sub">
-          sideshow is a live surface where coding agents draw HTML snippets — diagrams, sketches,
-          explainers — while they work in your terminal.
-        </p>
-        <h2>teach your agent about it</h2>
-        <Snip text={SETUP_SNIP} />
-        <h2>or try it yourself</h2>
-        <Snip text={TRY_SNIP} />
-        <h2>using claude code?</h2>
-        <button class="connect-btn" onClick={() => setConnectOpen(true)}>
-          Connect Claude Code →
-        </button>
-      </Show>
+      {/* Host-overridable region (SLOTS.empty): an embedder projects its own
+          first-run onboarding here. The fallback below is the self-hosted
+          default — setup snippets that assume a local sideshow on port 8228,
+          which only make sense self-hosted. The outer #onboard's hidden= still
+          governs visibility, so projected content shows only on an empty board. */}
+      <slot name={SLOTS.empty}>
+        <Show
+          when={!isReadonly()}
+          fallback={
+            <>
+              <h1>Nothing here yet</h1>
+              <p class="sub">This sideshow board does not have any sessions yet.</p>
+            </>
+          }
+        >
+          <h1>The show hasn&rsquo;t started yet</h1>
+          <p class="sub">
+            sideshow is a live surface where coding agents draw HTML snippets — diagrams, sketches,
+            explainers — while they work in your terminal.
+          </p>
+          <h2>teach your agent about it</h2>
+          <Snip text={SETUP_SNIP} />
+          <h2>or try it yourself</h2>
+          <Snip text={TRY_SNIP} />
+          <h2>using claude code?</h2>
+          <button class="connect-btn" onClick={() => setConnectOpen(true)}>
+            Connect Claude Code →
+          </button>
+        </Show>
+      </slot>
     </div>
   );
 }

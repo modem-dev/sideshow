@@ -9,7 +9,11 @@ import App from "./App.tsx";
 import { createDefaultHost, setEngine, type SideshowHost } from "./host.ts";
 import stylesCss from "./styles.css?inline";
 
-export type { SideshowHost, HostRouter, Route } from "./host.ts";
+export type { SideshowHost, HostRouter, Route, SlotName } from "./host.ts";
+// Runtime registry of host-overridable slot names (embedders project light DOM
+// with these `slot=` attributes). Exported as a value so embedders share one
+// source of truth instead of hardcoding the strings.
+export { SLOTS } from "./host.ts";
 
 export interface ViewerHandle {
   dispose(): void;

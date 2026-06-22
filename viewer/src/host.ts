@@ -30,6 +30,26 @@ export interface SideshowHost {
   identity?: { login: string; accountSlug?: string; role?: string };
 }
 
+// Host-overridable surfaces. A handful of the engine's layout regions carry
+// deployment-specific guidance (setup snippets, the connect flow, doc links) that
+// only fits self-hosted sideshow. The engine wraps each such region in a
+// `<slot name="...">` whose fallback content IS the self-hosted default — so a
+// plain (host-less) embed and the self-hosted page look identical. An embedder
+// (e.g. sideshow cloud) replaces a whole region by projecting a light-DOM child
+// with a matching `slot=` attribute into the mount element.
+//
+// These are *regions*, not individual strings — keep the list small and coarse.
+// Adding one is a deliberate contract change shared with every embedder.
+export const SLOTS = {
+  // Sidebar footer: design-guide / agent-setup links, the connect action, and the
+  // theme picker. (`#onboard` aside, App.tsx)
+  asideFoot: "ss:aside-foot",
+  // Empty-board onboarding shown before any session exists. (`#onboard`, App.tsx)
+  empty: "ss:empty",
+} as const;
+
+export type SlotName = (typeof SLOTS)[keyof typeof SLOTS];
+
 type EngineRoot = Document | ShadowRoot;
 
 let engineRoot: EngineRoot = document;

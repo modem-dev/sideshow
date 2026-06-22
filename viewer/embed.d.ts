@@ -31,3 +31,18 @@ export interface ViewerHandle {
  * host (drop-in for the self-hosted page).
  */
 export function mountViewer(el: Element, host?: SideshowHost): ViewerHandle;
+
+/**
+ * Host-overridable layout regions. The engine wraps each in a `<slot name="...">`
+ * whose fallback is the self-hosted default; an embedder replaces a whole region
+ * by projecting a light-DOM child with the matching `slot=` attribute into the
+ * mount element. Regions, not strings — kept small and coarse on purpose.
+ */
+export declare const SLOTS: {
+  /** Sidebar footer: doc links, connect action, theme picker. */
+  readonly asideFoot: "ss:aside-foot";
+  /** Empty-board onboarding shown before any session exists. */
+  readonly empty: "ss:empty";
+};
+
+export type SlotName = (typeof SLOTS)[keyof typeof SLOTS];
