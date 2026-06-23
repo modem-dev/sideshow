@@ -309,11 +309,19 @@ async function onBridgeMessage(ev: MessageEvent) {
     applyFrameHeight(src.iframe, d.height);
   } else if (d.type === "send-prompt" && src) {
     if (isReadonly()) return;
+    // sendPrompt is surface-originated: a script inside the sandbox can fire it
+    // (or post this message directly) with no user involvement. It must NEVER
+    // become an author:"user" comment — that label is reserved for the composer
+    // (genuine keystrokes in this trusted origin), so untrusted content rendered
+    // in a surface can't impersonate the user to the agent. We stamp it
+    // author:"surface": it shows in the surface's thread, but the feedback
+    // channel only delivers "user" comments, so it never reaches the agent on
+    // its own. The user can relay it deliberately if they choose.
     await api("/api/comments", {
       method: "POST",
-      body: JSON.stringify({ surface: src.id, text: String(d.text), author: "user" }),
+      body: JSON.stringify({ surface: src.id, text: String(d.text), author: "surface" }),
     });
-    toast("Sent to agent: " + d.text);
+    toast("Added to this surface’s thread");
   } else if (d.type === "open-link" && isOwnFrame(ev.source)) {
     if (confirm(`Open external link?\n\n${d.url}`)) window.open(d.url, "_blank", "noopener");
   } else if (d.type === "copy" && isOwnFrame(ev.source)) {

@@ -236,7 +236,11 @@ export const HTTP_MCP_TOOLS = [
       properties: {
         surfaceId: { type: "string", description: "Surface whose thread to reply in" },
         message: { type: "string", description: d.replyMessage },
-        author: { type: "string", description: 'Your agent name (default "agent")' },
+        author: {
+          type: "string",
+          description:
+            'Your agent name (default "agent"; "user" is reserved and coerced to "agent")',
+        },
       },
       required: ["surfaceId", "message"],
     },

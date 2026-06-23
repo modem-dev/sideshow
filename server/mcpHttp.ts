@@ -143,10 +143,15 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         );
       }
       case "reply_to_user": {
+        // "user" is the reserved trust label, minted only by the viewer's
+        // composer (genuine human keystrokes). The agent may name itself
+        // anything else, but never the user — that would forge feedback.
+        const named = typeof args.author === "string" ? args.author.trim() : "";
+        const author = named && named !== "user" ? named : "agent";
         const result = await deps.createComment({
           text: String(args.message ?? ""),
           surface: String(args.surfaceId ?? ""),
-          author: typeof args.author === "string" ? args.author : "agent",
+          author,
         });
         if ("error" in result) throw new Error(result.error);
         return JSON.stringify(

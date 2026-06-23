@@ -311,8 +311,10 @@ a `data:` URI, or an asset you uploaded to this server (`<img src="/a/<id>">`).
 
 Two globals are injected into every html part:
 
-- `sendPrompt(text)` — posts the text as a user comment on this surface, which
-  reaches you through the feedback loop. Use for "explore X" affordances.
+- `sendPrompt(text)` — posts `text` to this surface's thread as a `surface`
+  message (not a user comment): the user sees it, but it does NOT reach you
+  through the feedback loop on its own, and it can never impersonate the user.
+  Use it for "explore X" affordances the user can then relay to you deliberately.
 - `openLink(url)` — asks the user to confirm opening an external link.
   Plain `<a href>` clicks are routed through this automatically.
 
