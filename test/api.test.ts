@@ -1217,6 +1217,34 @@ test("ids are unguessable: 11 url-safe chars (~64 bits), not a 32-bit segment", 
   assert.match(s.sessionId, /^[A-Za-z0-9_-]{11}$/);
 });
 
+test("malformed base64 in an asset envelope is a 400, not a 500", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/assets",
+    json({ data: "not valid base64!!!", contentType: "image/png" }),
+  );
+  assert.equal(res.status, 400);
+  assert.match(((await res.json()) as any).error, /base64/);
+});
+
+test("comment text and titles are capped before they ride the feedback channel", async () => {
+  const app = makeApp();
+  const s = (await (
+    await app.request("/api/snippets", json({ html: "<p>hi</p>", title: "T".repeat(1000) }))
+  ).json()) as any;
+  // title capped at the publish edge
+  assert.equal(s.title.length, 500);
+
+  await app.request(
+    "/api/comments",
+    json({ snippet: s.id, text: "x".repeat(20000), author: "user" }),
+  );
+  const all = (await (await app.request(`/api/comments?session=${s.sessionId}`)).json()) as any;
+  assert.equal(all.comments[0].text.length, 8000);
+  // the capped title is what gets snapshotted onto the comment (feedback view)
+  assert.equal(all.comments[0].surfaceTitle.length, 500);
+});
+
 // --- assets ---
 
 const b64 = (bytes: number[]) => Buffer.from(new Uint8Array(bytes)).toString("base64");

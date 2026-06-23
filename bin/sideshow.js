@@ -1054,6 +1054,9 @@ const commands = {
     });
     const session = await resolveSession(flags);
     if (!session) fail("no active session — publish something first, or pass --session");
+    if (flags.after !== undefined && !/^\d+$/.test(flags.after)) {
+      fail(`--after must be a number (got "${flags.after}")`);
+    }
     const timeout = Math.max(1, Number(flags.timeout ?? 120));
     const deadline = Date.now() + timeout * 1000;
     // No client-side cursor: without --after, the server resumes from the
@@ -1084,6 +1087,9 @@ const commands = {
         after: { type: "string" },
       },
     });
+    if (flags.after !== undefined && !/^\d+$/.test(flags.after)) {
+      fail(`--after must be a number (got "${flags.after}")`);
+    }
     // A continuous long-poll that streams each new user comment as one line —
     // one line is one Claude Code monitor notification. It re-arms forever and
     // never exits on its own; a transient network error backs off and retries

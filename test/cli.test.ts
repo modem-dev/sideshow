@@ -114,6 +114,12 @@ test("missing option value fails with a one-line error, not a stack trace", asyn
   );
 });
 
+test("a non-numeric --after fails fast instead of being silently dropped", async () => {
+  const { code, stderr } = await run("watch", "--after", "abc");
+  assert.equal(code, 1);
+  assert.match(stderr, /--after must be a number/);
+});
+
 test("watch streams each new user comment as one line and re-arms", async () => {
   const server = await serveApp();
   try {
