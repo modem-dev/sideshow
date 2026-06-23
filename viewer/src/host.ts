@@ -9,6 +9,8 @@
 // exactly. The embed path (mountViewer) calls setEngine() with a shadow root +
 // the embedder's host before <App/> renders.
 
+import type { ThemeTokens } from "../../server/theme-tokens.ts";
+
 export type Route = { sessionId?: string | null; surfaceId?: string | null };
 
 export interface HostRouter {
@@ -37,6 +39,12 @@ export interface SideshowHost {
   // connect action). Orthogonal to `layout` — a host can have either without the
   // other. Self-hosted drives the same flag via window.__SIDESHOW_READONLY__.
   readonly?: boolean;
+  // The engine calls this with the fully-resolved palette on initial mount, on
+  // every live theme switch, and on an OS light/dark flip. Symmetric with
+  // router.navigate: the engine owns the themes and TELLS the host its colors,
+  // so an embedder can mirror them onto its own chrome without reaching across
+  // the shadow boundary. Optional — the trivial self-hosted host omits it.
+  onThemeChange?(tokens: ThemeTokens): void;
 }
 
 // Host-overridable surfaces. A handful of the engine's layout regions carry
