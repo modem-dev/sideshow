@@ -298,7 +298,19 @@ export const HISTORY_LIMIT = 20;
 export const MAX_ASSET_BYTES = 5 * 1024 * 1024;
 export const MAX_BOARD_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
 
-export const newId = () => crypto.randomUUID().split("-")[0];
+// Short, unguessable id: 8 random bytes (64 bits) as 11 url-safe base64 chars —
+// YouTube-video-id sized. These double as bearer capabilities: in publicRead
+// mode `/s/:id` and `/api/{sessions,surfaces}/:id` are reachable without the
+// board token, so the id IS the share secret and must resist enumeration. 64
+// bits (~1.8e19) is far past sweepable; the old `randomUUID().split("-")[0]`
+// kept only the first 32-bit segment (~4e9), brute-forceable in about an hour.
+// (Assets use a separate content-hash id, not this.) btoa is a global in both
+// Node and Workers, same as the atob the asset path already relies on.
+export const newId = () =>
+  btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(8))))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 
 // Content-addressed asset id: the lowercase hex SHA-256 of the bytes. Because
 // it depends only on the content, an agent can derive `/a/:id` from the bytes

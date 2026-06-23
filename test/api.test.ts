@@ -1210,6 +1210,13 @@ test("rejects empty and oversized html", async () => {
   );
 });
 
+test("ids are unguessable: 11 url-safe chars (~64 bits), not a 32-bit segment", async () => {
+  const app = makeApp();
+  const s = (await (await app.request("/api/snippets", json({ html: "<p>hi</p>" }))).json()) as any;
+  assert.match(s.id, /^[A-Za-z0-9_-]{11}$/);
+  assert.match(s.sessionId, /^[A-Za-z0-9_-]{11}$/);
+});
+
 // --- assets ---
 
 const b64 = (bytes: number[]) => Buffer.from(new Uint8Array(bytes)).toString("base64");
