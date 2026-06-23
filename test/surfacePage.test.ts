@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import vm from "node:vm";
 import { escapeHtml, renderHtmlPage, renderSandboxedPart } from "../server/surfacePage.ts";
 import { themeById } from "../server/themes.ts";
 
@@ -232,4 +233,84 @@ test("escapeHtml neutralizes markup metacharacters", () => {
     "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;",
   );
   assert.equal(escapeHtml("a & b"), "a &amp; b");
+});
+
+// Pull the real resize bridge out of a rendered sandboxed part and run it in a
+// vm with a fake DOM, so we exercise the SHIPPED code (not a copy). The driver
+// feeds the height the content "reports" at a given clock time and captures what
+// the bridge posts to the parent.
+function loadResizeBridge() {
+  const html = renderSandboxedPart({ body: "<div>x</div>", css: "", origin: ORIGIN });
+  const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  const src = blocks.find((b) => b.includes("function __report"));
+  assert.ok(src, "sandboxed part must embed the resize bridge");
+
+  const posted: number[] = [];
+  const clock = { scrollHeight: 0, now: 0 };
+  const noop = () => 0;
+  const ctx: Record<string, unknown> = {
+    parent: {
+      postMessage: (msg: { type?: string; height?: number }) => {
+        if (msg && msg.type === "resize") posted.push(msg.height!);
+      },
+    },
+    performance: { now: () => clock.now },
+    setTimeout: noop, // ignore the deferred __report() warm-up calls
+    requestAnimationFrame: noop,
+    document: {
+      readyState: "loading", // take the load-listener branch, not an eval-time __report()
+      body: {
+        get scrollHeight() {
+          return clock.scrollHeight;
+        },
+      },
+      documentElement: {},
+      addEventListener: noop,
+    },
+    window: { addEventListener: noop }, // no ResizeObserver -> RO wiring is skipped
+  };
+  vm.createContext(ctx);
+  vm.runInContext(src, ctx);
+  const report = ctx.__report as () => void;
+  return {
+    posted,
+    at(height: number, ms: number) {
+      clock.scrollHeight = height;
+      clock.now = ms;
+      report();
+    },
+  };
+}
+
+// Regression: a surface whose height inverts with the frame height (a scrollbar
+// that toggles at a threshold, a 100vh/% layout) makes the parent's "size the
+// iframe to the reported height" feed back into the content's height, so reports
+// alternate A, B, A, B... forever. A plain `h !== lastH` guard can't stop it
+// (each value differs from the one before), and on a heavy surface the per-frame
+// relayout pegs a CPU core. The bridge must break the rapid 2-cycle while still
+// honoring a genuine change that happens to return to a prior height.
+test("resize bridge breaks a rapid 2-cycle but honors slow genuine changes", () => {
+  const b = loadResizeBridge();
+
+  b.at(100, 0); // first measurement
+  b.at(200, 16); // genuine growth
+  assert.deepEqual(b.posted, [100, 200]);
+
+  // The runaway: rapid flips back and forth, one per frame.
+  b.at(100, 32);
+  b.at(200, 48);
+  b.at(100, 64);
+  assert.deepEqual(
+    b.posted,
+    [100, 200],
+    "a rapid A<->B oscillation must stop after the first cycle",
+  );
+
+  // A real change that lands on a previous height, seconds later, still resizes.
+  b.at(100, 5000);
+  assert.deepEqual(
+    b.posted,
+    [100, 200, 100],
+    "a slow, genuine return to a prior height must still resize the frame",
+  );
 });

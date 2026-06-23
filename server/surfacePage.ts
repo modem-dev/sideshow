@@ -183,15 +183,40 @@ document.addEventListener('keydown', function (e) {
   e.preventDefault();
   parent.postMessage({ __sideshow: true, type: 'switch-session', key: e.key }, '*');
 });
+// Report content height to the parent so it can size this iframe, while
+// breaking a feedback loop that can peg a CPU core.
+//
+// The loop: the parent sets the iframe's height to whatever we report, but some
+// content's height *inverts* with the frame's height — a scrollbar that appears
+// at height A reflows the content to height B, then disappears at B and reflows
+// back to A (or any 100vh / percentage-derived layout). The ResizeObserver then
+// fires on every flip, so reported heights alternate A, B, A, B... forever. With
+// a cheap surface that's a brief blip; with a heavy one (a big syntax-highlighted
+// diff/markdown surface) each relayout is expensive and the tab sits at 100% CPU
+// until the surface unmounts.
+//
+// A plain h !== __lastH guard can't stop this: in a 2-cycle every value differs
+// from the one immediately before it. So we remember the previous height too and
+// drop a return to it *if it recurs faster than a human could* (< 250ms) — that's
+// the runaway. A genuine change (a <details> toggle, a textarea drag) recurs on a
+// human timescale and still passes through.
 var __lastH = 0;
+var __prevH = 0;
+var __lastT = 0;
+function __now() {
+  return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+}
 function __report() {
   var h = document.body
     ? document.body.scrollHeight
     : document.documentElement.scrollHeight;
-  if (h > 0 && h !== __lastH) {
-    __lastH = h;
-    parent.postMessage({ __sideshow: true, type: 'resize', height: h }, '*');
-  }
+  if (h <= 0 || h === __lastH) return; // no content yet, or unchanged
+  var t = __now();
+  if (h === __prevH && t - __lastT < 250) return; // rapid A<->B flip: stop the loop
+  __prevH = __lastH;
+  __lastH = h;
+  __lastT = t;
+  parent.postMessage({ __sideshow: true, type: 'resize', height: h }, '*');
 }
 if (document.readyState === 'complete') __report();
 else window.addEventListener('load', function () { requestAnimationFrame(__report); });
