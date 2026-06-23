@@ -27,6 +27,11 @@ const MAX_WAIT_SECONDS = 300;
 const MAX_TRACE_STEPS = 2000;
 const MAX_STEP_DETAIL = 4000;
 const MAX_STEP_LABEL = 500;
+// A comment's text and a surface's title both ride the feedback channel back to
+// the agent (feedbackView below), re-sent on every poll — so cap them at the
+// edge to keep one oversize value from bloating the agent's context forever.
+const MAX_COMMENT_TEXT = 8000;
+const MAX_TITLE = 500;
 
 // Asset serving policy: only raster images are served inline; everything else
 // (incl. svg, json, text, the octet-stream catch-all) is an attachment, so a
@@ -67,8 +72,15 @@ function inferAssetKind(contentType: string): AssetKind {
 const isAssetKind = (v: unknown): v is AssetKind => v === "image" || v === "trace" || v === "file";
 
 // base64 -> bytes, runtime-agnostic (atob is a global in Node and Workers).
+// atob throws on malformed input; rethrow as a clean error the callers turn
+// into a 400 instead of letting a raw DOMException surface as a 500.
 function decodeBase64(b64: string): Uint8Array {
-  const bin = atob(b64);
+  let bin: string;
+  try {
+    bin = atob(b64);
+  } catch {
+    throw new Error("invalid base64 in `data`");
+  }
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
@@ -316,7 +328,7 @@ export function createApp({
       // which the user may have set by renaming it in the viewer.
       const session = await store.createSession({
         agent: input.agent ?? "agent",
-        title: input.sessionTitle,
+        title: input.sessionTitle?.slice(0, MAX_TITLE),
         cwd: input.cwd,
       });
       bus.broadcast({ type: "session-created", id: session.id });
@@ -325,7 +337,7 @@ export function createApp({
     const surface = await store.createSurface({
       sessionId,
       parts: input.parts,
-      title: input.title,
+      title: input.title?.slice(0, MAX_TITLE),
     });
     if (!surface) return { error: "session not found", status: 404 };
     bus.broadcast({ type: "surface-created", id: surface.id, sessionId, version: 1 });
@@ -382,6 +394,7 @@ export function createApp({
         return { error: `surface exceeds ${MAX_SURFACE_BYTES} bytes`, status: 413 };
       }
     }
+    if (patch.title !== undefined) patch.title = patch.title.slice(0, MAX_TITLE);
     const surface = await store.updateSurface(id, patch);
     if (!surface) return { error: "surface not found", status: 404 };
     bus.broadcast({
@@ -409,7 +422,7 @@ export function createApp({
       sessionId: surface.sessionId,
       surfaceId: surface.id,
       author: input.author,
-      text: input.text.trim(),
+      text: input.text.trim().slice(0, MAX_COMMENT_TEXT),
     });
     if (!comment) return { error: "session not found", status: 404 };
     bus.broadcast({
@@ -605,7 +618,7 @@ export function createApp({
     const body = await c.req.json().catch(() => ({}));
     const session = await store.createSession({
       agent: typeof body.agent === "string" ? body.agent : "agent",
-      title: typeof body.title === "string" ? body.title : undefined,
+      title: typeof body.title === "string" ? body.title.slice(0, MAX_TITLE) : undefined,
       cwd: typeof body.cwd === "string" ? body.cwd : undefined,
     });
     bus.broadcast({ type: "session-created", id: session.id });
@@ -617,7 +630,7 @@ export function createApp({
     if (!body || typeof body.title !== "string") {
       return c.json({ error: 'body must include "title" string' }, 400);
     }
-    const session = await store.renameSession(c.req.param("id"), body.title);
+    const session = await store.renameSession(c.req.param("id"), body.title.slice(0, MAX_TITLE));
     if (!session) return c.json({ error: "session not found" }, 404);
     bus.broadcast({ type: "session-updated", id: session.id });
     return c.json(session);
@@ -903,26 +916,31 @@ export function createApp({
       }
     }
     const kindQ = c.req.query("kind");
-    const body = envelope
-      ? {
-          data: decodeBase64(envelope.data),
-          contentType:
-            typeof envelope.contentType === "string"
-              ? envelope.contentType
-              : "application/octet-stream",
-          filename: typeof envelope.filename === "string" ? envelope.filename : undefined,
-          kind: isAssetKind(envelope.kind) ? envelope.kind : undefined,
-          session: typeof envelope.session === "string" ? envelope.session : undefined,
-          agent: typeof envelope.agent === "string" ? envelope.agent : undefined,
-        }
-      : {
-          data: buf,
-          contentType: mime || "application/octet-stream",
-          filename: c.req.query("filename"),
-          kind: isAssetKind(kindQ) ? kindQ : undefined,
-          session: c.req.query("session"),
-          agent: c.req.query("agent"),
-        };
+    let body;
+    try {
+      body = envelope
+        ? {
+            data: decodeBase64(envelope.data),
+            contentType:
+              typeof envelope.contentType === "string"
+                ? envelope.contentType
+                : "application/octet-stream",
+            filename: typeof envelope.filename === "string" ? envelope.filename : undefined,
+            kind: isAssetKind(envelope.kind) ? envelope.kind : undefined,
+            session: typeof envelope.session === "string" ? envelope.session : undefined,
+            agent: typeof envelope.agent === "string" ? envelope.agent : undefined,
+          }
+        : {
+            data: buf,
+            contentType: mime || "application/octet-stream",
+            filename: c.req.query("filename"),
+            kind: isAssetKind(kindQ) ? kindQ : undefined,
+            session: c.req.query("session"),
+            agent: c.req.query("agent"),
+          };
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : "invalid upload" }, 400);
+    }
     const result = await uploadAsset(body);
     if ("error" in result) return c.json({ error: result.error }, result.status);
     const origin = new URL(c.req.url).origin;
