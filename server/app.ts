@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
+import { decodeBase64 } from "./base64.ts";
 import { EventBus } from "./events.ts";
 import { kitSummaries } from "./kits.ts";
 import { registerMcp } from "./mcpHttp.ts";
@@ -72,19 +73,6 @@ function inferAssetKind(contentType: string): AssetKind {
 const isAssetKind = (v: unknown): v is AssetKind => v === "image" || v === "trace" || v === "file";
 
 // base64 -> bytes, runtime-agnostic (atob is a global in Node and Workers).
-// atob throws on malformed input; rethrow as a clean error the callers turn
-// into a 400 instead of letting a raw DOMException surface as a 500.
-function decodeBase64(b64: string): Uint8Array {
-  let bin: string;
-  try {
-    bin = atob(b64);
-  } catch {
-    throw new Error("invalid base64 in `data`");
-  }
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
 // Docs and onboarding snippets are written against the local default; serve
 // them with the real origin so a deployed instance shows copy-pasteable URLs.
 const LOCAL_ORIGIN = "http://localhost:8228";
