@@ -160,7 +160,9 @@ const SVG_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidde
 // parent can size the sandboxed (opaque-origin) iframe. copyToClipboard posts
 // to the parent (trusted origin) which has clipboard API access; the sandbox
 // itself is opaque-origin so navigator.clipboard is unavailable there.
-const BRIDGE_JS = `
+// Exported so the resize-guard regression test can run the exact shipped script
+// in a vm, instead of scraping it back out of rendered HTML.
+export const BRIDGE_JS = `
 window.sendPrompt = function (text) {
   parent.postMessage({ __sideshow: true, type: 'send-prompt', text: String(text) }, '*');
 };

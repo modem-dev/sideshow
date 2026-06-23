@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import vm from "node:vm";
-import { escapeHtml, renderHtmlPage, renderSandboxedPart } from "../server/surfacePage.ts";
+import {
+  BRIDGE_JS,
+  escapeHtml,
+  renderHtmlPage,
+  renderSandboxedPart,
+} from "../server/surfacePage.ts";
 import { themeById } from "../server/themes.ts";
 
 const ORIGIN = "http://localhost:4000";
@@ -240,10 +245,10 @@ test("escapeHtml neutralizes markup metacharacters", () => {
 // feeds the height the content "reports" at a given clock time and captures what
 // the bridge posts to the parent.
 function loadResizeBridge() {
-  const html = renderSandboxedPart({ body: "<div>x</div>", css: "", origin: ORIGIN });
-  const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-  const src = blocks.find((b) => b.includes("function __report"));
-  assert.ok(src, "sandboxed part must embed the resize bridge");
+  // BRIDGE_JS is exactly what ships inside <script>…</script> in every surface
+  // page; run it verbatim. (That it's embedded in the page is covered separately
+  // by the "host bridge globals and resize reporter are present" test.)
+  const src = BRIDGE_JS;
 
   const posted: number[] = [];
   const clock = { scrollHeight: 0, now: 0 };
