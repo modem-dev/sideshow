@@ -8,7 +8,8 @@
 // tabs re-theme via the theme-changed SSE event (see state.ts).
 import { createSignal } from "solid-js";
 import { api } from "./api.ts";
-import { isShadow, styleContainer } from "./host.ts";
+import { host, isShadow, styleContainer } from "./host.ts";
+import { themeTokens } from "../../server/theme-tokens.ts";
 import {
   DEFAULT_THEME_ID,
   type Mode,
@@ -32,8 +33,22 @@ export const activeTheme = activeThemeState;
 const darkQuery =
   typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
 const [prefersDark, setPrefersDark] = createSignal(!!darkQuery?.matches);
-darkQuery?.addEventListener("change", (e) => setPrefersDark(e.matches));
+// On an OS light/dark flip the resolved palette changes without a theme change,
+// so re-push it to the host (below) after updating the mode signal.
+darkQuery?.addEventListener("change", (e) => {
+  setPrefersDark(e.matches);
+  emitThemeTokens();
+});
 export const resolvedMode = (): Mode => (prefersDark() ? "dark" : "light");
+
+// Push the fully-resolved palette to the host. Symmetric with router.navigate:
+// the engine owns the themes and TELLS the host its colors (on initial apply, on
+// a live theme switch, and on an OS scheme flip) instead of the host scraping
+// them across the shadow boundary. Optional on the contract — the trivial
+// self-hosted host omits onThemeChange, so this no-ops there.
+function emitThemeTokens() {
+  host().onThemeChange?.(themeTokens(themeById(activeThemeState()), resolvedMode()));
+}
 
 const STYLE_ID = "ss-theme-vars";
 
@@ -58,6 +73,7 @@ export function applyTheme(id: string) {
   const theme = themeById(id);
   applyPalette(theme.id);
   setActiveTheme(theme.id);
+  emitThemeTokens();
 }
 
 // Fetch the persisted board theme on startup.

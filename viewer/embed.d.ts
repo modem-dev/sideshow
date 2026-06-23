@@ -30,6 +30,14 @@ export interface SideshowHost {
    * Orthogonal to `layout`. Self-hosted drives the same flag via a window global.
    */
   readonly?: boolean;
+  /**
+   * The engine calls this with the fully-resolved palette on initial mount, on
+   * every live theme switch, and on an OS light/dark flip — symmetric with
+   * `router.navigate`. A host mirrors the tokens onto its own chrome instead of
+   * scraping computed styles across the shadow boundary. Optional — the trivial
+   * self-hosted host omits it.
+   */
+  onThemeChange?(tokens: ThemeTokens): void;
 }
 
 export interface ViewerHandle {
