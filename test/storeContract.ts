@@ -52,6 +52,20 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.equal(await store.renameSession("missing", "X"), null);
   });
 
+  contract("sessions default to unshared; setSessionShared toggles it", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    assert.equal(session.shared, false);
+
+    const shared = await store.setSessionShared(session.id, true);
+    assert.equal(shared?.shared, true);
+    assert.equal((await store.getSession(session.id))?.shared, true);
+
+    const unshared = await store.setSessionShared(session.id, false);
+    assert.equal(unshared?.shared, false);
+
+    assert.equal(await store.setSessionShared("missing", true), null);
+  });
+
   contract("lists sessions by lastActiveAt, newest first; activity reorders", async (store) => {
     const a = await store.createSession({ agent: "a" });
     await sleep(10);

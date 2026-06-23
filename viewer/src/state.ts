@@ -144,6 +144,7 @@ function syntheticSession(id: string): SessionRow {
     cwd: null,
     createdAt: now,
     lastActiveAt: now,
+    shared: false,
     agentSeq: 0,
     surfaceCount: 0,
   };

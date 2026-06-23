@@ -97,6 +97,32 @@ test("sessionTitle never retitles an existing session", async () => {
   assert.equal(sessions[0].title, "User's pick");
 });
 
+test("PATCH toggles session.shared and rejects an empty body", async () => {
+  const app = makeApp();
+  const first = (await (
+    await app.request("/api/snippets", json({ html: "<p>1</p>", sessionTitle: "S" }))
+  ).json()) as any;
+  const id = first.sessionId;
+
+  // Sessions start unshared.
+  let sessions = (await (await app.request("/api/sessions")).json()) as any;
+  assert.equal(sessions[0].shared, false);
+
+  // Flip shared on via PATCH.
+  const on = await app.request(`/api/sessions/${id}`, {
+    ...json({ shared: true }),
+    method: "PATCH",
+  });
+  assert.equal(on.status, 200);
+  assert.equal(((await on.json()) as any).shared, true);
+  sessions = (await (await app.request("/api/sessions")).json()) as any;
+  assert.equal(sessions[0].shared, true);
+
+  // A PATCH with neither title nor shared is a 400.
+  const bad = await app.request(`/api/sessions/${id}`, { ...json({}), method: "PATCH" });
+  assert.equal(bad.status, 400);
+});
+
 test("publish into unknown session 404s instead of silently creating", async () => {
   const app = makeApp();
   const res = await app.request("/api/snippets", json({ html: "<p>x</p>", session: "nope" }));

@@ -614,10 +614,16 @@ export function createApp({
 
   app.patch("/api/sessions/:id", async (c) => {
     const body = await c.req.json().catch(() => null);
-    if (!body || typeof body.title !== "string") {
-      return c.json({ error: 'body must include "title" string' }, 400);
+    const hasTitle = body && typeof body.title === "string";
+    const hasShared = body && typeof body.shared === "boolean";
+    if (!hasTitle && !hasShared) {
+      return c.json({ error: 'body must include a "title" string or "shared" boolean' }, 400);
     }
-    const session = await store.renameSession(c.req.param("id"), body.title);
+    const id = c.req.param("id");
+    let session = await store.getSession(id);
+    if (!session) return c.json({ error: "session not found" }, 404);
+    if (hasTitle) session = await store.renameSession(id, body.title);
+    if (hasShared) session = await store.setSessionShared(id, body.shared);
     if (!session) return c.json({ error: "session not found" }, 404);
     bus.broadcast({ type: "session-updated", id: session.id });
     return c.json(session);

@@ -1173,6 +1173,98 @@ iframe {
   color: var(--accent);
 }
 
+/* Built-in per-session Share button, beside the view toggle. Pill-shaped to
+   match the toggle; lights with the accent when the session is shared. */
+.sess-share {
+  align-self: center;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 13px;
+  cursor: pointer;
+}
+.sess-share:hover {
+  color: var(--text);
+}
+.sess-share.shared {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Built-in (self-hosted) share dialog — the fallback when no host owns the flow. */
+.share-fallback-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.share-fallback {
+  width: 420px;
+  max-width: 92vw;
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+  padding: 18px 20px 20px;
+}
+.share-fallback h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.share-fallback p {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.share-fallback-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.share-fallback-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 7px 10px;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+.share-fallback-row button {
+  flex: none;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 0.5px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.share-fallback-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--border);
+}
+.share-fallback-foot .stop {
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--danger, #cf222e);
+}
+
 /* ---- treatment E: session timeline ---- */
 /* One spine down the middle. Surfaces are opaque cards that cover the line;
    the step clusters between them sit on the visible stretches of spine, their

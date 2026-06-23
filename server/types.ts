@@ -7,6 +7,13 @@ export interface Session {
   cwd: string | null;
   createdAt: string;
   lastActiveAt: string;
+  // Whether this session is shared. Self-hosted: a simple owner-set flag that
+  // marks the session viewable at its stable /session/:id URL; the viewer lights
+  // its built-in Share affordance from it. An embedder (sideshow cloud) sets it
+  // when it mints/revokes a share link, so the same in-viewer state reflects a
+  // tenant-scoped share. Enforcement of read access from this flag (per-session
+  // publicRead) is a separate concern from the flag itself.
+  shared: boolean;
   // Highest comment seq already delivered to the agent — lets responses to
   // agent writes piggyback comments the agent has not seen yet.
   agentSeq: number;
@@ -253,6 +260,9 @@ export interface Store {
   getSession(id: string): Promise<Session | null>;
   createSession(input: CreateSessionInput): Promise<Session>;
   renameSession(id: string, title: string): Promise<Session | null>;
+  // Toggle a session's `shared` flag. Returns the updated session, or null if no
+  // such session.
+  setSessionShared(id: string, shared: boolean): Promise<Session | null>;
   removeSession(id: string): Promise<boolean>;
   // Advance the delivered-to-agent comment cursor (never moves backwards).
   markAgentSeen(sessionId: string, seq: number): Promise<void>;
