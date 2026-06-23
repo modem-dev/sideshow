@@ -127,9 +127,10 @@ export class JsonFileStore implements Store {
     try {
       const raw = await readFile(this.filePath, "utf8");
       const data = JSON.parse(raw) as LegacyShape;
-      // agentSeq arrived after 0.2.0 — default it for data files written before
+      // agentSeq / shared arrived after 0.2.0 — default them for data files
+      // written before the fields existed.
       for (const s of data.sessions ?? []) {
-        this.sessions.set(s.id, { ...s, agentSeq: s.agentSeq ?? 0 });
+        this.sessions.set(s.id, { ...s, agentSeq: s.agentSeq ?? 0, shared: s.shared ?? false });
       }
       // Prefer the surfaces array; fall back to lifting legacy snippets.
       if (data.surfaces) {
@@ -204,9 +205,19 @@ export class JsonFileStore implements Store {
       cwd: input.cwd ?? null,
       createdAt: now,
       lastActiveAt: now,
+      shared: false,
       agentSeq: 0,
     };
     this.sessions.set(session.id, session);
+    await this.persist();
+    return clone(session);
+  }
+
+  async setSessionShared(id: string, shared: boolean) {
+    await this.load();
+    const session = this.sessions.get(id);
+    if (!session) return null;
+    session.shared = shared;
     await this.persist();
     return clone(session);
   }

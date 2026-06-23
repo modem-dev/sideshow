@@ -38,6 +38,15 @@ export interface SideshowHost {
    * self-hosted host omits it.
    */
   onThemeChange?(tokens: ThemeTokens): void;
+  /**
+   * The engine owns the per-session Share BUTTON; the host owns the share DIALOG
+   * (deployment-specific). When the user clicks Share, the engine calls this so
+   * the host can open its own flow (cloud: mint a tenant-scoped link). Optional —
+   * when omitted, the engine falls back to a built-in "copy link" dialog, so
+   * self-hosted needs no host code. The button's "Shared" state is driven by
+   * `session.shared`, not by this callback.
+   */
+  onShareClick?(sessionId: string): void;
 }
 
 export interface ViewerHandle {

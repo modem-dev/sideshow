@@ -395,9 +395,13 @@ function SessionView() {
         </span>
         <span class="head-sp"></span>
         <ViewToggle />
-        {/* Host-overridable region (SLOTS.sessionActions): session-scoped controls
-            an embedder projects beside the toggle (e.g. cloud "Share"). Empty
-            fallback — self-hosted renders nothing here. */}
+        {/* The Share button is built-in chrome: the engine owns the button and
+            its lit/"Shared" state (session.shared), and delegates the dialog to
+            the host via host.onShareClick (cloud mints a tenant link); self-hosted
+            falls back to a copy-the-URL dialog. See SessionShare. */}
+        <SessionShare current={current()} />
+        {/* Host-overridable region (SLOTS.sessionActions): any OTHER session-scoped
+            controls an embedder projects beside the toggle. Empty by default. */}
         <slot name={SLOTS.sessionActions}></slot>
       </div>
       <div id="stream">
@@ -417,6 +421,100 @@ function SessionView() {
         >
           <SessionTimeline />
         </Show>
+      </div>
+    </div>
+  );
+}
+
+// The built-in per-session Share control. The engine owns the BUTTON and its
+// lit state (session.shared); the DIALOG is the host's to own (deployment-
+// specific). On click we hand off to host.onShareClick when an embedder provides
+// it (cloud: mint a tenant-scoped link); otherwise we open a built-in fallback
+// that shares the session at its plain /session/:id URL — so self-hosted needs
+// no host code. Hidden in read-only/guest views (sharing is an owner action).
+function SessionShare(props: { current: SessionRow | undefined }) {
+  const [fallbackOpen, setFallbackOpen] = createSignal(false);
+  const shared = () => !!props.current?.shared;
+  const onClick = () => {
+    const id = props.current?.id;
+    if (!id) return;
+    const h = host();
+    if (h.onShareClick) h.onShareClick(id);
+    else setFallbackOpen(true);
+  };
+  return (
+    <Show when={props.current && !isReadonly()}>
+      <button
+        type="button"
+        class="sess-share"
+        classList={{ shared: shared() }}
+        aria-haspopup="dialog"
+        title={shared() ? "Shared — manage" : "Share this session"}
+        onClick={onClick}
+      >
+        {shared() ? "Shared" : "Share"}
+      </button>
+      <Show when={fallbackOpen()}>
+        <ShareLinkDialog current={props.current!} onClose={() => setFallbackOpen(false)} />
+      </Show>
+    </Show>
+  );
+}
+
+// Built-in (self-hosted) share dialog: the fallback when no host owns the flow.
+// Sharing here means marking the session `shared` and handing over its stable
+// /session/:id URL. Opening turns sharing on (so the button lights and the link
+// is meaningful); "Stop sharing" turns it off. NOTE: this prototype does not yet
+// ENFORCE read access from the flag — gating unauthenticated reads on
+// session.shared (per-session publicRead) is a separate, follow-up change.
+function ShareLinkDialog(props: { current: SessionRow; onClose: () => void }) {
+  const id = props.current.id;
+  const url = `${location.origin}${host().basePath}/session/${id}`;
+  const [copied, setCopied] = createSignal(false);
+  const patchShared = (shared: boolean) =>
+    api(`/api/sessions/${id}`, { method: "PATCH", body: JSON.stringify({ shared }) }).catch(
+      () => {},
+    );
+  onMount(() => {
+    if (!props.current.shared) void patchShared(true);
+  });
+  const copy = () => {
+    navigator.clipboard
+      ?.writeText(url)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {});
+  };
+  return (
+    <div class="share-fallback-backdrop" onClick={props.onClose}>
+      <div
+        class="share-fallback"
+        role="dialog"
+        aria-label="Share session"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2>Share this session</h2>
+        <p>Anyone with this link can view this session.</p>
+        <div class="share-fallback-row">
+          <input type="text" readonly value={url} onFocus={(e) => e.currentTarget.select()} />
+          <button type="button" onClick={copy}>
+            {copied() ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <div class="share-fallback-foot">
+          <button
+            type="button"
+            class="stop"
+            onClick={() => {
+              void patchShared(false);
+              props.onClose();
+            }}
+          >
+            Stop sharing
+          </button>
+        </div>
       </div>
     </div>
   );

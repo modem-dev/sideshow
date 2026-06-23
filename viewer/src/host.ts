@@ -45,6 +45,14 @@ export interface SideshowHost {
   // so an embedder can mirror them onto its own chrome without reaching across
   // the shadow boundary. Optional — the trivial self-hosted host omits it.
   onThemeChange?(tokens: ThemeTokens): void;
+  // The engine owns the per-session Share BUTTON (chrome that belongs in the
+  // viewer); the host owns the share DIALOG (deployment-specific: self-hosted
+  // copies the /session/:id URL, cloud mints a tenant-scoped link). When the
+  // user clicks Share, the engine calls this so the host can open its own flow.
+  // Optional — when omitted, the engine falls back to a built-in "copy link"
+  // dialog, so self-hosted needs no host code. The button's lit/"Shared" state
+  // is driven separately by `session.shared`, not by this callback.
+  onShareClick?(sessionId: string): void;
 }
 
 // Host-overridable surfaces. A handful of the engine's layout regions carry

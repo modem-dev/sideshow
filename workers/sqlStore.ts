@@ -33,7 +33,8 @@ export class SqlStore implements Store {
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY, agent TEXT NOT NULL, title TEXT, cwd TEXT,
         createdAt TEXT NOT NULL, lastActiveAt TEXT NOT NULL,
-        agentSeq INTEGER NOT NULL DEFAULT 0
+        agentSeq INTEGER NOT NULL DEFAULT 0,
+        shared INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS surfaces (
         id TEXT PRIMARY KEY, sessionId TEXT NOT NULL, title TEXT NOT NULL,
@@ -59,11 +60,14 @@ export class SqlStore implements Store {
         PRIMARY KEY (sessionId, seq)
       );
     `);
-    // Boards created before agentSeq existed need the column added; SQLite
-    // has no ADD COLUMN IF NOT EXISTS, so probe and patch.
+    // Boards created before agentSeq/shared existed need the columns added;
+    // SQLite has no ADD COLUMN IF NOT EXISTS, so probe and patch.
     const sessionCols = this.sql.exec("SELECT name FROM pragma_table_info('sessions')").toArray();
     if (!sessionCols.some((c) => c.name === "agentSeq")) {
       this.sql.exec("ALTER TABLE sessions ADD COLUMN agentSeq INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!sessionCols.some((c) => c.name === "shared")) {
+      this.sql.exec("ALTER TABLE sessions ADD COLUMN shared INTEGER NOT NULL DEFAULT 0");
     }
     this.migrateToSurfaces();
   }
@@ -123,6 +127,7 @@ export class SqlStore implements Store {
       cwd: (r.cwd as string) ?? null,
       createdAt: r.createdAt as string,
       lastActiveAt: r.lastActiveAt as string,
+      shared: ((r.shared as number) ?? 0) !== 0,
       agentSeq: (r.agentSeq as number) ?? 0,
     };
   }
@@ -193,6 +198,7 @@ export class SqlStore implements Store {
       cwd: input.cwd ?? null,
       createdAt: now,
       lastActiveAt: now,
+      shared: false,
       agentSeq: 0,
     };
     this.sql.exec(
@@ -204,6 +210,14 @@ export class SqlStore implements Store {
       session.createdAt,
       session.lastActiveAt,
     );
+    return session;
+  }
+
+  async setSessionShared(id: string, shared: boolean) {
+    const session = await this.getSession(id);
+    if (!session) return null;
+    session.shared = shared;
+    this.sql.exec("UPDATE sessions SET shared = ? WHERE id = ?", shared ? 1 : 0, id);
     return session;
   }
 
