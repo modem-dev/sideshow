@@ -59,3 +59,38 @@ export declare const SLOTS: {
 };
 
 export type SlotName = (typeof SLOTS)[keyof typeof SLOTS];
+
+/**
+ * Theme-token contract. The engine renders its palette as these CSS custom
+ * properties; a host mirrors the same set onto its own chrome. The canonical,
+ * engine-free entry is `sideshow/theme-tokens` (Node-safe, no viewer runtime) —
+ * prefer it in build scripts; these re-exports exist so a host that already pulls
+ * the engine bundle has them too.
+ *
+ * The coarse subset of palette vars a host mirrors (not the per-state --color-*
+ * or --term-* tokens).
+ */
+export declare const THEME_TOKEN_NAMES: readonly [
+  "--bg",
+  "--panel",
+  "--surface",
+  "--text",
+  "--muted",
+  "--faint",
+  "--border",
+  "--border-2",
+  "--accent",
+  "--accent-bg",
+  "--hover",
+  "--danger",
+];
+
+export type ThemeTokenName = (typeof THEME_TOKEN_NAMES)[number];
+export type ThemeTokens = Record<ThemeTokenName, string>;
+
+/**
+ * The engine's built-in default-theme values, so a host can paint correct colors
+ * before the engine has resolved a theme (the no-flash fallback). Derived from
+ * the engine's theme registry — never hand-copied.
+ */
+export declare const THEME_DEFAULTS: Record<"light" | "dark", ThemeTokens>;

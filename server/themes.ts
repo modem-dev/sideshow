@@ -48,7 +48,9 @@ export interface Theme {
 export type Mode = "light" | "dark";
 
 // Viewer chrome variables (styles.css names). Accent maps to the info state.
-function viewerVars(p: Palette): Record<string, string> {
+// Exported so the embed theme-token manifest (theme-tokens.ts) derives the host
+// contract's token defaults from the same mapping the chrome uses — one source.
+export function viewerVars(p: Palette): Record<string, string> {
   return {
     bg: p.bg,
     panel: p.panel,

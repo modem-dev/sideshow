@@ -54,6 +54,10 @@
       "types": "./viewer/embed.d.ts",
       "import": "./viewer/dist-embed/engine.js"
     },
+    "./theme-tokens": {
+      "types": "./dist/server/theme-tokens.d.ts",
+      "import": "./dist/server/theme-tokens.js"
+    },
     "./guide/*": "./guide/*",
     "./*": "./*"
   },

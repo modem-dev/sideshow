@@ -14,6 +14,13 @@ export type { SideshowHost, HostRouter, Route, SlotName } from "./host.ts";
 // with these `slot=` attributes). Exported as a value so embedders share one
 // source of truth instead of hardcoding the strings.
 export { SLOTS } from "./host.ts";
+// Theme-token contract: the names a host mirrors + the engine's built-in
+// defaults, re-exported so consumers that already pull the engine bundle get
+// them here. The canonical lightweight entry is `sideshow/theme-tokens`
+// (engine-free, Node-safe) — prefer it in build scripts to avoid bundling the
+// engine just to read these values.
+export { THEME_TOKEN_NAMES, THEME_DEFAULTS } from "../../server/theme-tokens.ts";
+export type { ThemeTokens, ThemeTokenName } from "../../server/theme-tokens.ts";
 
 export interface ViewerHandle {
   dispose(): void;
