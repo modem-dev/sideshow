@@ -6,19 +6,28 @@ import { decodeBase64 } from "./base64.ts";
 import { EventBus } from "./events.ts";
 import { kitSummaries } from "./kits.ts";
 import { registerMcp } from "./mcpHttp.ts";
-import { renderHtmlPage } from "./surfacePage.ts";
+import {
+  escapeHtml,
+  renderHtmlPage,
+  renderMermaidPage,
+  renderSandboxedPart,
+} from "./surfacePage.ts";
+import { renderCode, renderDiff, renderMarkdown, renderTerminal } from "./richRender.ts";
 import { DEFAULT_THEME_ID, themeById, themeOptions } from "./themes.ts";
 import {
   type Asset,
   type AssetKind,
+  type CodePart,
   type Comment,
+  type DiffPart,
   htmlPart,
+  type MarkdownPart,
   MAX_ASSET_BYTES,
-  newId,
   partsByteLength,
   type Store,
   type Surface,
   type SurfacePart,
+  type TerminalPart,
   type TraceStep,
 } from "./types.ts";
 import { validateSurfaceParts } from "./surfaceParts.ts";
@@ -191,7 +200,6 @@ function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
   if (mode === "full") return true;
   if (path.startsWith("/session/")) return true;
   if (path.startsWith("/s/")) return true;
-  if (path.startsWith("/f/")) return true;
   if (path.startsWith("/a/")) return true;
   if (path.startsWith("/api/sessions/")) return true;
   if (path.startsWith("/api/surfaces/")) return true;
@@ -257,18 +265,35 @@ export function createApp({
   const app = new Hono();
   const bus = new EventBus();
 
-  // Transient host for viewer-rendered rich-part documents. Rich parts
-  // (markdown/diff/mermaid/terminal/code and comments) render in the viewer, so
-  // unlike an html part the server has no markup to serve at /s/:id — the viewer
-  // POSTs the rendered string here and embeds it as /f/:id. Serving it from a
-  // real URL (rather than srcdoc/blob) lets the response carry the same
-  // `sandbox` CSP header /s/:id uses, so the frame is opaque-origin however it
-  // loads, while dodging a Chrome layout bug that only afflicts in-memory iframe
-  // documents. The map is bounded and FIFO-evicted: docs are ephemeral and
-  // re-POSTed on every render, so dropping an old one costs a re-render, never
-  // correctness.
-  const MAX_FRAME_DOCS = 512;
-  const frameDocs = new Map<string, string>();
+  // Rendered-document cache for /s/:id rich parts. Rendering a markdown/code/
+  // diff part runs shiki / @pierre-diffs SSR, which is non-trivial (a big diff
+  // is tens of ms + tens of KB), so memoize the finished document string. The
+  // key pins everything the output depends on — surface id, part index, the
+  // RESOLVED version number, theme, mode — and a version's content is immutable,
+  // so a hit is always correct (a surface edit bumps the version → a new key).
+  // Bounded + FIFO-evicted: a dropped entry costs a re-render, never
+  // correctness. The DurableObject is single-instance per board, so this
+  // in-memory cache is authoritative; a multi-instance deploy could back it with
+  // KV/Cache API behind the same key without changing callers.
+  const MAX_RENDER_CACHE = 512;
+  const renderCache = new Map<string, string>();
+  async function cachedRender(key: string, build: () => Promise<string> | string): Promise<string> {
+    const hit = renderCache.get(key);
+    if (hit !== undefined) {
+      // refresh LRU recency
+      renderCache.delete(key);
+      renderCache.set(key, hit);
+      return hit;
+    }
+    const doc = await build();
+    renderCache.set(key, doc);
+    while (renderCache.size > MAX_RENDER_CACHE) {
+      const oldest = renderCache.keys().next().value;
+      if (oldest === undefined) break;
+      renderCache.delete(oldest);
+    }
+    return doc;
+  }
 
   // Last-resort safety net: any handler that throws (rather than returning a
   // status) becomes a clean JSON 500 instead of leaking a stack or a bare crash.
@@ -539,14 +564,6 @@ export function createApp({
       return next();
     }
     if (publicRead && c.req.method === "GET" && isPublicReadAllowed(path, publicRead)) {
-      return next();
-    }
-    // Rich parts render in the viewer and are staged back for display via
-    // /api/frames → /f/:id. A public-read viewer must stage them to view the
-    // board, so this transient render cache is allowed even though it's a POST —
-    // it mutates no board state, the doc is opaque-sandboxed at /f/:id, and the
-    // map is bounded.
-    if (publicRead && c.req.method === "POST" && path === "/api/frames") {
       return next();
     }
     if (isAuthenticated(c)) return next();
@@ -884,20 +901,25 @@ export function createApp({
 
   // --- rendering ---
 
-  // Serves one html part of a surface as a themed, sandboxed document. The
-  // viewer points an iframe here per html part; diff parts render natively in
-  // the viewer (they are data, not arbitrary markup) and never reach here.
+  // Serves one part of a surface as a themed, sandboxed document. The viewer
+  // points an iframe here for every part kind that becomes HTML — html parts
+  // (author markup) and the rich kinds (markdown/code/diff/terminal rendered
+  // server-side; mermaid as a self-rendering CDN doc). Image/trace/json parts
+  // are data the viewer renders natively (text nodes / <img> / JSX), so they
+  // never reach here.
   app.get("/s/:id", async (c) => {
     const surface = await store.getSurface(c.req.param("id"));
     if (!surface) return c.text("Surface not found", 404);
     const ver = c.req.query("ver");
     let title = surface.title;
     let parts = surface.parts;
+    let version = surface.version;
     if (ver && Number(ver) !== surface.version) {
       const old = surface.history.find((h) => h.version === Number(ver));
       if (!old) return c.text(`Version ${ver} not available`, 404);
       title = old.title;
       parts = old.parts;
+      version = old.version;
     }
     const partParam = c.req.query("part");
     const publicBasePath = requestBasePath(c.req.raw);
@@ -906,7 +928,12 @@ export function createApp({
     }
     const idx = Number(partParam ?? 0);
     const part = parts[idx];
-    if (!part || part.kind !== "html") return c.text("No html part at that index", 404);
+    // Only the kinds that become HTML are served here. Image/trace/json render
+    // natively in the viewer and must not be reachable as a document.
+    const SANDBOXED = ["html", "markdown", "code", "diff", "terminal", "mermaid"];
+    if (!part || !SANDBOXED.includes(part.kind)) {
+      return c.text("No renderable part at that index", 404);
+    }
     c.header("X-Content-Type-Options", "nosniff");
     // Sandbox the document however it is loaded. The viewer embeds this in an
     // iframe whose `sandbox="allow-scripts"` attribute gives it an opaque origin,
@@ -922,52 +949,46 @@ export function createApp({
     // Theme: an explicit ?theme= (the viewer keys iframe srcs by it so a switch
     // reloads the frame) wins; otherwise the persisted board theme; else default.
     const themeId = c.req.query("theme") ?? (await store.getSetting("theme")) ?? DEFAULT_THEME_ID;
+    const theme = themeById(themeId);
     // Scheme: the viewer passes the light/dark mode it resolved so the iframe is
     // pinned to it rather than re-deriving from the OS (which can diverge from
     // the chrome across the frame boundary). Absent/invalid → follow the OS.
     const modeParam = c.req.query("mode");
     const mode = modeParam === "light" || modeParam === "dark" ? modeParam : undefined;
-    return c.html(
-      renderHtmlPage({
-        title,
-        html: part.html,
-        origin: new URL(c.req.url).origin,
-        theme: themeById(themeId),
-        mode,
-        kits: part.kits,
-      }),
-    );
-  });
+    const origin = new URL(c.req.url).origin;
 
-  // Stage a viewer-rendered rich-part document for display at /f/:id. The body
-  // is a complete sandboxed HTML doc the viewer built (see renderSandboxedPart);
-  // it only ever becomes live DOM at /f/:id, which serves it opaque-sandboxed.
-  app.post("/api/frames", async (c) => {
-    const body = await c.req.json().catch(() => null);
-    if (!body || typeof body.html !== "string" || !body.html) {
-      return c.json({ error: 'body must include a non-empty "html" string' }, 400);
-    }
-    const id = newId();
-    frameDocs.set(id, body.html);
-    while (frameDocs.size > MAX_FRAME_DOCS) {
-      const oldest = frameDocs.keys().next().value;
-      if (oldest === undefined) break;
-      frameDocs.delete(oldest);
-    }
-    return c.json({ id }, 201);
-  });
+    // Cache the finished document. The key pins everything the output depends
+    // on; the resolved `version` makes it immutable, so a hit is always correct.
+    // Versioned + themed requests (what the viewer always sends) are immutable,
+    // so allow long-lived shared caching; an unpinned direct load is not.
+    const cacheKey = `${surface.id}:${idx}:${version}:${themeId}:${mode ?? "os"}`;
+    const immutable = c.req.query("ver") != null && c.req.query("theme") != null;
+    if (immutable) c.header("Cache-Control", "public, max-age=31536000, immutable");
+    else c.header("Cache-Control", "private, no-cache");
 
-  app.get("/f/:id", (c) => {
-    const html = frameDocs.get(c.req.param("id"));
-    if (html === undefined) return c.text("Frame not found", 404);
-    c.header("X-Content-Type-Options", "nosniff");
-    // The same opaque-origin sandbox /s/:id sets: a `sandbox` CSP header forces
-    // a null origin on ANY load (incl. a top-level open or shared link), so this
-    // viewer-rendered markup can never reach the board origin. `allow-scripts`
-    // so the in-doc resize/interaction bridge runs; no `allow-same-origin`, so
-    // agent- or user-authored markup stays walled off from the board.
-    c.header("Content-Security-Policy", "sandbox allow-scripts");
-    return c.html(html);
+    const doc = await cachedRender(cacheKey, async () => {
+      if (part.kind === "html") {
+        return renderHtmlPage({ title, html: part.html, origin, theme, mode, kits: part.kits });
+      }
+      if (part.kind === "mermaid") {
+        return renderMermaidPage({ mermaid: part.mermaid, origin, theme, mode });
+      }
+      const rendered =
+        part.kind === "markdown"
+          ? await renderMarkdown(part as MarkdownPart, { theme: themeId, mode })
+          : part.kind === "code"
+            ? await renderCode(part as CodePart, { theme: themeId, mode })
+            : part.kind === "terminal"
+              ? renderTerminal(part as TerminalPart)
+              : await renderDiff(part as DiffPart, { theme: themeId, mode }).catch((e) => ({
+                  body: `<div class="rich-error">Couldn’t render diff — ${escapeHtml(
+                    e instanceof Error ? e.message : "render error",
+                  )}</div>`,
+                  css: `.rich-error{color:var(--danger);font:13px/1.5 ui-monospace,monospace;padding:8px 12px;}`,
+                }));
+      return renderSandboxedPart({ body: rendered.body, css: rendered.css, origin, theme, mode });
+    });
+    return c.html(doc);
   });
 
   // --- assets (agent-uploaded images, traces, files) ---

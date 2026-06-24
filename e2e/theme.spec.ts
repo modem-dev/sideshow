@@ -1,10 +1,10 @@
 import { expect, publishParts, test } from "./fixtures.ts";
 
 // A surface with the two parts whose theming runs through different layers: an
-// html part (re-themed by reloading its sandboxed iframe at /s/:id, which has a
-// `src`) and a markdown part (rendered in its own sandboxed `srcdoc` iframe,
-// re-highlighted by shiki when its doc rebuilds). Together with the chrome
-// palette that covers the layers CLAUDE.md warns must move as one.
+// html part (re-themed by reloading its sandboxed iframe at /s/:id?part=0) and a
+// markdown part (server-rendered at /s/:id?part=1, iframe.mdframe — shiki
+// re-highlights when the frame reloads with the new theme). Together with the
+// chrome palette that covers the layers CLAUDE.md warns must move as one.
 const PARTS = [
   { kind: "html", html: "<p>surface body</p>" },
   { kind: "markdown", markdown: ["```ts", "const x: number = 1;", "```"].join("\n") },
@@ -20,9 +20,9 @@ test("switching the board theme re-themes chrome, html parts, and markdown toget
 
   await page.goto(server.url);
   const card = page.locator(".card");
-  // the html part is the iframe with a `src`; the markdown part is a separate
-  // `srcdoc` iframe (iframe.mdframe), and its shiki token lives inside it
-  const iframe = card.locator("iframe[src]");
+  // every part is now an iframe with a `src`, so target the html part by its
+  // part index; the markdown part is iframe.mdframe and its shiki token is inside
+  const iframe = card.locator('iframe[src*="part=0"]');
   const token = card
     .frameLocator("iframe.mdframe")
     .locator("pre.shiki span[style*='color']")
@@ -75,7 +75,7 @@ test("the picked theme persists across a reload", async ({ page, server }) => {
   // of the default
   await page.reload();
   await expect(page.locator("#themeSel")).toHaveValue("gruvbox");
-  await expect(page.locator(".card iframe[src]")).toHaveAttribute("src", /theme=gruvbox/);
+  await expect(page.locator('.card iframe[src*="part=0"]')).toHaveAttribute("src", /theme=gruvbox/);
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -171,14 +171,17 @@ test("a theme switch in one tab re-themes another open tab via SSE", async ({
   await page.goto(server.url);
   const other = await context.newPage();
   await other.goto(server.url);
-  await expect(other.locator(".card iframe[src]")).toHaveAttribute("src", /theme=github/);
+  await expect(other.locator('.card iframe[src*="part=0"]')).toHaveAttribute("src", /theme=github/);
 
   // switch in the first tab; the second re-themes off the theme-changed SSE
   // event without its own user action
   await page.locator("#themeSel").selectOption("gruvbox");
 
   await expect(other.locator("#themeSel")).toHaveValue("gruvbox");
-  await expect(other.locator(".card iframe[src]")).toHaveAttribute("src", /theme=gruvbox/);
+  await expect(other.locator('.card iframe[src*="part=0"]')).toHaveAttribute(
+    "src",
+    /theme=gruvbox/,
+  );
   await expect
     .poll(() =>
       other.evaluate(() =>

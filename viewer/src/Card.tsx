@@ -16,27 +16,15 @@ import {
   isReadonly,
   relTime,
   sessionLabel,
-  type DiffPart as DiffPartData,
   type ImagePart as ImagePartData,
   type JsonPart as JsonPartData,
-  type CodePart as CodePartData,
-  type MarkdownPart as MarkdownPartData,
-  type MermaidPart as MermaidPartData,
   type Surface,
-  type TerminalPart as TerminalPartData,
   type TracePart as TracePartData,
   surfaceLink,
 } from "./api.ts";
-import { escapeHtml } from "../../server/surfacePage.ts";
-import { CodePart } from "./CodePart.tsx";
-import { DiffPart } from "./DiffPart.tsx";
 import { CommentIcon, LinkIcon, OpenIcon, TrashIcon } from "./icons.tsx";
 import { ImagePart } from "./ImagePart.tsx";
 import { JsonPart } from "./JsonPart.tsx";
-import { MarkdownPart } from "./MarkdownPart.tsx";
-import { MermaidPart } from "./MermaidPart.tsx";
-import { SandboxedPart } from "./SandboxedPart.tsx";
-import { TerminalPart } from "./TerminalPart.tsx";
 import { activeTheme, resolvedMode } from "./theme.ts";
 import { TracePart } from "./TracePart.tsx";
 import {
@@ -50,27 +38,27 @@ import {
   type ViewComment,
 } from "./state.ts";
 
-// Comment text is plain text — it already renders as an escaped text node — but
-// it is shown right beside agent-rendered surfaces, so for consistency it goes
-// through the same opaque-origin sandbox: the text is escaped to a string here
-// and only parsed inside the iframe. `pre-wrap` preserves the author's line
-// breaks; the height comes from the resize bridge (a one-liner clamps to ~24px).
-const CMT_CSS = `
-body {
-  margin: 0;
-  background: transparent;
-  color: var(--text);
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
-/* pre-wrap lives on the text wrapper, NOT body — otherwise the newlines the
-   sandbox template puts around the body would render as blank lines. */
-.t { white-space: pre-wrap; word-break: break-word; }
-`;
+// Part kinds that become HTML and so render inside a sandboxed iframe served
+// from /s/:id — author html plus the server-rendered rich kinds (markdown/code/
+// diff/terminal) and the self-rendering mermaid doc. image/trace/json are data
+// the viewer renders natively (text nodes / <img> / JSX), never an iframe.
+const SANDBOXED_KINDS = new Set(["html", "markdown", "code", "diff", "terminal", "mermaid"]);
+
+// A per-kind class on each part iframe — purely a stable styling/selector hook
+// (sizing comes from the bare `iframe` rule); html parts carry none, matching
+// the generic `.card iframe` they always used.
+const FRAME_CLASS: Record<string, string> = {
+  markdown: "mdframe",
+  code: "codeframe",
+  diff: "diffframe",
+  terminal: "termframe",
+  mermaid: "mermaidframe",
+};
 
 // Card registry keyed by surface id: the "new surface" pill scrolls to the
-// card element, and each card tracks its html-part iframes so the postMessage
-// bridge in App can resolve the source surface + iframe by contentWindow (a
-// surface may have more than one html part, so a card may own several frames).
+// card element, and each card tracks its sandboxed-part iframes so the
+// postMessage bridge in App can resolve the source surface + iframe by
+// contentWindow (a surface may have several sandboxed parts → several frames).
 export const cardEls = new Map<string, { card: HTMLDivElement; iframes: Set<HTMLIFrameElement> }>();
 
 // Resolve which surface + iframe a postMessage came from, by contentWindow.
@@ -81,6 +69,14 @@ export function frameForSource(source: unknown): { id: string; iframe: HTMLIFram
     }
   }
   return null;
+}
+
+// Size a surface iframe from a height the in-frame bridge reported. Min one
+// line, max generous enough for a long diff/markdown without runaway growth.
+const MIN_FRAME_H = 24;
+const MAX_FRAME_H = 4000;
+export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unknown): void {
+  iframe.style.height = Math.min(Math.max(Number(reportedHeight), MIN_FRAME_H), MAX_FRAME_H) + "px";
 }
 
 // While a deep-link scroll poll is active, IntersectionObserver callbacks on
@@ -142,9 +138,9 @@ function pollScrollIntoView(el: HTMLElement, surfaceId: string): () => void {
 export function Card(props: { surface: Surface }) {
   let card!: HTMLDivElement;
   const iframes = new Set<HTMLIFrameElement>();
-  // Absolute part index -> its iframe, for html parts only. Lets the version
-  // dropdown rebuild each `/s/:id?part=N` src across every html part.
-  const htmlFrames = new Map<number, HTMLIFrameElement>();
+  // Absolute part index -> its sandboxed-part iframe. Lets the version dropdown
+  // rebuild each `/s/:id?part=N` src across every part that has a frame.
+  const partFrames = new Map<number, HTMLIFrameElement>();
   let stopPoll: (() => void) | undefined;
 
   // React to scrollTarget changes — start the polling scroll when this card
@@ -203,8 +199,10 @@ export function Card(props: { surface: Surface }) {
                 onChange={(e) => {
                   const ver = e.currentTarget.value;
                   const cb = Date.now();
-                  for (const [part, frame] of htmlFrames) {
-                    frame.src = `/s/${props.surface.id}?part=${part}&ver=${ver}&cb=${cb}&theme=${activeTheme()}&mode=${resolvedMode()}`;
+                  for (const [part, frame] of partFrames) {
+                    frame.src = appPath(
+                      `/s/${props.surface.id}?part=${part}&ver=${ver}&cb=${cb}&theme=${activeTheme()}&mode=${resolvedMode()}`,
+                    );
                   }
                 }}
               >
@@ -232,17 +230,24 @@ export function Card(props: { surface: Surface }) {
               </div>
             }
           >
-            <Match when={part().kind === "html"}>
+            {/* Every kind that becomes HTML renders the same way: a sandboxed
+                iframe pointed at /s/:id?part=N, which the server renders (author
+                html, server-rendered markdown/code/diff/terminal, or the
+                self-rendering mermaid doc). The src changes only when the
+                version, active theme, or resolved light/dark mode does, so
+                unrelated refetches never reload it. */}
+            <Match when={SANDBOXED_KINDS.has(part().kind)}>
               <iframe
                 ref={(el) => {
-                  htmlFrames.set(i, el);
+                  partFrames.set(i, el);
                   iframes.add(el);
                   onCleanup(() => {
-                    htmlFrames.delete(i);
+                    partFrames.delete(i);
                     iframes.delete(el);
                   });
                 }}
                 sandbox="allow-scripts"
+                class={FRAME_CLASS[part().kind]}
                 title={
                   props.surface.parts.length > 1
                     ? `${props.surface.title} (part ${i + 1})`
@@ -253,29 +258,14 @@ export function Card(props: { surface: Surface }) {
                 )}
               ></iframe>
             </Match>
-            <Match when={part().kind === "markdown"}>
-              <MarkdownPart part={part() as MarkdownPartData} />
-            </Match>
-            <Match when={part().kind === "mermaid"}>
-              <MermaidPart part={part() as MermaidPartData} />
-            </Match>
-            <Match when={part().kind === "diff"}>
-              <DiffPart part={part() as DiffPartData} />
-            </Match>
             <Match when={part().kind === "image"}>
               <ImagePart part={part() as ImagePartData} />
             </Match>
             <Match when={part().kind === "trace"}>
               <TracePart part={part() as TracePartData} />
             </Match>
-            <Match when={part().kind === "terminal"}>
-              <TerminalPart part={part() as TerminalPartData} />
-            </Match>
             <Match when={part().kind === "json"}>
               <JsonPart part={part() as JsonPartData} />
-            </Match>
-            <Match when={part().kind === "code"}>
-              <CodePart part={part() as CodePartData} />
             </Match>
           </Switch>
         )}
@@ -421,11 +411,11 @@ function CommentRow(props: { comment: ViewComment }) {
       data-cid={props.comment.id}
     >
       <span class="who">{props.comment.author === "user" ? "you" : props.comment.author}</span>
-      <SandboxedPart
-        class="cmtframe"
-        body={`<div class="t">${escapeHtml(props.comment.text)}</div>`}
-        css={CMT_CSS}
-      />
+      {/* Plain comment text rendered as a Solid text node — escapes by
+          construction (the invariant's option-(b) for data), so no iframe is
+          needed. `white-space: pre-wrap` (in styles.css) keeps the author's
+          line breaks. */}
+      <div class="cmt-text">{props.comment.text}</div>
       <Show when={isUser()}>
         <button class="copy" title="Copy for pasting to your agent" onClick={copy}>
           ⧉

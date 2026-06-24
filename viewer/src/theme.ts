@@ -27,9 +27,10 @@ export const activeTheme = activeThemeState;
 // `@media (prefers-color-scheme: dark)` rules key off. Surface parts render in
 // separate iframes whose own scheme resolution can diverge from the chrome's
 // (an embedder doesn't reliably propagate it across the frame boundary), so
-// each frame is pinned to this mode instead (Card html parts via the `mode`
-// query param; SandboxedPart rich/comment frames via renderSandboxedPart). It
-// is reactive, so an OS flip rebuilds the frames in lockstep with the chrome.
+// each frame is pinned to this mode instead — every part frame carries it as
+// the `/s/:id?mode=` query param, so the server bakes the resolved scheme into
+// the rendered doc. It is reactive, so an OS flip reloads the frames in lockstep
+// with the chrome.
 const darkQuery =
   typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
 const [prefersDark, setPrefersDark] = createSignal(!!darkQuery?.matches);

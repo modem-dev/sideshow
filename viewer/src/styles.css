@@ -451,6 +451,10 @@ select.vbadge {
 .card-head .act.icon.del:hover {
   color: var(--danger);
 }
+/* Every part that becomes HTML (html, markdown, code, diff, terminal, mermaid)
+   renders as a sandboxed iframe pointed at /s/:id. These rules only size the
+   frame and draw the card separator; the in-frame resize bridge sets the real
+   height (this 120px is just a seed so there's no zero-height flash). */
 iframe {
   display: block;
   width: 100%;
@@ -458,27 +462,6 @@ iframe {
   border: none;
   border-top: 0.5px solid var(--border);
   background: transparent;
-}
-/* Rich parts (markdown, mermaid, diff) render inside opaque-origin sandbox
-   iframes — their content styles live in each component's CSS string, shipped
-   into the frame. These rules only size the frame in the card; the bridge sets
-   its height from the reported content height. */
-.partframe {
-  display: block;
-  width: 100%;
-  border: 0;
-  background: transparent;
-}
-.mdframe {
-  border-top: 0.5px solid var(--border);
-}
-.diffpart {
-  border-top: 0.5px solid var(--border);
-}
-.diff-error {
-  padding: 10px 14px;
-  font-size: 12px;
-  color: var(--faint);
 }
 /* Shown when a part's kind isn't recognized by this (possibly stale) viewer. */
 .part-unsupported {
@@ -503,34 +486,10 @@ iframe {
   font-size: 12px;
   color: var(--muted);
 }
-/* Terminal part renders inside a sandbox iframe (its window styles ship in
-   TerminalPart's CSS string); this only draws the separator from the card. */
-.termframe {
-  border-top: 0.5px solid var(--border);
-}
 .asset-gone {
   padding: 10px 14px;
   font-size: 12px;
   color: var(--faint);
-}
-.mermaidpart {
-  border-top: 0.5px solid var(--border);
-}
-.mermaid-error {
-  padding: 10px 14px;
-  font-size: 12px;
-  color: var(--faint);
-  text-align: left;
-}
-.mermaid-error pre {
-  margin: 6px 0 0;
-  padding: 8px 10px;
-  background: var(--panel);
-  border: 0.5px solid var(--border);
-  border-radius: 8px;
-  overflow: auto;
-  font: 12px var(--font-mono, ui-monospace, monospace);
-  color: var(--text);
 }
 .tracepart {
   border-top: 0.5px solid var(--border);
@@ -666,12 +625,6 @@ iframe {
 .json-null {
   color: var(--faint);
 }
-.codepart {
-  border-top: 0.5px solid var(--border);
-}
-.codeframe {
-  border-top: 0.5px solid var(--border);
-}
 /* The thread is layout only — the comment list and the footer toolbar each draw
    their own full-width separator and padding. That keeps every divider spanning
    the whole card and the spacing identical whether or not the card has comments
@@ -694,15 +647,14 @@ iframe {
 .cmt.user .who {
   color: var(--accent);
 }
-/* Comment text renders in an opaque-origin sandbox iframe (its text styles ship
-   in CMT_CSS). flex:1 takes the row's free space; the resize bridge sets height,
-   but seed a one-line height so there's no tall-iframe flash before it reports. */
-.cmtframe {
+/* Comment text is plain text rendered as a Solid text node (escapes by
+   construction — no iframe), so it lives in the trusted DOM. flex:1 takes the
+   row's free space; pre-wrap keeps the author's line breaks. */
+.cmt-text {
   flex: 1;
   min-width: 0;
-  height: 24px;
-  border: 0;
-  background: transparent;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .cmt .when {
   flex: none;

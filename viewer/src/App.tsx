@@ -2,8 +2,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show }
 import { AgentMark } from "./agentMarks.tsx";
 import { api, isReadonly, layoutMode, relTime, sessionLabel, type SessionRow } from "./api.ts";
 import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
-import { Card, cardEls, frameForSource } from "./Card.tsx";
-import { applyFrameHeight } from "./SandboxedPart.tsx";
+import { applyFrameHeight, Card, cardEls, frameForSource } from "./Card.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
 import { activeTheme, initTheme, setTheme, themeOptions } from "./theme.ts";

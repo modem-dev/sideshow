@@ -212,6 +212,6 @@ test("readonly cards hide comment and delete controls but keep read actions", as
   await expect(card.locator(".act.del")).toHaveCount(0);
   await expect(card.locator(".act.copy")).toBeVisible();
   await expect(card.locator(".act.open")).toBeVisible();
-  await expect(card.frameLocator(".cmtframe").locator("body")).toContainText("existing feedback");
+  await expect(card.locator(".cmt-text")).toContainText("existing feedback");
   await expect(card.locator(".composer")).toHaveCount(0);
 });

@@ -47,15 +47,23 @@ consciously, not as a side effect):
   kit's CSS/JS into the sandbox after the base. Runtime-agnostic; allowlisted in
   `surfaceParts` and listed at `/api/kits`. Adding a kit is a registry entry +
   a guide bullet — no new part kind, no native-render surface.
+- `server/richRender.ts` — server-side renderers for the rich kinds
+  (`renderMarkdown`/`renderCode`/`renderDiff`/`renderTerminal` → `{body, css}`),
+  runtime-agnostic so they run on the Worker DO too (shiki on the JS regex
+  engine, @pierre/diffs SSR via `shiki-js`, markdown-it, ansi_up — no WASM/DOM).
+  `/s/:id` calls these and wraps the result in `renderSandboxedPart`.
 - `server/surfacePage.ts` — sandboxed documents for surface markup. `renderHtmlPage`
   wraps an html part (CDN-allowlist CSP + the postMessage bridge: resize,
   sendPrompt, openLink) and injects any opted-in kits (`kits.ts`).
-  `renderSandboxedPart` wraps markup the viewer rendered
-  to a string (markdown/mermaid/diff/terminal) under a tighter CSP (no
-  `connect-src`, no CDN) — see `viewer/src/SandboxedPart.tsx`. Image and trace
-  parts stay native because they have no HTML sink (the viewer renders them with
-  text nodes / `<img>` / JSX). No agent markup is ever set as `innerHTML` in the
-  trusted viewer origin.
+  `renderSandboxedPart` wraps a server-rendered rich body (markdown/code/diff/
+  terminal — see `richRender.ts`) under a tighter CSP (no `connect-src`, no CDN).
+  `renderMermaidPage` is the one exception: mermaid needs a DOM, so it can't be
+  server-rendered — instead it emits a self-rendering doc that loads mermaid from
+  the CDN allowlist (so it uses the html-part CSP, which permits the CDN). Image
+  and trace parts stay native because they have no HTML sink (the viewer renders
+  them with text nodes / `<img>` / JSX), and comments render as escaped Solid
+  text nodes. No agent markup is ever set as `innerHTML` in the trusted viewer
+  origin.
 - `server/themes.ts` — theme registry (github/gruvbox/one), runtime-agnostic so
   both server and viewer import it. One `Palette` per light/dark per theme; the
   viewer-chrome vars and the html-part `--color-*` tokens are both _derived_
@@ -90,35 +98,40 @@ consciously, not as a side effect):
   channel, so any markup that executes there can read every surface, act as the
   user, and inject prompts back to the agent. The rule applies to every part
   kind, comments, and anything else agent-authored. The two safe ways to render
-  it: (a) **build a STRING and hand it to a sandbox iframe** — `SandboxedPart`
-  for viewer-rendered parts (markdown/mermaid/diff/terminal, comments) and
-  `renderHtmlPage` at `/s/:id` for html parts; or (b) **keep it as data and
+  it: (a) **build a STRING and serve it from `/s/:id` under a `sandbox` CSP
+  header** — `renderHtmlPage` for html parts, `renderSandboxedPart` for the
+  server-rendered rich kinds (markdown/code/diff/terminal), and
+  `renderMermaidPage` for the mermaid CDN doc; or (b) **keep it as data and
   render with Solid text nodes / element attributes**, which escape by
-  construction (image, trace). String-building in the viewer is fine — a string
-  is not a DOM sink; danger only starts when it reaches the DOM, which must
-  happen at an opaque origin. When you add a part kind, pick (a) or (b); never a
-  third way. The iframes are sandboxed without `allow-same-origin` (opaque
-  origin) and `connect-src`-free for rich parts (no exfil even if contained
-  script runs); never weaken this. Treat anything agent- or user-produced as
-  untrusted, whatever its kind or route. Content served from a board-origin URL
-  must be sandboxed by the response itself (a `sandbox` CSP **header**), not just
-  the embedding iframe — a top-level load bypasses the attribute (as `/s/:id`
-  does).
+  construction (image, trace, and comments — plain escaped text). String-building
+  on the server is fine — a string is not a DOM sink; danger only starts when it
+  reaches the DOM, which must happen at an opaque origin. When you add a part
+  kind, pick (a) or (b); never a third way. The iframes are sandboxed without
+  `allow-same-origin` (opaque origin) and `connect-src`-free for rich parts (no
+  exfil even if contained script runs); never weaken this. Treat anything agent-
+  or user-produced as untrusted, whatever its kind or route. Content served from
+  a board-origin URL must be sandboxed by the response itself (a `sandbox` CSP
+  **header**), not just the embedding iframe — a top-level load bypasses the
+  attribute (as `/s/:id` does).
 - Untrusted content can reach the host only through narrow channels (the
   postMessage bridge, the write API). Gate each so contained content can't
   impersonate the user, exfiltrate, or exhaust the server; add any new channel
   the same way.
-- Rich/comment frames stage their rendered doc at `/f/:id` (`POST /api/frames`)
-  and load it by real URL, like html parts at `/s/:id` — served with a `sandbox`
-  CSP header, so opaque origin, not srcdoc/blob. Keep the header; don't render
-  rich markup inline in the viewer.
+- Every part that becomes HTML (html + the rich kinds) is rendered server-side
+  and served from `/s/:id?part=N` by real URL under a `sandbox` CSP header —
+  opaque origin, not srcdoc/blob (which a Chrome 149 field trial fails to lay
+  out). There is no viewer→server render round-trip and no transient frame store;
+  don't reintroduce one, and don't render rich markup inline in the trusted
+  viewer. Versioned+themed `/s/:id` responses are immutable, so they carry a
+  long-lived `Cache-Control` and a per-`(id,part,version,theme,mode)` in-memory
+  render cache (single-instance DO; swap for KV/Cache API if multi-instance).
 - WebKit quirk in sandboxed iframes: ResizeObserver's initial callback may not
   fire and `documentElement.scrollHeight` ratchets to viewport height — the
   bridge reports `body.scrollHeight` on `load` plus staggered timers. Don't
   "simplify" it back; e2e covers it on real WebKit. Watch the inverse too: the
   bridge sizes the frame from `body.scrollHeight`, so a `white-space: pre-wrap`
-  on `body` makes the template's surrounding newlines render as blank lines and
-  inflate the height — scope `pre-wrap` to a wrapper element (see `CMT_CSS`).
+  on `body` makes a template's surrounding newlines render as blank lines and
+  inflate the height — scope `pre-wrap` to a wrapper element.
 - Feedback cursor: each session carries `agentSeq`, the highest comment seq
   already delivered to the agent. Piggyback collection and `author=user`
   waits advance it, and `author=user` session waits with no explicit `after`

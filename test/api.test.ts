@@ -103,7 +103,7 @@ test("publish into unknown session 404s instead of silently creating", async () 
   assert.equal(res.status, 404);
 });
 
-test("publishes a combined html+diff surface; /s renders the html part only", async () => {
+test("publishes a combined html+diff surface; /s server-renders both parts opaque-sandboxed", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/surfaces",
@@ -127,58 +127,49 @@ test("publishes a combined html+diff surface; /s renders the html part only", as
   assert.equal(full.parts[0].html, "<p>diagram</p>");
   assert.equal(full.parts[1].patch, "@@ -1 +1 @@\n-a\n+b");
 
-  // /s renders the requested html part; a diff part has no html doc
+  // /s renders the html part...
   const part0 = await app.request(`/s/${surface.id}?part=0`);
   assert.ok((await part0.text()).includes("<p>diagram</p>"));
-  assert.equal((await app.request(`/s/${surface.id}?part=1`)).status, 404);
+  // ...and now also server-renders the diff part (no viewer round-trip): the
+  // @pierre/diffs SSR output wraps each file in a <diffs-container>.
+  const part1 = await app.request(`/s/${surface.id}?part=1`);
+  assert.equal(part1.status, 200);
+  assert.ok((await part1.text()).includes("diffs-container"));
 
-  // ...and it carries a `sandbox` CSP response header, so a top-level load of
-  // the document (not just the embedded iframe) runs the agent's script in an
-  // opaque origin — never the board origin. allow-scripts keeps the bridge
-  // working; allow-same-origin must never appear (it would defeat the sandbox).
-  const csp = part0.headers.get("content-security-policy") ?? "";
-  assert.match(csp, /\bsandbox\b/);
-  assert.match(csp, /\ballow-scripts\b/);
-  assert.doesNotMatch(csp, /allow-same-origin/);
+  // Both carry the `sandbox` CSP response header, so a top-level load of the
+  // document (not just the embedded iframe) runs in an opaque origin — never the
+  // board origin. allow-scripts keeps the bridge working; allow-same-origin must
+  // never appear (it would defeat the sandbox).
+  for (const res of [part0, part1]) {
+    const csp = res.headers.get("content-security-policy") ?? "";
+    assert.match(csp, /\bsandbox\b/);
+    assert.match(csp, /\ballow-scripts\b/);
+    assert.doesNotMatch(csp, /allow-same-origin/);
+  }
 });
 
-test("/api/frames stages a viewer-rendered doc that /f/:id serves opaque-sandboxed", async () => {
+test("the viewer render round-trip (POST /api/frames + GET /f/:id) is gone", async () => {
+  // Rich parts now render server-side at /s/:id, so the transient frame store and
+  // its write endpoint were removed; both must be unreachable (no public-read
+  // POST exception lingering, no in-memory doc host).
   const app = makeApp();
-  const html = "<!doctype html><p>rich</p>";
-  const staged = await app.request("/api/frames", json({ html }));
-  assert.equal(staged.status, 201);
-  const { id } = (await staged.json()) as { id: string };
-  assert.ok(id);
-
-  const served = await app.request(`/f/${id}`);
-  assert.equal(served.status, 200);
-  assert.equal(await served.text(), html);
-  // The load-bearing header: opaque origin on any load (incl. a top-level open),
-  // allow-scripts for the bridge, never allow-same-origin.
-  const csp = served.headers.get("content-security-policy") ?? "";
-  assert.match(csp, /\bsandbox\b/);
-  assert.match(csp, /\ballow-scripts\b/);
-  assert.doesNotMatch(csp, /allow-same-origin/);
-  assert.equal(served.headers.get("x-content-type-options"), "nosniff");
-
-  // Unknown / evicted id is a clean 404; empty body is a 400.
-  assert.equal((await app.request("/f/nope")).status, 404);
-  assert.equal((await app.request("/api/frames", json({ html: "" }))).status, 400);
+  assert.equal((await app.request("/api/frames", json({ html: "<p>x</p>" }))).status, 404);
+  assert.equal((await app.request("/f/anything")).status, 404);
 });
 
-test("/api/frames is reachable by a public-read viewer (rich parts must render to be viewed)", async () => {
-  const app = makeApp("secret", { publicRead: "full" });
-  // No token: a GET read is allowed, and so is staging a rich frame to view it.
-  const staged = await app.request("/api/frames", json({ html: "<p>x</p>" }));
-  assert.equal(staged.status, 201);
-  const { id } = (await staged.json()) as { id: string };
-  assert.equal((await app.request(`/f/${id}`)).status, 200);
-});
-
-test("/api/frames still requires auth when there is no public-read", async () => {
-  const app = makeApp("secret");
-  assert.equal((await app.request("/api/frames", json({ html: "<p>x</p>" }))).status, 401);
-  assert.equal((await app.request("/api/frames", authedJson({ html: "<p>x</p>" }))).status, 201);
+test("/s served versioned + themed is cacheable; an unpinned load is not", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/surfaces",
+    json({ title: "C", parts: [{ kind: "code", code: "x", language: "text" }] }),
+  );
+  const { id, version } = (await res.json()) as any;
+  // What the viewer always sends (ver + theme pinned) is immutable → long-cache.
+  const pinned = await app.request(`/s/${id}?part=0&ver=${version}&theme=github&mode=light`);
+  assert.match(pinned.headers.get("cache-control") ?? "", /immutable/);
+  // A bare load resolves to "current", which can change → must not be cached.
+  const bare = await app.request(`/s/${id}?part=0`);
+  assert.match(bare.headers.get("cache-control") ?? "", /no-cache/);
 });
 
 test("a snippet's kits ride the html part and inject the kit CSS/JS at /s", async () => {
@@ -279,7 +270,7 @@ test("publish_surface MCP tool round-trips a diff part", async () => {
   assert.equal(full.parts[0].patch, "@@ -1 +1 @@\n-x\n+y");
 });
 
-test("publishes a markdown part; /s has no html doc for it", async () => {
+test("publishes a markdown part; /s server-renders it to sandboxed html", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/surfaces",
@@ -292,8 +283,14 @@ test("publishes a markdown part; /s has no html doc for it", async () => {
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
   assert.equal(full.parts[0].kind, "markdown");
   assert.equal(full.parts[0].markdown, "## Plan\n\n- step one");
-  // markdown is viewer-rendered data, not a sandboxed html doc
-  assert.equal((await app.request(`/s/${surface.id}?part=0`)).status, 404);
+  // markdown now renders server-side: the prose is in the document, and it is
+  // served opaque-sandboxed (the load-bearing CSP header).
+  const doc = await app.request(`/s/${surface.id}?part=0`);
+  assert.equal(doc.status, 200);
+  const body = await doc.text();
+  assert.ok(body.includes("<h2>Plan</h2>"));
+  assert.ok(body.includes("step one"));
+  assert.match(doc.headers.get("content-security-policy") ?? "", /\bsandbox\b/);
 });
 
 test("publish_surface MCP tool keeps markdown parts and drops empty ones", async () => {
@@ -343,11 +340,13 @@ test("publish_surface MCP tool round-trips a terminal part", async () => {
   assert.equal(full.parts[0].text, "$ echo hi\n\x1b[32mhi\x1b[0m");
   assert.equal(full.parts[0].cols, 80);
   assert.equal(full.parts[0].title, "sh");
-  // a terminal part has no html doc, so /s 404s like diff/image/trace
-  assert.equal((await app.request(`/s/${payload.id}?part=0`)).status, 404);
+  // terminal now renders server-side (ansi_up → styled window) at /s
+  const doc = await app.request(`/s/${payload.id}?part=0`);
+  assert.equal(doc.status, 200);
+  assert.ok((await doc.text()).includes("term-body"));
 });
 
-test("publishes a mermaid part; /s has no html doc for it", async () => {
+test("publishes a mermaid part; /s emits a self-rendering CDN doc", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/surfaces",
@@ -360,8 +359,15 @@ test("publishes a mermaid part; /s has no html doc for it", async () => {
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
   assert.equal(full.parts[0].kind, "mermaid");
   assert.equal(full.parts[0].mermaid, "graph TD; A-->B");
-  // mermaid is viewer-rendered data, not a sandboxed html doc
-  assert.equal((await app.request(`/s/${surface.id}?part=0`)).status, 404);
+  // mermaid can't render without a DOM, so /s emits a sandboxed doc that loads
+  // mermaid from the CDN and renders the source in-frame. The doc carries the
+  // source and the CDN import, and is served opaque-sandboxed.
+  const doc = await app.request(`/s/${surface.id}?part=0`);
+  assert.equal(doc.status, 200);
+  const body = await doc.text();
+  assert.ok(body.includes("esm.sh/mermaid"));
+  assert.ok(body.includes("graph TD; A--\\u003eB") || body.includes("graph TD; A-->B"));
+  assert.match(doc.headers.get("content-security-policy") ?? "", /\bsandbox\b/);
 });
 
 test("publishes a json part; round-trips data and 404s on /s", async () => {
@@ -423,7 +429,12 @@ test("publishes a code part; round-trips code/lang/title and 404s on /s", async 
   assert.equal(full.parts[0].code, "const x = 42;\n");
   assert.equal(full.parts[0].language, "ts");
   assert.equal(full.parts[0].title, "a.ts");
-  assert.equal((await app.request(`/s/${surface.id}?part=0`)).status, 404);
+  // code now renders server-side (shiki) at /s, with the filename and copy button
+  const doc = await app.request(`/s/${surface.id}?part=0`);
+  assert.equal(doc.status, 200);
+  const body = await doc.text();
+  assert.ok(body.includes("shiki"));
+  assert.ok(body.includes("a.ts"));
 });
 
 test("code part without code is rejected", async () => {

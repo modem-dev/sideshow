@@ -1,6 +1,7 @@
 import { kitAssets } from "./kits.ts";
 import {
   type Mode,
+  type Palette,
   schemeCss,
   type Theme,
   themeById,
@@ -293,6 +294,148 @@ export function renderSandboxedPart(doc: {
 </head>
 <body>
 ${doc.body}
+<script>${BRIDGE_JS}</script>
+</body>
+</html>`;
+}
+
+// Mermaid can't run without a DOM, so it can't be server-rendered like the
+// other rich parts; instead the server emits a self-rendering doc that loads
+// mermaid from the CDN allowlist and renders inside the sandboxed iframe (the
+// "(B)" path). Unlike the other rich parts it needs CDN script/connect access,
+// so it uses the html-part CSP (buildCsp), NOT the tight rich CSP. mermaid's
+// own DOMPurify (securityLevel 'strict') runs first; the opaque origin is the
+// second boundary. Theme colors are baked into the diagram at render time, so —
+// like shiki's flip — they're PINNED to the chrome-resolved mode the viewer
+// passed (mermaid can't do a media-query flip); absent mode defaults to light.
+
+const MERMAID_CSS = `
+body { margin: 0; padding: 14px 16px; background: transparent; text-align: center; }
+svg { max-width: 100%; height: auto; }
+.mmd-error {
+  text-align: left; color: var(--danger);
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.mmd-error pre {
+  margin: 6px 0 0; padding: 8px 10px; color: var(--text);
+  background: var(--panel); border: 0.5px solid var(--border);
+  border-radius: 8px; overflow: auto; white-space: pre-wrap;
+}
+`;
+
+// Mermaid `base` theme variables + themeCSS derived from the resolved palette,
+// so the diagram matches sideshow's look instead of mermaid's stock theme.
+// Mirrors sideshowTheme() in the old viewer MermaidPart, but reads palette
+// fields directly rather than getComputedStyle.
+function mermaidThemeVars(p: Palette): {
+  themeVariables: Record<string, string>;
+  themeCSS: string;
+} {
+  const text = p.text;
+  const muted = p.muted;
+  const border = p.border2;
+  const panel = p.panel;
+  const surface = p.surface;
+  const bg = p.bg;
+  const accent = p.info.text;
+  const accentBg = p.info.bg;
+  return {
+    themeVariables: {
+      fontFamily: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`,
+      fontSize: "14px",
+      primaryColor: panel,
+      primaryBorderColor: border,
+      primaryTextColor: text,
+      secondaryColor: surface,
+      tertiaryColor: bg,
+      mainBkg: panel,
+      nodeBorder: border,
+      lineColor: muted,
+      textColor: text,
+      clusterBkg: bg,
+      clusterBorder: border,
+      edgeLabelBackground: bg,
+      actorBkg: panel,
+      actorBorder: border,
+      actorTextColor: text,
+      actorLineColor: muted,
+      signalColor: muted,
+      signalTextColor: text,
+      labelBoxBkgColor: surface,
+      labelBoxBorderColor: border,
+      labelTextColor: text,
+      loopTextColor: text,
+      noteBkgColor: accentBg,
+      noteBorderColor: border,
+      noteTextColor: text,
+      sequenceNumberColor: surface,
+    },
+    themeCSS: `
+      .node rect, .node polygon, rect.actor, .labelBox { rx: 8px; ry: 8px; }
+      .node rect, rect.actor { stroke-width: 1px; }
+      .edgePath .path, .flowchart-link, .actor-line,
+      .messageLine0, .messageLine1 { stroke-width: 1px; }
+      .node.accent > rect, .node.accent > polygon, .node.accent > circle,
+      .node.accent > path { fill: ${accentBg}; stroke: ${accent}; }
+      .node.accent .nodeLabel, .node.accent span, .node.accent text { fill: ${accent}; color: ${accent}; }
+      .flowchart-link.accentLine, .edgePath.accentLine > .path { stroke: ${accent}; }
+    `,
+  };
+}
+
+// Pinned mermaid CDN module (within CDN_ALLOWLIST). Pinned to a major so a
+// breaking mermaid release can't silently change rendering; bump deliberately.
+const MERMAID_CDN = "https://esm.sh/mermaid@11";
+
+export function renderMermaidPage(doc: {
+  mermaid: string;
+  origin: string;
+  theme?: Theme | string;
+  mode?: Mode;
+}): string {
+  const theme =
+    typeof doc.theme === "string" || doc.theme == null ? themeById(doc.theme) : doc.theme;
+  const palette = doc.mode === "dark" ? theme.dark : theme.light;
+  const { themeVariables, themeCSS } = mermaidThemeVars(palette);
+  // Embed source + theme as JS literals; escape `<` so a `</script>` in the
+  // diagram source can't break out of the module script.
+  const enc = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
+  const loader = `
+import mermaid from ${enc(MERMAID_CDN)};
+const src = ${enc(doc.mermaid ?? "")};
+mermaid.initialize({
+  startOnLoad: false,
+  securityLevel: 'strict',
+  suppressErrorRendering: true,
+  theme: 'base',
+  themeVariables: ${enc(themeVariables)},
+  themeCSS: ${enc(themeCSS)},
+});
+const el = document.getElementById('m');
+try {
+  const { svg } = await mermaid.render('mmd-svg', src);
+  el.innerHTML = svg;
+} catch (e) {
+  // Match the old viewer fallback: a message plus the source echoed so the
+  // agent can see what failed. textContent keeps the source inert.
+  el.className = 'mmd-error';
+  el.textContent = 'Couldn\\u2019t render diagram \\u2014 ' + (e && e.message ? e.message : 'parse error');
+  const pre = document.createElement('pre');
+  pre.textContent = src;
+  el.appendChild(pre);
+}`;
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="${buildCsp(doc.origin)}">
+<base href="${doc.origin}/">
+<style>${viewerThemeCss(theme, doc.mode)}${MERMAID_CSS}</style>
+</head>
+<body>
+<div id="m"></div>
+<script type="module">${loader}</script>
 <script>${BRIDGE_JS}</script>
 </body>
 </html>`;
