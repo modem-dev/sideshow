@@ -99,7 +99,15 @@ consciously, not as a side effect):
   happen at an opaque origin. When you add a part kind, pick (a) or (b); never a
   third way. The iframes are sandboxed without `allow-same-origin` (opaque
   origin) and `connect-src`-free for rich parts (no exfil even if contained
-  script runs); never weaken this.
+  script runs); never weaken this. Treat anything agent- or user-produced as
+  untrusted, whatever its kind or route. Content served from a board-origin URL
+  must be sandboxed by the response itself (a `sandbox` CSP **header**), not just
+  the embedding iframe — a top-level load bypasses the attribute (as `/s/:id`
+  does).
+- Untrusted content can reach the host only through narrow channels (the
+  postMessage bridge, the write API). Gate each so contained content can't
+  impersonate the user, exfiltrate, or exhaust the server; add any new channel
+  the same way.
 - WebKit quirk in sandboxed iframes: ResizeObserver's initial callback may not
   fire and `documentElement.scrollHeight` ratchets to viewport height — the
   bridge reports `body.scrollHeight` on `load` plus staggered timers. Don't
@@ -116,14 +124,11 @@ consciously, not as a side effect):
 - `SqlStore` schema changes need in-place migration — deployed Durable
   Objects can't be reset. Follow the `pragma_table_info` probe pattern in its
   constructor.
-- A theme switch must re-theme every layer or it looks broken. Server-side html
-  parts are injected at `/s/:id` (so the viewer keys each iframe `src` on
-  `activeTheme()` to reload them); `viewer/src/theme.ts` swaps the chrome
-  `<style>`. `MarkdownPart`/`DiffPart`/`MermaidPart` read `activeTheme()`
-  reactively and re-render their string (shiki + mermaid bake colors in), which
-  rebuilds the `srcdoc` `SandboxedPart` wraps it in — so the iframe reloads with
-  the new chrome vars (`viewerThemeCss`) injected. The terminal is intentionally
-  theme-independent. Add presets to the registry, not per-component.
+- A theme switch must re-theme every layer or it looks broken — the chrome, the
+  server-rendered html parts (reloaded), and each sandboxed-iframe part (whose
+  colors are baked into its string, so it must re-render, not just restyle). The
+  terminal is intentionally theme-independent. Add presets to the registry, not
+  per-component.
 - The server reads `viewer/dist/index.html` and `guide/` files at boot —
   rebuild (`npm run build:viewer`) and restart to see viewer changes.
   `npm run dev` runs a Vite watch build alongside the server; the e2e suite
