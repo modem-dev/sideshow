@@ -1,0 +1,15 @@
+#:schema https://conductor.build/schemas/settings.repo.schema.json
+
+[scripts]
+# npm is the package manager (packageManager npm@11.17.0, package-lock.json).
+setup = "npm install"
+
+# `npm run dev` builds the viewer, watches it, and runs the server with
+# `node --watch`. The server reads PORT (server/index.ts: process.env.PORT ?? 8228),
+# so CONDUCTOR_PORT gives each workspace its own listener.
+run = "PORT=$CONDUCTOR_PORT npm run dev"
+
+# Each workspace has its own port (CONDUCTOR_PORT) and its own gitignored
+# data/sideshow.json under the workspace path, so nothing shared blocks
+# multiple workspaces running at once.
+run_mode = "concurrent"
