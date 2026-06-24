@@ -9,6 +9,7 @@ import { SqlStore } from "./sqlStore.ts";
 
 interface Env {
   BOARD: DurableObjectNamespace<SideshowBoard>;
+  BROWSER: BrowserRun;
   SIDESHOW_TOKEN?: string;
   SIDESHOW_PUBLIC_READ?: string;
 }
@@ -42,7 +43,7 @@ export class SideshowBoard extends DurableObject<Env> {
 }
 
 export default {
-  fetch(request: Request, env: Env) {
+  async fetch(request: Request, env: Env) {
     if (!env.SIDESHOW_TOKEN) {
       return new Response(
         "sideshow is not configured: set a token first —\n\n  wrangler secret put SIDESHOW_TOKEN\n",
@@ -50,6 +51,33 @@ export default {
       );
     }
     const board = env.BOARD.get(env.BOARD.idFromName("default"));
-    return board.fetch(request);
+
+    // Screenshot: GET /s/:id.png → PNG of the rendered surface page.
+    // Auth is decided by the app — we forward the user's credentials to the DO
+    // and only proceed if it returns 200.
+    const url = new URL(request.url);
+    const pngMatch = request.method === "GET" && url.pathname.match(/^\/s\/([a-z0-9]+)\.png$/);
+    if (!pngMatch) return board.fetch(request);
+
+    // Let the app decide auth: forward the request (with user cookies/headers)
+    // to the real /s/:id route.
+    const checkUrl = new URL(url);
+    checkUrl.pathname = `/s/${pngMatch[1]}`;
+    checkUrl.searchParams.set("part", "0");
+    const checkRes = await board.fetch(new Request(checkUrl, { headers: request.headers }));
+    if (!checkRes.ok) return checkRes;
+    // Auth passed and surface exists — discard the HTML, take a screenshot.
+    await checkRes.arrayBuffer();
+
+    const target = checkUrl.toString();
+    const screenshot = await env.BROWSER.quickAction("screenshot", {
+      url: target,
+      viewport: { width: 1200, height: 630 },
+      gotoOptions: { waitUntil: "networkidle0", timeout: 15000 },
+      cookies: [{ name: "sideshow_key", value: env.SIDESHOW_TOKEN, domain: url.hostname }],
+    });
+    return new Response(await screenshot.arrayBuffer(), {
+      headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=300" },
+    });
   },
 } satisfies ExportedHandler<Env>;

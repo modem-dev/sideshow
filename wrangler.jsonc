@@ -8,5 +8,6 @@
     "bindings": [{ "name": "BOARD", "class_name": "SideshowBoard" }],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SideshowBoard"] }],
+  "browser": { "binding": "BROWSER" },
   "observability": { "enabled": true },
 }
