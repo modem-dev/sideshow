@@ -1397,6 +1397,30 @@ test("assembles a valid multi-chunk streamed upload and stores it intact", async
   assert.deepEqual([...new Uint8Array(await served.arrayBuffer())], [1, 2, 3, 4, 5, 6, 7, 8, 9]);
 });
 
+test("the global body cap rejects oversize JSON and MCP bodies", async () => {
+  const app = makeApp();
+  // Every write endpoint reads its body with an unbounded c.req.json(); the
+  // global bodyLimit must refuse an oversize one with a 413 before it is read.
+  // An over-cap Content-Length is the cheap path (no body buffered) — assert it
+  // fires on a REST write endpoint and on /mcp, the two body-reading surfaces.
+  const oversize = {
+    "content-type": "application/json",
+    "content-length": String(17 * 1024 * 1024),
+  };
+  const surfaces = await app.request("/api/surfaces", {
+    method: "POST",
+    headers: oversize,
+    body: new Uint8Array(0), // no bytes sent — the Content-Length check fires first
+  });
+  assert.equal(surfaces.status, 413);
+  const mcp = await app.request("/mcp", {
+    method: "POST",
+    headers: oversize,
+    body: new Uint8Array(0),
+  });
+  assert.equal(mcp.status, 413);
+});
+
 test("uploading to an unknown session 404s; serving a missing asset 404s", async () => {
   const app = makeApp();
   const res = await app.request(

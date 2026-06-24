@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { decodeBase64 } from "./base64.ts";
@@ -23,6 +24,14 @@ import { validateSurfaceParts } from "./surfaceParts.ts";
 
 const MAX_SURFACE_BYTES = 2 * 1024 * 1024;
 const MAX_WAIT_SECONDS = 300;
+// Hard ceiling on any request body, applied globally. Every write endpoint
+// reads its body with an unbounded `c.req.json()` (and /mcp likewise), so
+// without this a single oversize POST is an out-of-memory flood — and the local
+// default ships with no auth token, so those endpoints are reachable
+// unauthenticated. Sized to clear the largest legitimate body — a base64 asset
+// uploaded over MCP, ~4/3 of the 5 MiB asset cap — while still bounding a flood.
+// The /api/assets route's own 5 MiB streaming cap is stricter and still applies.
+const MAX_BODY_BYTES = 16 * 1024 * 1024;
 // Bound the session trace: each step's detail is truncated and the per-session
 // list rolls, so memory stays flat no matter how long the agent runs.
 const MAX_TRACE_STEPS = 2000;
@@ -558,6 +567,20 @@ export function createApp({
     }
     return c.text("unauthorized — open this page as /?key=<your token>", 401);
   });
+
+  // Cap every request body. Runs after auth, so an unauthenticated request on a
+  // token-protected board is rejected (401) before its body is ever read; on a
+  // no-token board it still bounds the body. bodyLimit short-circuits on an
+  // oversize Content-Length and otherwise streams-and-aborts at the cap, so a
+  // chunked body (no Content-Length) can't slip past either. /api/assets is
+  // exempt: it streams its own, stricter cap (readBodyCapped, the asset limit),
+  // and a base64 envelope there legitimately runs larger — letting the global
+  // cap also buffer it first would only loosen the asset route's tighter bound.
+  const limitBody = bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: (c) => c.json({ error: "request body too large" }, 413),
+  });
+  app.use("*", (c, next) => (c.req.path === "/api/assets" ? next() : limitBody(c, next)));
 
   // --- pages and docs ---
 
