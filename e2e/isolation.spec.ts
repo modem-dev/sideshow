@@ -94,12 +94,19 @@ test("a surface send is not delivered to the agent as user feedback", async ({
 const openLinkMsg = (url: string) =>
   `<script>parent.postMessage({__sideshow:true,type:"open-link",url:${JSON.stringify(url)}},"*")</script>`;
 
-test("openLink ignores a non-http(s) scheme — no prompt, no open", async ({ page, server }) => {
-  await publish(server.url, {
-    html: openLinkMsg("javascript:alert(1)"),
-    title: "bad",
-    agent: "e2e",
-  });
+test("openLink ignores non-http(s) and malformed urls — no prompt, no open", async ({
+  page,
+  server,
+}) => {
+  // A scheme that parses (javascript:), another (data:), and a string that
+  // fails to parse at all — all must be refused before the confirm.
+  const bad = ["javascript:alert(1)", "data:text/html,<b>x</b>", "::: not a url :::"];
+  const fire = `<script>${bad
+    .map(
+      (u) => `parent.postMessage({__sideshow:true,type:"open-link",url:${JSON.stringify(u)}},"*");`,
+    )
+    .join("")}</script>`;
+  await publish(server.url, { html: fire, title: "bad", agent: "e2e" });
 
   let dialogs = 0;
   page.on("dialog", (d) => {
@@ -111,7 +118,7 @@ test("openLink ignores a non-http(s) scheme — no prompt, no open", async ({ pa
   await expect(page.locator(".card:not(#whatsNew) iframe").first()).toBeVisible();
   await page.waitForTimeout(500);
 
-  // The scheme check returns before the confirm, so no dialog is ever raised.
+  // Each is rejected before the confirm, so no dialog is ever raised.
   expect(dialogs).toBe(0);
 });
 

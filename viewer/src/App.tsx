@@ -323,14 +323,22 @@ async function onBridgeMessage(ev: MessageEvent) {
     });
     toast("Added to this surface’s thread");
   } else if (d.type === "open-link" && isOwnFrame(ev.source)) {
-    // Only ever open real external links. The in-frame click handler already
-    // forwards just http(s) hrefs, but a surface can call openLink() directly
-    // (or post this message raw) with any scheme — javascript:, data:, file: —
-    // so re-check here, host-side, where it can't be bypassed. (noopener already
-    // severs those from the board, but there's no reason to open them at all.)
-    const url = String(d.url);
-    if (!/^https?:\/\//i.test(url)) return;
-    if (confirm(`Open external link?\n\n${url}`)) window.open(url, "_blank", "noopener");
+    // Only ever open real external links. The in-frame click handler forwards
+    // just http(s) hrefs, but a surface can call openLink() directly (or post
+    // this message raw) with any scheme — javascript:, data:, file: — so
+    // re-check host-side, where it can't be bypassed. Parse once and act on the
+    // parsed result: validate `protocol` and open the normalized `href` from the
+    // same parse, so there's no gap between what we check and what window.open
+    // re-parses (and a malformed string is rejected outright).
+    let link: URL;
+    try {
+      link = new URL(String(d.url));
+    } catch {
+      return;
+    }
+    if (link.protocol !== "http:" && link.protocol !== "https:") return;
+    if (confirm(`Open external link?\n\n${link.href}`))
+      window.open(link.href, "_blank", "noopener");
   } else if (d.type === "copy" && isOwnFrame(ev.source)) {
     void navigator.clipboard?.writeText(String(d.text)).catch(() => {});
   }
