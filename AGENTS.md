@@ -108,6 +108,13 @@ consciously, not as a side effect):
   postMessage bridge, the write API). Gate each so contained content can't
   impersonate the user, exfiltrate, or exhaust the server; add any new channel
   the same way.
+- Rich/comment frames load their document from a `blob:` URL, not `srcdoc`: a
+  Chrome 149 field trial breaks layout measurement in opaque-origin _srcdoc_
+  iframes (they report 0 height and never resize). A `blob:` URL under
+  `sandbox="allow-scripts"` (no `allow-same-origin`) is the same opaque origin
+  but a different load path, so it dodges the bug without touching the isolation
+  boundary. Don't switch it back to `srcdoc`; e2e proves the blob frame stays
+  opaque (a script that runs in it can't reach the board).
 - WebKit quirk in sandboxed iframes: ResizeObserver's initial callback may not
   fire and `documentElement.scrollHeight` ratchets to viewport height — the
   bridge reports `body.scrollHeight` on `load` plus staggered timers. Don't
