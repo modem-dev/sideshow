@@ -8,7 +8,7 @@ export interface SurfaceScreenshotPlan {
 
 export function matchSurfaceScreenshot(method: string, pathname: string): string | null {
   if (method !== "GET" && method !== "HEAD") return null;
-  return pathname.match(/^\/s\/([a-z0-9]+)\.png$/)?.[1] ?? null;
+  return pathname.match(/^\/s\/([A-Za-z0-9_-]+)\.png$/)?.[1] ?? null;
 }
 
 export function planSurfaceScreenshot(

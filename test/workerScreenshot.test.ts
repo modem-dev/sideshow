@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { matchSurfaceScreenshot, planSurfaceScreenshot } from "../workers/screenshot.ts";
 
-test("surface screenshot route matches GET and HEAD requests", () => {
-  assert.equal(matchSurfaceScreenshot("GET", "/s/abc123.png"), "abc123");
-  assert.equal(matchSurfaceScreenshot("HEAD", "/s/abc123.png"), "abc123");
+test("surface screenshot route matches GET and HEAD requests for URL-safe ids", () => {
+  assert.equal(matchSurfaceScreenshot("GET", "/s/4tgMLMav_WY.png"), "4tgMLMav_WY");
+  assert.equal(matchSurfaceScreenshot("HEAD", "/s/abc-123_DEF.png"), "abc-123_DEF");
   assert.equal(matchSurfaceScreenshot("POST", "/s/abc123.png"), null);
   assert.equal(matchSurfaceScreenshot("HEAD", "/s/abc123"), null);
 });
