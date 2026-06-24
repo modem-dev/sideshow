@@ -1,72 +1,297 @@
 <style>
-  .zoo-wrap {
+  .shop {
     font-family: var(--font-sans);
     color: var(--color-text-primary);
+    font-size: 14px;
   }
-  .zoo-row {
+  .shop .bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .shop .bar input[type="text"] {
+    flex: 1;
+    max-width: 240px;
+  }
+  .shop .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px dashed var(--color-border-secondary);
+    color: var(--color-text-secondary);
+    border-radius: var(--border-radius-md);
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .shop .chip:hover {
+    border-color: var(--color-border-primary);
+    color: var(--color-text-primary);
+  }
+  .shop .spacer {
+    flex: 1;
+  }
+  .shop .card {
+    border: 1px solid var(--color-border-tertiary);
+    border-radius: var(--border-radius-lg);
+    overflow: hidden;
+    background: var(--color-background-secondary);
+  }
+  .shop table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .shop thead th {
+    text-align: left;
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--color-text-tertiary);
+    padding: 10px 16px;
+    background: var(--color-background-primary);
+    border-bottom: 1px solid var(--color-border-tertiary);
+  }
+  .shop tbody td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--color-border-tertiary);
+  }
+  .shop tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .shop tbody tr {
+    cursor: pointer;
+  }
+  .shop tbody tr:hover {
+    background: var(--color-background-tertiary);
+  }
+  .shop .check {
+    width: 18px;
+    padding-right: 0;
+  }
+  .shop .prod {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .shop .thumb {
+    width: 36px;
+    height: 36px;
+    flex: none;
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-tertiary);
+    border: 1px solid var(--color-border-tertiary);
+  }
+  .shop .name {
+    font-weight: 500;
+  }
+  .shop .sku {
+    font: 12px var(--font-mono);
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+  }
+  .shop .right {
+    text-align: right;
+  }
+  .shop .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .shop .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 2px 9px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+  }
+  .shop .badge .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+  .shop .b-active {
+    color: var(--color-text-success);
+    background: var(--color-background-success);
+  }
+  .shop .b-draft {
+    color: var(--color-text-warning);
+    background: var(--color-background-warning);
+  }
+  .shop .b-arch {
+    color: var(--color-text-tertiary);
+    border-color: var(--color-border-secondary);
+  }
+  .shop .foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 2px 0;
+    color: var(--color-text-tertiary);
+    font-size: 13px;
+  }
+  .shop .foot .pg {
     display: flex;
     gap: 8px;
-    margin-top: 12px;
-    flex-wrap: wrap;
-  }
-  .zoo-row button {
-    flex: 1;
-    min-width: 160px;
   }
   .legend {
     font: 12px var(--font-sans);
     color: var(--color-text-tertiary);
-    margin-top: 10px;
+    margin-top: 14px;
   }
 </style>
-<div class="zoo-wrap">
-  <svg width="100%" viewBox="0 0 680 220">
-    <!-- nodes -->
-    <g class="c-blue node" onclick="sendPrompt('Walk me through the API edge layer')">
-      <rect class="box" x="10" y="80" width="120" height="48" />
-      <text class="th" x="70" y="100" text-anchor="middle">Client</text>
-      <text class="ts" x="70" y="116" text-anchor="middle">retries x3</text>
-    </g>
-    <g class="c-teal node" onclick="sendPrompt('Show the API handler code')">
-      <rect class="box" x="190" y="80" width="120" height="48" />
-      <text class="th" x="250" y="100" text-anchor="middle">API</text>
-      <text class="ts" x="250" y="116" text-anchor="middle">202 + job id</text>
-    </g>
-    <g class="c-amber node" onclick="sendPrompt('How deep can the queue get?')">
-      <rect class="box" x="370" y="80" width="120" height="48" />
-      <text class="th" x="430" y="100" text-anchor="middle">Queue</text>
-      <text class="ts" x="430" y="116" text-anchor="middle">at-least-once</text>
-    </g>
-    <g class="c-green node" onclick="sendPrompt('What is the worker backoff schedule?')">
-      <rect class="box" x="550" y="80" width="120" height="48" />
-      <text class="th" x="610" y="100" text-anchor="middle">Worker</text>
-      <text class="ts" x="610" y="116" text-anchor="middle">backoff</text>
-    </g>
-    <!-- connectors -->
-    <line class="arr" x1="130" y1="104" x2="186" y2="104" marker-end="url(#arrow)" />
-    <line class="arr" x1="310" y1="104" x2="366" y2="104" marker-end="url(#arrow)" />
-    <line class="arr" x1="490" y1="104" x2="546" y2="104" marker-end="url(#arrow)" />
-    <!-- retry loop -->
-    <path
-      class="arr"
-      d="M 610 128 C 610 185, 250 185, 250 130"
-      fill="none"
-      marker-end="url(#arrow)"
+<div class="shop">
+  <div class="bar">
+    <input
+      type="text"
+      placeholder="Filter products…"
+      onchange="sendPrompt('Filter products matching: ' + this.value)"
     />
-    <text class="ts" x="430" y="178" text-anchor="middle">
-      on failure: re-enqueue with jittered backoff
-    </text>
-  </svg>
-  <div class="zoo-row">
-    <button onclick="sendPrompt('Stress-test this: what happens at 10k req/s?')">
-      Stress-test it
+    <button class="chip" onclick="sendPrompt('Filter products by status')">
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 12 12"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+      >
+        <path d="M6 1.5v9M1.5 6h9" />
+      </svg>
+      Status
     </button>
-    <button onclick="sendPrompt('Where could a message get lost in this flow?')">
-      Find the failure mode
+    <button class="chip" onclick="sendPrompt('Filter products by category')">
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 12 12"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+      >
+        <path d="M6 1.5v9M1.5 6h9" />
+      </svg>
+      Category
     </button>
+    <span class="spacer"></span>
+    <button onclick="sendPrompt('Add a new product to the catalog')">Add product</button>
   </div>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th class="check"><input type="checkbox" aria-label="Select all" /></th>
+          <th>Product</th>
+          <th>Status</th>
+          <th class="right">Inventory</th>
+          <th class="right">Price</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr onclick="sendPrompt('Open the product detail for Aurora Wool Coat')">
+          <td class="check"><input type="checkbox" /></td>
+          <td>
+            <div class="prod">
+              <div class="thumb"></div>
+              <div>
+                <div class="name">Aurora Wool Coat</div>
+                <div class="sku">APP-1042 · Outerwear</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="badge b-active"><span class="dot"></span>Active</span>
+          </td>
+          <td class="right num">128</td>
+          <td class="right num">$189.00</td>
+        </tr>
+        <tr onclick="sendPrompt('Open the product detail for Linen Camp Shirt')">
+          <td class="check"><input type="checkbox" /></td>
+          <td>
+            <div class="prod">
+              <div class="thumb"></div>
+              <div>
+                <div class="name">Linen Camp Shirt</div>
+                <div class="sku">APP-2207 · Tops</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="badge b-active"><span class="dot"></span>Active</span>
+          </td>
+          <td class="right num">64</td>
+          <td class="right num">$59.00</td>
+        </tr>
+        <tr onclick="sendPrompt('Open the product detail for Trail Runner GTX')">
+          <td class="check"><input type="checkbox" /></td>
+          <td>
+            <div class="prod">
+              <div class="thumb"></div>
+              <div>
+                <div class="name">Trail Runner GTX</div>
+                <div class="sku">FW-3391 · Footwear</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="badge b-draft"><span class="dot"></span>Draft</span>
+          </td>
+          <td class="right num">0</td>
+          <td class="right num">$145.00</td>
+        </tr>
+        <tr onclick="sendPrompt('Open the product detail for Canvas Tote 22L')">
+          <td class="check"><input type="checkbox" /></td>
+          <td>
+            <div class="prod">
+              <div class="thumb"></div>
+              <div>
+                <div class="name">Canvas Tote 22L</div>
+                <div class="sku">ACC-0815 · Accessories</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="badge b-active"><span class="dot"></span>Active</span>
+          </td>
+          <td class="right num">312</td>
+          <td class="right num">$42.00</td>
+        </tr>
+        <tr onclick="sendPrompt('Open the product detail for Merino Beanie')">
+          <td class="check"><input type="checkbox" /></td>
+          <td>
+            <div class="prod">
+              <div class="thumb"></div>
+              <div>
+                <div class="name">Merino Beanie</div>
+                <div class="sku">ACC-1190 · Accessories</div>
+              </div>
+            </div>
+          </td>
+          <td><span class="badge b-arch">Archived</span></td>
+          <td class="right num">0</td>
+          <td class="right num">$28.00</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="foot">
+    <span>0 of 5 row(s) selected.</span>
+    <span class="pg">
+      <button onclick="sendPrompt('Show the previous page of products')">Previous</button>
+      <button onclick="sendPrompt('Show the next page of products')">Next</button>
+    </span>
+  </div>
+
   <div class="legend">
-    An <b>html</b> part — you author the markup, it renders sandboxed. Every box and button is wired
-    to <code>sendPrompt()</code>: click one and the text lands as a comment on this card.
+    An <b>html</b> part — you author the markup, it renders sandboxed. The filters, rows and buttons
+    are wired to <code>sendPrompt()</code>: interact with the table and the text lands as a comment
+    on this card.
   </div>
 </div>

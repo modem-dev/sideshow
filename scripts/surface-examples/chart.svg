@@ -1,28 +1,49 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="380" viewBox="0 0 760 380">
-  <rect width="760" height="380" fill="#1f1e1b"/>
-  <text x="40" y="48" fill="#f5f3ee" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="500">Dropped jobs per hour</text>
-  <text x="40" y="74" fill="#9b968c" font-family="Inter, system-ui, sans-serif" font-size="14">Before vs after the worker retry policy — lower is better</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f43f5e"/>
+      <stop offset="0.55" stop-color="#a21caf"/>
+      <stop offset="1" stop-color="#6d28d9"/>
+    </linearGradient>
+    <clipPath id="frame"><rect width="1200" height="520"/></clipPath>
+  </defs>
+  <g clip-path="url(#frame)" font-family="Inter, system-ui, sans-serif">
+    <rect width="1200" height="520" fill="url(#bg)"/>
 
-  <!-- axis -->
-  <line x1="120" y1="110" x2="120" y2="320" stroke="#3a3833" stroke-width="1.5"/>
-  <line x1="120" y1="320" x2="700" y2="320" stroke="#3a3833" stroke-width="1.5"/>
+    <!-- right-side brand motif: concentric orbits around the Meridian mark -->
+    <g fill="none" stroke="#ffffff">
+      <circle cx="1010" cy="252" r="150" stroke-opacity="0.14" stroke-width="2"/>
+      <circle cx="1010" cy="252" r="240" stroke-opacity="0.10" stroke-width="2"/>
+      <circle cx="1010" cy="252" r="66" stroke-opacity="0.92" stroke-width="4"/>
+      <line x1="944" y1="252" x2="1076" y2="252" stroke-opacity="0.92" stroke-width="4"/>
+    </g>
+    <circle cx="1142" cy="150" r="9" fill="#ffffff" fill-opacity="0.65"/>
+    <circle cx="905" cy="392" r="6" fill="#ffffff" fill-opacity="0.45"/>
 
-  <!-- gridlines -->
-  <line x1="120" y1="250" x2="700" y2="250" stroke="#2a2925" stroke-width="1"/>
-  <line x1="120" y1="180" x2="700" y2="180" stroke="#2a2925" stroke-width="1"/>
-  <text x="110" y="324" fill="#6f6b62" font-family="Inter, sans-serif" font-size="12" text-anchor="end">0</text>
-  <text x="110" y="254" fill="#6f6b62" font-family="Inter, sans-serif" font-size="12" text-anchor="end">120</text>
-  <text x="110" y="184" fill="#6f6b62" font-family="Inter, sans-serif" font-size="12" text-anchor="end">240</text>
+    <!-- brand lockup -->
+    <g transform="translate(64,52)">
+      <circle cx="18" cy="18" r="16" fill="none" stroke="#ffffff" stroke-width="2.5"/>
+      <line x1="3" y1="18" x2="33" y2="18" stroke="#ffffff" stroke-width="2.5"/>
+      <text x="48" y="27" fill="#ffffff" font-size="26" font-weight="700" letter-spacing="0.4">Meridian</text>
+    </g>
 
-  <!-- before bar: 231 -->
-  <rect x="220" y="118" width="120" height="202" rx="6" fill="#e0865f"/>
-  <text x="280" y="108" fill="#f5f3ee" font-family="Inter, sans-serif" font-size="18" font-weight="500" text-anchor="middle">231</text>
-  <text x="280" y="346" fill="#cfcabf" font-family="Inter, sans-serif" font-size="14" text-anchor="middle">Before</text>
+    <!-- eyebrow -->
+    <text x="65" y="170" fill="#ffffff" fill-opacity="0.8" font-size="15" font-weight="600" letter-spacing="3.5">OBSERVABILITY · MMXXVI</text>
 
-  <!-- after bar: 4 -->
-  <rect x="480" y="317" width="120" height="3" rx="1.5" fill="#7fbf8f"/>
-  <text x="540" y="307" fill="#f5f3ee" font-family="Inter, sans-serif" font-size="18" font-weight="500" text-anchor="middle">4</text>
-  <text x="540" y="346" fill="#cfcabf" font-family="Inter, sans-serif" font-size="14" text-anchor="middle">After</text>
+    <!-- headline -->
+    <text x="62" y="252" fill="#ffffff" font-size="66" font-weight="800" letter-spacing="-1.2">Catch the outage</text>
+    <text x="62" y="324" fill="#ffffff" font-size="66" font-weight="800" letter-spacing="-1.2">before users do.</text>
 
-  <text x="540" y="290" fill="#7fbf8f" font-family="Inter, sans-serif" font-size="13" text-anchor="middle">−98%</text>
+    <!-- subhead -->
+    <text x="64" y="374" fill="#ffffff" fill-opacity="0.86" font-size="22" font-weight="400">Real-time monitoring for teams that ship fast.</text>
+
+    <!-- CTA -->
+    <rect x="64" y="406" width="188" height="54" rx="27" fill="#ffffff"/>
+    <text x="92" y="440" fill="#a21caf" font-size="19" font-weight="700">Start free</text>
+    <path d="M 210 433 h 16 m -6 -6 l 6 6 l -6 6" fill="none" stroke="#a21caf" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="276" y="440" fill="#ffffff" fill-opacity="0.82" font-size="16" font-weight="400">14-day trial · no card</text>
+
+    <!-- footer -->
+    <text x="65" y="494" fill="#ffffff" fill-opacity="0.72" font-size="15" font-weight="500">meridian.dev</text>
+  </g>
 </svg>

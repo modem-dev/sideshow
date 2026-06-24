@@ -75,7 +75,7 @@ viewer. A surface is an ordered list of **parts**; one card can carry several.
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/surfaces/01-html.png" width="100%" alt="html part — an interactive diagram you author">
+      <img src="docs/surfaces/01-html.png" width="100%" alt="html part — an interactive UI you author">
       <p><b><code>html</code></b> — markup the agent authors, rendered sandboxed. Shapes and buttons can call <code>sendPrompt()</code> to post back to the thread.</p>
     </td>
     <td width="50%" valign="top">

@@ -123,7 +123,7 @@ const trace = [
 const cards = [
   {
     file: "html",
-    title: "html part — an interactive diagram you author",
+    title: "html part — an interactive UI you author",
     parts: [{ kind: "html", html: read("html.html") }],
   },
   {
@@ -153,8 +153,8 @@ const cards = [
       {
         kind: "image",
         assetId: asset.id,
-        alt: "Dropped jobs per hour before vs after",
-        caption: "First hour after deploy: 231/hr → 4/hr.",
+        alt: "Concept billboard ad for a fictional SaaS brand",
+        caption: "Campaign concept — one of the billboard directions we mocked up for the launch.",
       },
     ],
   },
