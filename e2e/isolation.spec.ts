@@ -167,19 +167,20 @@ test("a top-level surface document loads in an opaque (sandboxed) origin", async
   expect(origin).toBe("null");
 });
 
-// Rich parts now load via a blob: URL instead of srcdoc (to dodge a Chrome 149
-// field trial that breaks opaque-origin srcdoc layout). The rich-part CSP
-// deliberately allows 'unsafe-inline' so the bridge runs without a nonce — which
-// means the OPAQUE ORIGIN is the only thing containing a script. So the security
-// question for the blob: switch is exactly: does a blob-loaded rich frame still
-// get an opaque origin? This injects a body as if a markdown-it / mermaid /
-// diff sanitizer bypass let raw <script> through, lets it RUN, and proves it is
-// still walled off from the board — can't read its origin, can't write the
-// parent. (Same probe-self-reports-into-its-own-DOM trick as the html test: the
-// frame can't phone home, so Playwright reads the verdict across the boundary.)
-test("a rich part loaded via blob: URL is opaque-origin — a script that runs can't reach the board", async ({
+// Rich parts stage their rendered doc at /f/:id and load it by real URL (like
+// an html part at /s/:id), not srcdoc/blob. The rich-part CSP deliberately
+// allows 'unsafe-inline' so the bridge runs without a nonce — which means the
+// OPAQUE ORIGIN is the only thing containing a script, and that origin comes
+// from the /f/:id response's `sandbox` CSP header. This stages a doc as if a
+// markdown-it / mermaid / diff sanitizer bypass let raw <script> through, lets
+// it RUN, and proves it's still walled off from the board — can't read its
+// origin, can't write the parent. (Same probe-self-reports-into-its-own-DOM
+// trick as the html test: the frame can't phone home, so Playwright reads the
+// verdict across the boundary.)
+test("a rich part served from /f/:id is opaque-origin — a script that runs can't reach the board", async ({
   page,
   server,
+  request,
 }) => {
   const evil = `<div id="r">running</div>
 <script>
@@ -194,17 +195,22 @@ test("a rich part loaded via blob: URL is opaque-origin — a script that runs c
 </script>`;
   const docHtml = renderSandboxedPart({ body: evil, css: "", origin: server.url });
 
+  // Stage it the way the viewer does, then confirm the response itself forces
+  // the opaque-origin sandbox (the load-bearing header — not just the iframe
+  // attribute, so a top-level open is contained too).
+  const staged = await request.post(`${server.url}/api/frames`, { data: { html: docHtml } });
+  const { id } = (await staged.json()) as { id: string };
+  const served = await request.get(`${server.url}/f/${id}`);
+  expect(served.headers()["content-security-policy"]).toBe("sandbox allow-scripts");
+
   await page.goto(server.url);
-  // Mount the rich frame exactly as SandboxedPart does: a blob: URL document in
-  // an iframe sandboxed with allow-scripts and NO allow-same-origin.
-  await page.evaluate((html) => {
-    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  await page.evaluate((src) => {
     const f = document.createElement("iframe");
     f.id = "rich-probe";
     f.setAttribute("sandbox", "allow-scripts");
-    f.src = url;
+    f.src = src;
     document.body.append(f);
-  }, docHtml);
+  }, `${server.url}/f/${id}`);
 
   // The inline script ran (CSP allows it) and self-reported into its own DOM:
   // window.origin is the opaque "null", and its write to the parent board threw.

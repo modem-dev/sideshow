@@ -1,6 +1,7 @@
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js";
 import { renderSandboxedPart } from "../../server/surfacePage.ts";
 import { themeById } from "../../server/themes.ts";
+import { api, appPath } from "./api.ts";
 import { activeTheme, resolvedMode } from "./theme.ts";
 
 // location.origin is constant for the page lifetime — read it once, not per
@@ -25,13 +26,13 @@ export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unkn
 // regression. `body`/`css` are reactive — a theme switch rebuilds the doc and
 // reloads the frame (the same way Card reloads html-part iframes on theme).
 //
-// The doc is loaded via a `blob:` URL rather than `srcdoc`. A blob-URL iframe
-// under `sandbox="allow-scripts"` (no `allow-same-origin`) still gets an OPAQUE
-// origin — identical isolation to srcdoc — but it is NOT the opaque-origin
-// *srcdoc* layout path that Chrome 149's field trial breaks (there, the frame
-// measures as 0 height and never resizes). The blob is created from the same
-// trusted string; it only becomes live DOM inside the opaque-origin frame, so
-// the security model (opaque origin + the tight rich-part CSP) is unchanged.
+// The doc is staged at /f/:id and loaded by real URL — exactly like an html
+// part at /s/:id — not srcdoc/blob. The response carries a `sandbox` CSP header,
+// so the frame is opaque-origin (identical isolation), and a real navigation
+// avoids a Chrome layout bug that only afflicts in-memory iframe documents
+// (srcdoc/blob), where the heavier async-rendered parts never lay out. The
+// server has no markup for a rich part (it renders here), so we POST the string
+// and point the frame at the id it returns.
 //
 // Resize is handled locally: the bridge in the doc posts its content height, and
 // each frame sizes itself from messages whose source is its own contentWindow.
@@ -50,19 +51,18 @@ export function SandboxedPart(props: { body: string; css: string; class?: string
     }),
   );
 
-  // Point the frame at a fresh blob URL whenever the doc changes (theme switch,
-  // body/css update). Revoke the previous doc's URL once the new one is wired
-  // up — the old frame already loaded it — and revoke the live one on cleanup.
-  let currentUrl: string | null = null;
+  // Stage the doc at /f/:id whenever it changes (theme switch, body/css update,
+  // async render completing) and point the frame there. POST is async, so a
+  // sequence guard drops a stale response if a newer doc raced ahead of it.
+  let seq = 0;
   createEffect(() => {
-    const url = URL.createObjectURL(new Blob([doc()], { type: "text/html" }));
-    const prev = currentUrl;
-    currentUrl = url;
-    frame.src = url;
-    if (prev) URL.revokeObjectURL(prev);
-  });
-  onCleanup(() => {
-    if (currentUrl) URL.revokeObjectURL(currentUrl);
+    const html = doc();
+    const mine = ++seq;
+    void api<{ id: string }>("/api/frames", { method: "POST", body: JSON.stringify({ html }) })
+      .then(({ id }) => {
+        if (mine === seq) frame.src = appPath(`/f/${id}`);
+      })
+      .catch(() => {});
   });
 
   onMount(() => {

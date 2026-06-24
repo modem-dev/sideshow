@@ -14,6 +14,7 @@ import {
   type Comment,
   htmlPart,
   MAX_ASSET_BYTES,
+  newId,
   partsByteLength,
   type Store,
   type Surface,
@@ -190,6 +191,7 @@ function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
   if (mode === "full") return true;
   if (path.startsWith("/session/")) return true;
   if (path.startsWith("/s/")) return true;
+  if (path.startsWith("/f/")) return true;
   if (path.startsWith("/a/")) return true;
   if (path.startsWith("/api/sessions/")) return true;
   if (path.startsWith("/api/surfaces/")) return true;
@@ -254,6 +256,19 @@ export function createApp({
 }: AppOptions) {
   const app = new Hono();
   const bus = new EventBus();
+
+  // Transient host for viewer-rendered rich-part documents. Rich parts
+  // (markdown/diff/mermaid/terminal/code and comments) render in the viewer, so
+  // unlike an html part the server has no markup to serve at /s/:id — the viewer
+  // POSTs the rendered string here and embeds it as /f/:id. Serving it from a
+  // real URL (rather than srcdoc/blob) lets the response carry the same
+  // `sandbox` CSP header /s/:id uses, so the frame is opaque-origin however it
+  // loads, while dodging a Chrome layout bug that only afflicts in-memory iframe
+  // documents. The map is bounded and FIFO-evicted: docs are ephemeral and
+  // re-POSTed on every render, so dropping an old one costs a re-render, never
+  // correctness.
+  const MAX_FRAME_DOCS = 512;
+  const frameDocs = new Map<string, string>();
 
   // Last-resort safety net: any handler that throws (rather than returning a
   // status) becomes a clean JSON 500 instead of leaking a stack or a bare crash.
@@ -524,6 +539,14 @@ export function createApp({
       return next();
     }
     if (publicRead && c.req.method === "GET" && isPublicReadAllowed(path, publicRead)) {
+      return next();
+    }
+    // Rich parts render in the viewer and are staged back for display via
+    // /api/frames → /f/:id. A public-read viewer must stage them to view the
+    // board, so this transient render cache is allowed even though it's a POST —
+    // it mutates no board state, the doc is opaque-sandboxed at /f/:id, and the
+    // map is bounded.
+    if (publicRead && c.req.method === "POST" && path === "/api/frames") {
       return next();
     }
     if (isAuthenticated(c)) return next();
@@ -914,6 +937,37 @@ export function createApp({
         kits: part.kits,
       }),
     );
+  });
+
+  // Stage a viewer-rendered rich-part document for display at /f/:id. The body
+  // is a complete sandboxed HTML doc the viewer built (see renderSandboxedPart);
+  // it only ever becomes live DOM at /f/:id, which serves it opaque-sandboxed.
+  app.post("/api/frames", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body.html !== "string" || !body.html) {
+      return c.json({ error: 'body must include a non-empty "html" string' }, 400);
+    }
+    const id = newId();
+    frameDocs.set(id, body.html);
+    while (frameDocs.size > MAX_FRAME_DOCS) {
+      const oldest = frameDocs.keys().next().value;
+      if (oldest === undefined) break;
+      frameDocs.delete(oldest);
+    }
+    return c.json({ id }, 201);
+  });
+
+  app.get("/f/:id", (c) => {
+    const html = frameDocs.get(c.req.param("id"));
+    if (html === undefined) return c.text("Frame not found", 404);
+    c.header("X-Content-Type-Options", "nosniff");
+    // The same opaque-origin sandbox /s/:id sets: a `sandbox` CSP header forces
+    // a null origin on ANY load (incl. a top-level open or shared link), so this
+    // viewer-rendered markup can never reach the board origin. `allow-scripts`
+    // so the in-doc resize/interaction bridge runs; no `allow-same-origin`, so
+    // agent- or user-authored markup stays walled off from the board.
+    c.header("Content-Security-Policy", "sandbox allow-scripts");
+    return c.html(html);
   });
 
   // --- assets (agent-uploaded images, traces, files) ---

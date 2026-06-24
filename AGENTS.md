@@ -108,8 +108,10 @@ consciously, not as a side effect):
   postMessage bridge, the write API). Gate each so contained content can't
   impersonate the user, exfiltrate, or exhaust the server; add any new channel
   the same way.
-- Rich/comment frames load their document from a `blob:` URL, not `srcdoc` —
-  same `allow-scripts` opaque origin, different load path. Use `blob:`.
+- Rich/comment frames stage their rendered doc at `/f/:id` (`POST /api/frames`)
+  and load it by real URL, like html parts at `/s/:id` — served with a `sandbox`
+  CSP header, so opaque origin, not srcdoc/blob. Keep the header; don't render
+  rich markup inline in the viewer.
 - WebKit quirk in sandboxed iframes: ResizeObserver's initial callback may not
   fire and `documentElement.scrollHeight` ratchets to viewport height — the
   bridge reports `body.scrollHeight` on `load` plus staggered timers. Don't

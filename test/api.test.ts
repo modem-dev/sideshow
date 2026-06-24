@@ -142,6 +142,45 @@ test("publishes a combined html+diff surface; /s renders the html part only", as
   assert.doesNotMatch(csp, /allow-same-origin/);
 });
 
+test("/api/frames stages a viewer-rendered doc that /f/:id serves opaque-sandboxed", async () => {
+  const app = makeApp();
+  const html = "<!doctype html><p>rich</p>";
+  const staged = await app.request("/api/frames", json({ html }));
+  assert.equal(staged.status, 201);
+  const { id } = (await staged.json()) as { id: string };
+  assert.ok(id);
+
+  const served = await app.request(`/f/${id}`);
+  assert.equal(served.status, 200);
+  assert.equal(await served.text(), html);
+  // The load-bearing header: opaque origin on any load (incl. a top-level open),
+  // allow-scripts for the bridge, never allow-same-origin.
+  const csp = served.headers.get("content-security-policy") ?? "";
+  assert.match(csp, /\bsandbox\b/);
+  assert.match(csp, /\ballow-scripts\b/);
+  assert.doesNotMatch(csp, /allow-same-origin/);
+  assert.equal(served.headers.get("x-content-type-options"), "nosniff");
+
+  // Unknown / evicted id is a clean 404; empty body is a 400.
+  assert.equal((await app.request("/f/nope")).status, 404);
+  assert.equal((await app.request("/api/frames", json({ html: "" }))).status, 400);
+});
+
+test("/api/frames is reachable by a public-read viewer (rich parts must render to be viewed)", async () => {
+  const app = makeApp("secret", { publicRead: "full" });
+  // No token: a GET read is allowed, and so is staging a rich frame to view it.
+  const staged = await app.request("/api/frames", json({ html: "<p>x</p>" }));
+  assert.equal(staged.status, 201);
+  const { id } = (await staged.json()) as { id: string };
+  assert.equal((await app.request(`/f/${id}`)).status, 200);
+});
+
+test("/api/frames still requires auth when there is no public-read", async () => {
+  const app = makeApp("secret");
+  assert.equal((await app.request("/api/frames", json({ html: "<p>x</p>" }))).status, 401);
+  assert.equal((await app.request("/api/frames", authedJson({ html: "<p>x</p>" }))).status, 201);
+});
+
 test("a snippet's kits ride the html part and inject the kit CSS/JS at /s", async () => {
   const app = makeApp();
   const res = await app.request(
