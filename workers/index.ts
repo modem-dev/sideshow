@@ -80,7 +80,8 @@ export default {
     const target = checkUrl.toString();
     const screenshot = await env.BROWSER.quickAction("screenshot", {
       url: target,
-      viewport: { width, height: Math.round((width * 630) / 1200) },
+      viewport: { width, height: 800 },
+      screenshotOptions: { fullPage: true },
       gotoOptions: { waitUntil: "networkidle0", timeout: 15000 },
       cookies: [{ name: "sideshow_key", value: env.SIDESHOW_TOKEN, domain: url.hostname }],
     });
