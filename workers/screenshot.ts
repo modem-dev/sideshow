@@ -6,6 +6,11 @@ export interface SurfaceScreenshotPlan {
   noCache: boolean;
 }
 
+export function matchSurfaceScreenshot(method: string, pathname: string): string | null {
+  if (method !== "GET" && method !== "HEAD") return null;
+  return pathname.match(/^\/s\/([a-z0-9]+)\.png$/)?.[1] ?? null;
+}
+
 export function planSurfaceScreenshot(
   requestUrl: URL,
   surfaceId: string,

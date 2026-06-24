@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { planSurfaceScreenshot } from "../workers/screenshot.ts";
+import { matchSurfaceScreenshot, planSurfaceScreenshot } from "../workers/screenshot.ts";
+
+test("surface screenshot route matches GET and HEAD requests", () => {
+  assert.equal(matchSurfaceScreenshot("GET", "/s/abc123.png"), "abc123");
+  assert.equal(matchSurfaceScreenshot("HEAD", "/s/abc123.png"), "abc123");
+  assert.equal(matchSurfaceScreenshot("POST", "/s/abc123.png"), null);
+  assert.equal(matchSurfaceScreenshot("HEAD", "/s/abc123"), null);
+});
 
 test("card screenshots use stable social-card dimensions without fullPage", () => {
   const plan = planSurfaceScreenshot(

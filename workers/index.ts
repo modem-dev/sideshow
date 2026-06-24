@@ -5,7 +5,7 @@ import guideMarkdown from "../guide/DESIGN_GUIDE.md";
 import pkg from "../package.json" with { type: "json" };
 import { createApp } from "../server/app.ts";
 import viewerHtml from "../viewer/dist/index.html";
-import { planSurfaceScreenshot } from "./screenshot.ts";
+import { matchSurfaceScreenshot, planSurfaceScreenshot } from "./screenshot.ts";
 import { SqlStore } from "./sqlStore.ts";
 
 interface Env {
@@ -57,18 +57,27 @@ export default {
     // Auth is decided by the app — we forward the user's credentials to the DO
     // and only proceed if it returns 200.
     const url = new URL(request.url);
-    const pngMatch = request.method === "GET" && url.pathname.match(/^\/s\/([a-z0-9]+)\.png$/);
-    if (!pngMatch) return board.fetch(request);
+    const surfaceId = matchSurfaceScreenshot(request.method, url.pathname);
+    if (!surfaceId) return board.fetch(request);
 
     // Let the app decide auth: forward the request (with user cookies/headers)
     // to the real /s/:id?part=0 renderer. We pass theme/mode so the rendered
     // page matches what the viewer shows; the width is configurable via ?w=
     // (default 800). Social card mode is fixed at 1200x630.
-    const plan = planSurfaceScreenshot(url, pngMatch[1], request.headers.get("cookie"));
+    const plan = planSurfaceScreenshot(url, surfaceId, request.headers.get("cookie"));
     const checkRes = await board.fetch(new Request(plan.checkUrl, { headers: request.headers }));
     if (!checkRes.ok) return checkRes;
-    // Auth passed and surface exists — discard the HTML, take a screenshot.
+    // Auth passed and surface exists — discard the HTML. For HEAD, return the
+    // same public image headers Slack checks without paying for Browser Rendering.
     await checkRes.arrayBuffer();
+    if (request.method === "HEAD") {
+      return new Response(null, {
+        headers: {
+          "Content-Type": "image/png",
+          "Cache-Control": plan.noCache ? "no-store" : "public, max-age=300",
+        },
+      });
+    }
 
     const screenshot = await env.BROWSER.quickAction("screenshot", {
       url: plan.target,
