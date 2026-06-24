@@ -4,9 +4,9 @@ import setupText from "../guide/AGENT_SETUP.md";
 import guideMarkdown from "../guide/DESIGN_GUIDE.md";
 import pkg from "../package.json" with { type: "json" };
 import { createApp } from "../server/app.ts";
+import { SqlStore } from "../server/sqlStore.ts";
 import viewerHtml from "../viewer/dist/index.html";
 import { matchSurfaceScreenshot, planSurfaceScreenshot } from "./screenshot.ts";
-import { SqlStore } from "./sqlStore.ts";
 
 interface Env {
   BOARD: DurableObjectNamespace<SideshowBoard>;

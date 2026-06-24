@@ -39,9 +39,17 @@ consciously, not as a side effect):
   is the reference-aware LRU policy.
 - `server/public.ts` — the `sideshow/server` package export (`createApp`,
   `JsonFileStore`, types) for embedding the app in a Node process.
-- `server/storage.ts` — `JsonFileStore` (local Node). `workers/sqlStore.ts` —
-  `SqlStore` (Durable Object SQLite). Both must pass `test/storeContract.ts`,
-  and both migrate legacy `snippets`/`snippetId` data to surfaces on load.
+- `server/sqlStore.ts` — `SqlStore`, the SQLite-backed `Store`. It takes a
+  `SqlStorage` (the narrow SQL surface declared in `types.ts`, not the ambient
+  Cloudflare global), so the SAME store runs on the Durable Object
+  (`ctx.storage.sql`) and on Node via `server/sqliteStorage.ts`'s `node:sqlite`
+  adapter — the local default, so dev mirrors the deploy. `server/storage.ts` —
+  `JsonFileStore`, the legacy single-file store, still selectable with
+  `SIDESHOW_STORE=json`. All must pass `test/storeContract.ts`, and all migrate
+  legacy `snippets`/`snippetId` data to surfaces on load. On first SQLite boot
+  `migrateJsonToSqlite` copies an existing JSON board in once (identity, history,
+  and comment `seq` preserved via `JsonFileStore.exportBoard` →
+  `SqlStore.importBoard`); it's idempotent and never imports into a non-empty db.
 - `server/kits.ts` — opt-in style/behavior bundles for html parts (`issues`,
   `slides`). An html part lists kit ids in `kits`; `renderHtmlPage` injects each
   kit's CSS/JS into the sandbox after the base. Runtime-agnostic; allowlisted in
@@ -179,10 +187,13 @@ The first four must pass before committing; pre-commit formats staged files
 
 Testing notes:
 
-- `runStoreContract()` runs the same suite against both stores. SqlStore runs
-  on a `node:sqlite` shim (`test/sqlStorageShim.ts`); the ambient `SqlStorage`
-  types live in `test/workersSqlTypes.d.ts` because the real workers types
-  conflict with `@types/node`.
+- `runStoreContract()` runs the same suite against every store. SqlStore runs
+  on `createSqliteStorage()` (`:memory:`), the same `node:sqlite` adapter the
+  local server uses on disk — so the contract covers the real Node SQLite path.
+  `SqlStorage`/`SqlStorageValue`/`SqlStorageCursor` are plain interfaces in
+  `server/types.ts`; a real DO `SqlStorage` is structurally assignable, so no
+  ambient Cloudflare globals are needed in the node program. `test/migration.
+test.ts` covers the JSON→SQLite import.
 - `JsonFileStore` returns live objects that later mutate — capture fields
   before update calls when asserting against them.
 - The update-notes card is also a `.card`: scope snippet-card e2e selectors

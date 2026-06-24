@@ -290,7 +290,58 @@ export interface Store {
   isAssetReferenced(id: string): Promise<boolean>;
 }
 
+// The slice of a Durable Object's `SqlStorage` that SqlStore actually uses.
+// Declared here as a plain interface (rather than leaning on the ambient
+// Cloudflare global) so the SAME SqlStore runs on the DO and on Node's
+// node:sqlite via a thin adapter, and both the node and workers typecheck
+// programs resolve it the same way. A real DO `SqlStorage` is structurally
+// assignable to this narrower shape.
+export type SqlStorageValue = ArrayBuffer | string | number | null;
+export interface SqlStorageCursor {
+  toArray(): Record<string, SqlStorageValue>[];
+  one(): Record<string, SqlStorageValue>;
+}
+export interface SqlStorage {
+  exec(query: string, ...bindings: SqlStorageValue[]): SqlStorageCursor;
+}
+
+// A whole board's contents, used to migrate one backend's data into another
+// (JSON file → SQLite). Carries every field verbatim — ids, versions, history,
+// comment `seq`, `agentSeq`, asset bytes — so identity and the feedback cursor
+// survive the copy.
+export interface BoardSnapshot {
+  sessions: Session[];
+  surfaces: Surface[];
+  comments: Comment[];
+  traces: { sessionId: string; steps: TraceStep[] }[];
+  assets: Asset[];
+  settings: { key: string; value: string }[];
+}
+
 export const HISTORY_LIMIT = 20;
+
+// SQLite terminates a TEXT value at the first embedded NUL byte, while the JSON
+// store preserves it — so the two stores would diverge on a NUL. A NUL has no
+// place in a title/comment/label anyway, so both stores strip it from stored
+// text (removing the byte, not truncating), keeping them in lockstep. Returns
+// the input untouched when there's nothing to strip, so the common path is free.
+const NUL_CHAR = String.fromCharCode(0);
+export function stripNul<T extends string | null | undefined>(s: T): T {
+  // replaceAll with a string (not a RegExp literal) keeps the control char out
+  // of the source; the includes guard keeps the common no-NUL path free.
+  return (typeof s === "string" && s.includes(NUL_CHAR) ? s.replaceAll(NUL_CHAR, "") : s) as T;
+}
+
+// stripNul applied to a trace step, rebuilding it so absent optional keys stay
+// absent (a `{kind: undefined}` key would itself diverge: the JSON store keeps
+// it, SqlStore drops it).
+export function stripNulStep(s: TraceStep): TraceStep {
+  const out: TraceStep = { label: stripNul(s.label) };
+  if (s.kind !== undefined) out.kind = stripNul(s.kind);
+  if (s.detail !== undefined) out.detail = stripNul(s.detail);
+  if (s.ts !== undefined) out.ts = s.ts;
+  return out;
+}
 
 // Per-asset upload cap (enforced at the HTTP/MCP edge → 413) and the board-wide
 // budget the store evicts down to. One Durable Object holds the whole board, so

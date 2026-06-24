@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   type Asset,
+  type BoardSnapshot,
   collectAssetIds,
   type Comment,
   type CommentQuery,
@@ -16,6 +17,8 @@ import {
   newId,
   selectEvictions,
   type Session,
+  stripNul,
+  stripNulStep,
   type Store,
   type Surface,
   type TraceStep,
@@ -180,6 +183,21 @@ export class JsonFileStore implements Store {
     return this.writeQueue;
   }
 
+  // Snapshot the whole board for a one-time backend migration (→ SqlStore.
+  // importBoard). Returns live references — fine for a read-once-then-import
+  // migration, which never mutates the store afterward.
+  async exportBoard(): Promise<BoardSnapshot> {
+    await this.load();
+    return {
+      sessions: [...this.sessions.values()],
+      surfaces: [...this.surfaces.values()],
+      comments: this.comments,
+      assets: [...this.assets.values()],
+      traces: [...this.trace.entries()].map(([sessionId, steps]) => ({ sessionId, steps })),
+      settings: [...this.settings.entries()].map(([key, value]) => ({ key, value })),
+    };
+  }
+
   // --- sessions ---
 
   async listSessions() {
@@ -199,9 +217,9 @@ export class JsonFileStore implements Store {
     const now = new Date().toISOString();
     const session: Session = {
       id: newId(),
-      agent: input.agent.trim() || "agent",
-      title: input.title?.trim() || null,
-      cwd: input.cwd ?? null,
+      agent: stripNul(input.agent).trim() || "agent",
+      title: stripNul(input.title)?.trim() || null,
+      cwd: stripNul(input.cwd ?? null),
       createdAt: now,
       lastActiveAt: now,
       agentSeq: 0,
@@ -215,7 +233,7 @@ export class JsonFileStore implements Store {
     await this.load();
     const session = this.sessions.get(id);
     if (!session) return null;
-    session.title = title.trim() || null;
+    session.title = stripNul(title).trim() || null;
     await this.persist();
     return clone(session);
   }
@@ -262,7 +280,7 @@ export class JsonFileStore implements Store {
 
   async setSetting(key: string, value: string) {
     await this.load();
-    this.settings.set(key, value);
+    this.settings.set(stripNul(key), stripNul(value));
     await this.persist();
   }
 
@@ -288,7 +306,7 @@ export class JsonFileStore implements Store {
     const surface: Surface = {
       id: newId(),
       sessionId: input.sessionId,
-      title: input.title?.trim() || "Untitled",
+      title: stripNul(input.title)?.trim() || "Untitled",
       parts: clone(input.parts),
       createdAt: now,
       updatedAt: now,
@@ -312,7 +330,7 @@ export class JsonFileStore implements Store {
       at: surface.updatedAt,
     });
     if (surface.history.length > HISTORY_LIMIT) surface.history.shift();
-    if (patch.title !== undefined) surface.title = patch.title.trim() || surface.title;
+    if (patch.title !== undefined) surface.title = stripNul(patch.title).trim() || surface.title;
     if (patch.parts !== undefined) surface.parts = clone(patch.parts);
     surface.version += 1;
     surface.updatedAt = new Date().toISOString();
@@ -355,8 +373,8 @@ export class JsonFileStore implements Store {
       sessionId: input.sessionId,
       surfaceId: surface?.id ?? null,
       surfaceTitle: surface?.title ?? null,
-      author: input.author.trim() || "user",
-      text: input.text,
+      author: stripNul(input.author).trim() || "user",
+      text: stripNul(input.text),
       createdAt: new Date().toISOString(),
     };
     this.comments.push(comment);
@@ -375,7 +393,7 @@ export class JsonFileStore implements Store {
   async setTrace(sessionId: string, steps: TraceStep[]) {
     await this.load();
     if (steps.length === 0) this.trace.delete(sessionId);
-    else this.trace.set(sessionId, clone(steps));
+    else this.trace.set(sessionId, steps.map(stripNulStep));
     await this.persist();
   }
 
@@ -418,9 +436,9 @@ export class JsonFileStore implements Store {
       id,
       sessionId: input.sessionId,
       kind: input.kind,
-      contentType: input.contentType,
+      contentType: stripNul(input.contentType),
       byteLength: input.data.byteLength,
-      filename: input.filename ?? null,
+      filename: stripNul(input.filename ?? null),
       data: new Uint8Array(input.data),
       createdAt: now,
       lastAccessedAt: now,

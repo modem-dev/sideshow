@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { HISTORY_LIMIT, htmlPart, type Store } from "../server/types.ts";
 
 const bytes = (...values: number[]) => new Uint8Array(values);
+const NUL = String.fromCharCode(0);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -27,8 +28,48 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.equal(blank.title, null);
     assert.equal(blank.cwd, null);
 
+    // a non-null cwd round-trips through create → get (guards a dropped column)
+    const withCwd = await store.createSession({ agent: "pi", cwd: "/work/proj" });
+    assert.equal(withCwd.cwd, "/work/proj");
+    assert.equal((await store.getSession(withCwd.id))?.cwd, "/work/proj");
+
     assert.deepEqual(await store.getSession(session.id), session);
     assert.equal(await store.getSession("missing"), null);
+  });
+
+  // SQLite truncates TEXT at an embedded NUL while a JSON file preserves it, so
+  // both stores strip NUL from stored text to stay in lockstep. Parts ride a
+  // JSON column (NUL encoded as an escape, no raw byte) so they're unaffected.
+  contract("strips embedded NUL from stored text so the stores agree", async (store) => {
+    const s = await store.createSession({
+      agent: `a${NUL}b`,
+      title: `keep${NUL}drop`,
+      cwd: `/p${NUL}q`,
+    });
+    const got = (await store.getSession(s.id))!;
+    assert.equal(got.agent, "ab");
+    assert.equal(got.title, "keepdrop");
+    assert.equal(got.cwd, "/pq");
+
+    const surf = (await store.createSurface({
+      sessionId: s.id,
+      title: `t${NUL}t`,
+      parts: [htmlPart(`<p>x</p>`)],
+    }))!;
+    assert.equal((await store.getSurface(surf.id))!.title, "tt");
+
+    await store.createComment({ sessionId: s.id, author: `u${NUL}r`, text: `x${NUL}y` });
+    const c = (await store.listComments({ sessionId: s.id }))[0];
+    assert.equal(c.text, "xy");
+    assert.equal(c.author, "ur");
+
+    await store.setTrace(s.id, [{ label: `l${NUL}l`, detail: `d${NUL}d` }]);
+    const tr = (await store.listTrace(s.id))[0];
+    assert.equal(tr.label, "ll");
+    assert.equal(tr.detail, "dd");
+
+    await store.setSetting("k", `v${NUL}v`);
+    assert.equal(await store.getSetting("k"), "vv");
   });
 
   contract("settings: unset key is null; set round-trips and overwrites", async (store) => {

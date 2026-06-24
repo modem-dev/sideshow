@@ -9,7 +9,8 @@
     "server/events.ts",
     "server/mcpHttp.ts",
     "server/richRender.ts",
-    "server/snippetPage.ts",
+    "server/sqlStore.ts",
+    "server/surfacePage.ts",
     "server/types.ts"
   ]
 }

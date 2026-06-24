@@ -129,9 +129,8 @@ and `JsonFileStore`'s on-disk JSON).
 
 - **`SqlStore`**: a new table with a `BLOB` `data` column — 33% smaller than
   base64 TEXT and no decode-on-serve, which directly helps the shared ~10 GB DO
-  ceiling. DO SQLite stores blobs natively; the `node:sqlite` contract shim must
-  be extended to bind `Uint8Array` (today `sqlStorageShim.ts` only binds
-  `string | number | bigint | null`) — a one-line type widening, since
+  ceiling. DO SQLite stores blobs natively; the `node:sqlite` adapter
+  (`server/sqliteStorage.ts`) binds `Uint8Array` for BLOB columns, since
   `node:sqlite` already round-trips blobs.
 
   ```sql

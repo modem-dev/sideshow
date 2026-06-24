@@ -1,5 +1,6 @@
 import {
   type Asset,
+  type BoardSnapshot,
   collectAssetIds,
   type Comment,
   type CommentQuery,
@@ -14,16 +15,21 @@ import {
   newId,
   selectEvictions,
   type Session,
+  type SqlStorage,
+  type SqlStorageValue,
+  stripNul,
+  stripNulStep,
   type Store,
   type Surface,
   type SurfacePart,
   type SurfaceVersion,
   type TraceStep,
   type UpdateSurfaceInput,
-} from "../server/types.ts";
+} from "./types.ts";
 
-// Store implementation on Durable Object SQLite. One board = one DO = one
-// database, so plain SQL with no tenant columns.
+// Store implementation on SQLite — a Durable Object's `ctx.storage.sql` in the
+// Worker, or node:sqlite via an adapter on Node (see server/sqliteStorage.ts).
+// One board = one database, so plain SQL with no tenant columns.
 export class SqlStore implements Store {
   private sql: SqlStorage;
 
@@ -140,8 +146,8 @@ export class SqlStore implements Store {
     };
   }
 
-  // The BLOB comes back as an ArrayBuffer (real DO) or a Uint8Array (the
-  // node:sqlite test shim); normalize to a fresh Uint8Array either way.
+  // The BLOB comes back as an ArrayBuffer (real DO) or a Uint8Array
+  // (node:sqlite); `new Uint8Array(raw)` copies from either into a fresh array.
   private rowToAsset(r: Record<string, SqlStorageValue>): Asset {
     const raw = r.data as ArrayBuffer | Uint8Array;
     return {
@@ -151,7 +157,7 @@ export class SqlStore implements Store {
       contentType: r.contentType as string,
       byteLength: r.byteLength as number,
       filename: (r.filename as string) ?? null,
-      data: raw instanceof Uint8Array ? new Uint8Array(raw) : new Uint8Array(raw),
+      data: new Uint8Array(raw),
       createdAt: r.createdAt as string,
       lastAccessedAt: r.lastAccessedAt as string,
     };
@@ -188,9 +194,9 @@ export class SqlStore implements Store {
     const now = new Date().toISOString();
     const session: Session = {
       id: newId(),
-      agent: input.agent.trim() || "agent",
-      title: input.title?.trim() || null,
-      cwd: input.cwd ?? null,
+      agent: stripNul(input.agent).trim() || "agent",
+      title: stripNul(input.title)?.trim() || null,
+      cwd: stripNul(input.cwd ?? null),
       createdAt: now,
       lastActiveAt: now,
       agentSeq: 0,
@@ -210,7 +216,7 @@ export class SqlStore implements Store {
   async renameSession(id: string, title: string) {
     const session = await this.getSession(id);
     if (!session) return null;
-    session.title = title.trim() || null;
+    session.title = stripNul(title).trim() || null;
     this.sql.exec("UPDATE sessions SET title = ? WHERE id = ?", session.title, id);
     return session;
   }
@@ -259,8 +265,8 @@ export class SqlStore implements Store {
   async setSetting(key: string, value: string) {
     this.sql.exec(
       "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-      key,
-      value,
+      stripNul(key),
+      stripNul(value),
     );
   }
 
@@ -287,7 +293,7 @@ export class SqlStore implements Store {
     const surface: Surface = {
       id: newId(),
       sessionId: input.sessionId,
-      title: input.title?.trim() || "Untitled",
+      title: stripNul(input.title)?.trim() || "Untitled",
       parts: input.parts,
       createdAt: now,
       updatedAt: now,
@@ -328,7 +334,8 @@ export class SqlStore implements Store {
         },
       ];
       if (history.length > HISTORY_LIMIT) history.shift();
-      const title = patch.title !== undefined ? patch.title.trim() || surface.title : surface.title;
+      const title =
+        patch.title !== undefined ? stripNul(patch.title).trim() || surface.title : surface.title;
       const parts = patch.parts !== undefined ? patch.parts : surface.parts;
       const version = surface.version + 1;
       const updatedAt = new Date().toISOString();
@@ -388,7 +395,8 @@ export class SqlStore implements Store {
     const surface = input.surfaceId ? await this.getSurface(input.surfaceId) : null;
     const id = newId();
     const createdAt = new Date().toISOString();
-    const author = input.author.trim() || "user";
+    const author = stripNul(input.author).trim() || "user";
+    const text = stripNul(input.text);
     this.sql.exec(
       "INSERT INTO comments (id, sessionId, surfaceId, surfaceTitle, author, text, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
       id,
@@ -396,7 +404,7 @@ export class SqlStore implements Store {
       surface?.id ?? null,
       surface?.title ?? null,
       author,
-      input.text,
+      text,
       createdAt,
     );
     const seq = this.sql.exec("SELECT last_insert_rowid() AS seq").one().seq as number;
@@ -408,7 +416,7 @@ export class SqlStore implements Store {
       surfaceId: surface?.id ?? null,
       surfaceTitle: surface?.title ?? null,
       author,
-      text: input.text,
+      text,
       createdAt,
     };
   }
@@ -436,7 +444,8 @@ export class SqlStore implements Store {
   async setTrace(sessionId: string, steps: TraceStep[]) {
     this.sql.exec("DELETE FROM trace_steps WHERE sessionId = ?", sessionId);
     let seq = 0;
-    for (const s of steps) {
+    for (const raw of steps) {
+      const s = stripNulStep(raw);
       this.sql.exec(
         "INSERT INTO trace_steps (sessionId, seq, kind, label, detail, ts) VALUES (?, ?, ?, ?, ?, ?)",
         sessionId,
@@ -490,9 +499,9 @@ export class SqlStore implements Store {
       id,
       sessionId: input.sessionId,
       kind: input.kind,
-      contentType: input.contentType,
+      contentType: stripNul(input.contentType),
       byteLength: input.data.byteLength,
-      filename: input.filename ?? null,
+      filename: stripNul(input.filename ?? null),
       data: input.data,
       createdAt: now,
       lastAccessedAt: now,
@@ -547,5 +556,99 @@ export class SqlStore implements Store {
 
   async isAssetReferenced(id: string) {
     return this.referencedAssetIds().has(id);
+  }
+
+  // One-time bulk import to migrate another backend's data into this database
+  // (see server/sqliteStorage.ts → migrateJsonToSqlite). Every field is written
+  // verbatim — ids, versions, history, the comment `seq` and `agentSeq` the
+  // feedback cursor keys on, asset bytes — so identity survives the copy.
+  // Wrapped in a transaction so a crash mid-copy rolls back to an empty db
+  // rather than a half-migrated board. Intended for an empty database; the
+  // caller gates on that. Only ever runs through the node:sqlite adapter.
+  importBoard(snapshot: BoardSnapshot): void {
+    this.sql.exec("BEGIN");
+    try {
+      for (const s of snapshot.sessions) {
+        this.sql.exec(
+          "INSERT INTO sessions (id, agent, title, cwd, createdAt, lastActiveAt, agentSeq) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          s.id,
+          s.agent,
+          s.title,
+          s.cwd,
+          s.createdAt,
+          s.lastActiveAt,
+          s.agentSeq,
+        );
+      }
+      for (const s of snapshot.surfaces) {
+        this.sql.exec(
+          "INSERT INTO surfaces (id, sessionId, title, parts, createdAt, updatedAt, version, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          s.id,
+          s.sessionId,
+          s.title,
+          JSON.stringify(s.parts),
+          s.createdAt,
+          s.updatedAt,
+          s.version,
+          JSON.stringify(s.history),
+        );
+      }
+      for (const c of snapshot.comments) {
+        this.sql.exec(
+          "INSERT INTO comments (seq, id, sessionId, surfaceId, surfaceTitle, author, text, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          c.seq,
+          c.id,
+          c.sessionId,
+          c.surfaceId ?? null,
+          c.surfaceTitle ?? null,
+          c.author,
+          c.text,
+          c.createdAt,
+        );
+      }
+      for (const t of snapshot.traces) {
+        let seq = 0;
+        for (const step of t.steps) {
+          this.sql.exec(
+            "INSERT INTO trace_steps (sessionId, seq, kind, label, detail, ts) VALUES (?, ?, ?, ?, ?, ?)",
+            t.sessionId,
+            seq++,
+            step.kind ?? null,
+            step.label,
+            step.detail ?? null,
+            step.ts ?? null,
+          );
+        }
+      }
+      for (const a of snapshot.assets) {
+        const buf = a.data.buffer.slice(
+          a.data.byteOffset,
+          a.data.byteOffset + a.data.byteLength,
+        ) as ArrayBuffer;
+        this.sql.exec(
+          "INSERT INTO assets (id, sessionId, kind, contentType, byteLength, filename, data, createdAt, lastAccessedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          a.id,
+          a.sessionId,
+          a.kind,
+          a.contentType,
+          a.byteLength,
+          a.filename,
+          buf,
+          a.createdAt,
+          a.lastAccessedAt,
+        );
+      }
+      for (const { key, value } of snapshot.settings) {
+        this.sql.exec(
+          "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+          key,
+          value,
+        );
+      }
+      this.sql.exec("COMMIT");
+    } catch (e) {
+      this.sql.exec("ROLLBACK");
+      throw e;
+    }
   }
 }
