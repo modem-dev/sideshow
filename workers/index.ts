@@ -65,6 +65,7 @@ export default {
     const width = Math.min(Math.max(Number(url.searchParams.get("w")) || 800, 320), 1920);
     const theme = url.searchParams.get("theme");
     const mode = url.searchParams.get("mode") === "dark" ? "dark" : "light";
+    const noCache = url.searchParams.has("nocache");
 
     const checkUrl = new URL(url);
     checkUrl.pathname = `/s/${pngMatch[1]}`;
@@ -86,7 +87,10 @@ export default {
       cookies: [{ name: "sideshow_key", value: env.SIDESHOW_TOKEN, domain: url.hostname }],
     });
     return new Response(await screenshot.arrayBuffer(), {
-      headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=300" },
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": noCache ? "no-store" : "public, max-age=300",
+      },
     });
   },
 } satisfies ExportedHandler<Env>;
