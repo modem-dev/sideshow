@@ -1370,9 +1370,9 @@ test("caps a chunked upload with no Content-Length instead of buffering it", asy
 
 test("assembles a valid multi-chunk streamed upload and stores it intact", async () => {
   const app = makeApp();
-  // A streamed body under the cap must be accepted, and readBodyCapped must
-  // stitch its chunks back together in order — every other upload test sends a
-  // single chunk, so this is the only cover for the concat path. We read the
+  // A streamed body under the cap must be accepted and its chunks reassembled
+  // in order — every other upload test sends a single chunk, so this is the only
+  // cover for a multi-chunk body surviving the bodyLimit re-wrap. We read the
   // asset back and compare bytes so a wrong offset/order would fail loudly.
   const stream = new ReadableStream({
     start(controller) {
