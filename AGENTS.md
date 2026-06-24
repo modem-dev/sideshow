@@ -109,8 +109,7 @@ consciously, not as a side effect):
   impersonate the user, exfiltrate, or exhaust the server; add any new channel
   the same way.
 - Rich/comment frames load their document from a `blob:` URL, not `srcdoc` —
-  same `allow-scripts` opaque origin, but a load path that dodges a Chrome 149
-  `srcdoc` layout bug. Prefer `blob:` here; don't switch back to `srcdoc`.
+  same `allow-scripts` opaque origin, different load path. Use `blob:`.
 - WebKit quirk in sandboxed iframes: ResizeObserver's initial callback may not
   fire and `documentElement.scrollHeight` ratchets to viewport height — the
   bridge reports `body.scrollHeight` on `load` plus staggered timers. Don't
