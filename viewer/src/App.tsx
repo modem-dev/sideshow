@@ -187,10 +187,15 @@ export default function App() {
             if (nearBottom()) setPillTarget(null);
           }}
         >
-          <Show when={!streamMode()}>
-            <Onboard />
-          </Show>
-          <SessionView />
+          {/* Host-overridable main pane (SLOTS.main). Fallback is the normal
+              board; an embedder projects a `slot="ss:main"` child to take over the
+              pane (e.g. a cloud Settings page) while the sidebar stays. */}
+          <slot name={SLOTS.main}>
+            <Show when={!streamMode()}>
+              <Onboard />
+            </Show>
+            <SessionView />
+          </slot>
         </main>
       </div>
       <Show when={!streamMode()}>

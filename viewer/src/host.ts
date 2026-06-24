@@ -67,6 +67,14 @@ export const SLOTS = {
   // Empty by default (self-hosted has no actions here); an embedder projects
   // session-scoped controls such as a cloud "Share" button. (`.session-head`, App.tsx)
   sessionActions: "ss:session-actions",
+  // The whole main content pane (onboarding + session stream). Fallback is the
+  // engine's normal board; an embedder projects a full-pane view here — e.g. a
+  // cloud "Settings" page — to take over the main area while the sidebar (session
+  // list, account footer) stays put. Unlike the always-on footer/empty overrides,
+  // this is meant to be projected *conditionally*: project a child only while the
+  // host view is active, and the engine falls back to the board when it's gone.
+  // (`<main>`, App.tsx)
+  main: "ss:main",
 } as const;
 
 export type SlotName = (typeof SLOTS)[keyof typeof SLOTS];

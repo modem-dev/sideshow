@@ -64,6 +64,13 @@ export declare const SLOTS: {
   readonly empty: "ss:empty";
   /** Per-session actions in the session header, beside the stream/timeline toggle. */
   readonly sessionActions: "ss:session-actions";
+  /**
+   * The whole main content pane (onboarding + session stream). Fallback is the
+   * normal board; project a `slot="ss:main"` child to take over the main area
+   * (e.g. a cloud Settings page) while the sidebar stays. Meant to be projected
+   * conditionally — when no child is assigned the engine shows the board.
+   */
+  readonly main: "ss:main";
 };
 
 export type SlotName = (typeof SLOTS)[keyof typeof SLOTS];
