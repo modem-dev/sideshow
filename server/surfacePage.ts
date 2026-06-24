@@ -327,8 +327,18 @@ svg { max-width: 100%; height: auto; }
 // so the diagram matches sideshow's look instead of mermaid's stock theme.
 // Mirrors sideshowTheme() in the old viewer MermaidPart, but reads palette
 // fields directly rather than getComputedStyle.
-function mermaidThemeVars(p: Palette): {
-  themeVariables: Record<string, string>;
+//
+// `mode` must match the scheme `p` was resolved into (renderMermaidPage picks
+// the palette off the same mode): mermaid's `base` theme DERIVES every variable
+// we don't set here, and many of those derivations branch on a `darkMode` flag
+// (row stripes, the cScale/surface color ramps, the edge-label background).
+// Leave it unset and they're all computed for a light canvas, so they never
+// flip — "some of the diagram changes on toggle, but not all of it."
+function mermaidThemeVars(
+  p: Palette,
+  mode?: Mode,
+): {
+  themeVariables: Record<string, string | boolean>;
   themeCSS: string;
 } {
   const text = p.text;
@@ -341,8 +351,17 @@ function mermaidThemeVars(p: Palette): {
   const accentBg = p.info.bg;
   return {
     themeVariables: {
+      // Pin the scheme so mermaid's darkMode-branched derivations resolve the
+      // same way the palette we read from did (both come from `mode`).
+      darkMode: mode === "dark",
       fontFamily: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`,
       fontSize: "14px",
+      // The canvas mermaid derives against. Several colors default to
+      // invert(background) — most visibly `arrowheadColor` — so a pinned value
+      // here is what lets them track the theme instead of inverting the
+      // hardcoded #f4f4f4 default (which stays light in both modes). Use the
+      // real backdrop the SVG sits on (the card surface).
+      background: surface,
       primaryColor: panel,
       primaryBorderColor: border,
       primaryTextColor: text,
@@ -351,7 +370,18 @@ function mermaidThemeVars(p: Palette): {
       mainBkg: panel,
       nodeBorder: border,
       lineColor: muted,
+      // Arrowheads default to invert(background); point them at the line color
+      // so the whole edge reads as one color in both schemes.
+      arrowheadColor: muted,
       textColor: text,
+      // Text colors mermaid would otherwise invert()-derive from box/canvas
+      // colors. Pin them to our text token so every label — node, title,
+      // cluster, class-member — reads as the viewer's text color in both modes.
+      nodeTextColor: text,
+      titleColor: text,
+      classText: text,
+      secondaryTextColor: text,
+      tertiaryTextColor: text,
       clusterBkg: bg,
       clusterBorder: border,
       edgeLabelBackground: bg,
@@ -396,7 +426,7 @@ export function renderMermaidPage(doc: {
   const theme =
     typeof doc.theme === "string" || doc.theme == null ? themeById(doc.theme) : doc.theme;
   const palette = doc.mode === "dark" ? theme.dark : theme.light;
-  const { themeVariables, themeCSS } = mermaidThemeVars(palette);
+  const { themeVariables, themeCSS } = mermaidThemeVars(palette, doc.mode);
   // Embed source + theme as JS literals; escape `<` so a `</script>` in the
   // diagram source can't break out of the module script.
   const enc = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");

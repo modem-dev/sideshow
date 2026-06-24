@@ -5,6 +5,7 @@ import {
   BRIDGE_JS,
   escapeHtml,
   renderHtmlPage,
+  renderMermaidPage,
   renderSandboxedPart,
 } from "../server/surfacePage.ts";
 import { themeById } from "../server/themes.ts";
@@ -163,6 +164,63 @@ test("a pinned mode forces the scheme into html parts but not transparent rich f
     rich.includes(`--text: ${dark.text}`),
     "rich frame carries the pinned dark chrome vars",
   );
+});
+
+test("a mermaid page pins mermaid's derived colors to the scheme so the whole diagram flips", () => {
+  const theme = themeById("github");
+  const dark = renderMermaidPage({
+    mermaid: "graph TD; A-->B",
+    origin: ORIGIN,
+    theme: "github",
+    mode: "dark",
+  });
+  const light = renderMermaidPage({
+    mermaid: "graph TD; A-->B",
+    origin: ORIGIN,
+    theme: "github",
+    mode: "light",
+  });
+
+  // themeVariables is embedded as a JSON literal in the loader; pull it back out.
+  const varsOf = (page: string): Record<string, unknown> => {
+    const m = page.match(/themeVariables: (\{.*?\}),\n\s*themeCSS:/s);
+    assert.ok(m, "themeVariables literal not found in the mermaid loader");
+    return JSON.parse(m[1]);
+  };
+  const dv = varsOf(dark);
+  const lv = varsOf(light);
+
+  // darkMode is pinned to the resolved scheme. Unset, mermaid derives every
+  // variable we don't set (row stripes, cScale ramps, edge-label bg) for a
+  // light canvas, so they never flip — the original "some of it changes" bug.
+  assert.equal(dv.darkMode, true, "dark page pins darkMode:true");
+  assert.equal(lv.darkMode, false, "light page pins darkMode:false");
+
+  // background is the real card surface, not mermaid's hardcoded #f4f4f4, so the
+  // invert-derived colors track the theme — and it flips between schemes.
+  assert.equal(dv.background, theme.dark.surface);
+  assert.equal(lv.background, theme.light.surface);
+  assert.notEqual(dv.background, lv.background, "background flips with the scheme");
+
+  // arrowheadColor used to default to invert(background) and stayed dark in both
+  // modes while its edge flipped; now it's pinned to the line color so the whole
+  // edge reads as one color in either scheme.
+  assert.equal(dv.arrowheadColor, theme.dark.muted);
+  assert.equal(dv.arrowheadColor, dv.lineColor, "dark arrowhead matches the edge it caps");
+  assert.equal(lv.arrowheadColor, lv.lineColor, "light arrowhead matches the edge it caps");
+
+  // the text colors mermaid would otherwise invert()-derive are pinned to our
+  // text token, so every label reads as the viewer's text color in both modes.
+  for (const k of [
+    "nodeTextColor",
+    "titleColor",
+    "classText",
+    "secondaryTextColor",
+    "tertiaryTextColor",
+  ]) {
+    assert.equal(dv[k], theme.dark.text, `${k} pinned to text (dark)`);
+    assert.equal(lv[k], theme.light.text, `${k} pinned to text (light)`);
+  }
 });
 
 test("renderSandboxedPart embeds the body and css inside the sandbox doc", () => {
