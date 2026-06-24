@@ -1,4 +1,5 @@
 import { expect, publish, test } from "./fixtures.ts";
+import { renderSandboxedPart } from "../server/surfacePage.ts";
 
 // The sandbox attribute (asserted across the part specs) is the *shape* of the
 // isolation; this spec asserts the *behavior* the project's core invariant
@@ -164,4 +165,53 @@ test("a top-level surface document loads in an opaque (sandboxed) origin", async
   // read the board's cookies/storage or reach a same-origin viewer window.
   const origin = await page.evaluate(() => window.origin);
   expect(origin).toBe("null");
+});
+
+// Rich parts now load via a blob: URL instead of srcdoc (to dodge a Chrome 149
+// field trial that breaks opaque-origin srcdoc layout). The rich-part CSP
+// deliberately allows 'unsafe-inline' so the bridge runs without a nonce — which
+// means the OPAQUE ORIGIN is the only thing containing a script. So the security
+// question for the blob: switch is exactly: does a blob-loaded rich frame still
+// get an opaque origin? This injects a body as if a markdown-it / mermaid /
+// diff sanitizer bypass let raw <script> through, lets it RUN, and proves it is
+// still walled off from the board — can't read its origin, can't write the
+// parent. (Same probe-self-reports-into-its-own-DOM trick as the html test: the
+// frame can't phone home, so Playwright reads the verdict across the boundary.)
+test("a rich part loaded via blob: URL is opaque-origin — a script that runs can't reach the board", async ({
+  page,
+  server,
+}) => {
+  const evil = `<div id="r">running</div>
+<script>
+  var out = String(window.origin);
+  try {
+    parent.document.body.dataset.pwned = '1'; // same-origin would succeed here
+    out += ' | REACHED-PARENT';
+  } catch (e) {
+    out += ' | parent-blocked';
+  }
+  document.getElementById('r').textContent = out;
+</script>`;
+  const docHtml = renderSandboxedPart({ body: evil, css: "", origin: server.url });
+
+  await page.goto(server.url);
+  // Mount the rich frame exactly as SandboxedPart does: a blob: URL document in
+  // an iframe sandboxed with allow-scripts and NO allow-same-origin.
+  await page.evaluate((html) => {
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const f = document.createElement("iframe");
+    f.id = "rich-probe";
+    f.setAttribute("sandbox", "allow-scripts");
+    f.src = url;
+    document.body.append(f);
+  }, docHtml);
+
+  // The inline script ran (CSP allows it) and self-reported into its own DOM:
+  // window.origin is the opaque "null", and its write to the parent board threw.
+  const probe = page.frameLocator("#rich-probe").locator("#r");
+  await expect(probe).toContainText("null", { timeout: 10_000 });
+  await expect(probe).toContainText("parent-blocked");
+  await expect(probe).not.toContainText("REACHED-PARENT");
+  // The board document itself is untouched: the escape never reached it.
+  await expect.poll(() => page.evaluate(() => document.body.dataset.pwned)).toBeUndefined();
 });
