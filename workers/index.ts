@@ -60,10 +60,18 @@ export default {
     if (!pngMatch) return board.fetch(request);
 
     // Let the app decide auth: forward the request (with user cookies/headers)
-    // to the real /s/:id route.
+    // to the real /s/:id route. We pass theme/mode so the rendered page matches
+    // what the viewer shows; the width is configurable via ?w= (default 800).
+    const width = Math.min(Math.max(Number(url.searchParams.get("w")) || 800, 320), 1920);
+    const theme = url.searchParams.get("theme");
+    const mode = url.searchParams.get("mode") === "dark" ? "dark" : "light";
+
     const checkUrl = new URL(url);
     checkUrl.pathname = `/s/${pngMatch[1]}`;
+    checkUrl.search = ""; // clear .png query params
     checkUrl.searchParams.set("part", "0");
+    if (theme) checkUrl.searchParams.set("theme", theme);
+    checkUrl.searchParams.set("mode", mode);
     const checkRes = await board.fetch(new Request(checkUrl, { headers: request.headers }));
     if (!checkRes.ok) return checkRes;
     // Auth passed and surface exists — discard the HTML, take a screenshot.
@@ -72,7 +80,7 @@ export default {
     const target = checkUrl.toString();
     const screenshot = await env.BROWSER.quickAction("screenshot", {
       url: target,
-      viewport: { width: 1200, height: 630 },
+      viewport: { width, height: Math.round((width * 630) / 1200) },
       gotoOptions: { waitUntil: "networkidle0", timeout: 15000 },
       cookies: [{ name: "sideshow_key", value: env.SIDESHOW_TOKEN, domain: url.hostname }],
     });
