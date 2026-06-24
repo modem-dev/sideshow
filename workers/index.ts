@@ -64,7 +64,12 @@ export default {
     // what the viewer shows; the width is configurable via ?w= (default 800).
     const width = Math.min(Math.max(Number(url.searchParams.get("w")) || 800, 320), 1920);
     const theme = url.searchParams.get("theme");
-    const mode = url.searchParams.get("mode") === "dark" ? "dark" : "light";
+    const modeParam = url.searchParams.get("mode");
+    const modeCookie = request.headers.get("cookie")?.match(/sideshow_mode=(light|dark)/)?.[1];
+    const mode =
+      modeParam === "dark" || modeParam === "light"
+        ? modeParam
+        : (modeCookie as "light" | "dark" | undefined);
     const noCache = url.searchParams.has("nocache");
 
     const checkUrl = new URL(url);
@@ -72,7 +77,7 @@ export default {
     checkUrl.search = ""; // clear .png query params
     checkUrl.searchParams.set("part", "0");
     if (theme) checkUrl.searchParams.set("theme", theme);
-    checkUrl.searchParams.set("mode", mode);
+    if (mode) checkUrl.searchParams.set("mode", mode);
     const checkRes = await board.fetch(new Request(checkUrl, { headers: request.headers }));
     if (!checkRes.ok) return checkRes;
     // Auth passed and surface exists — discard the HTML, take a screenshot.

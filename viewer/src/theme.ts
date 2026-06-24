@@ -35,8 +35,13 @@ const darkQuery =
 const [prefersDark, setPrefersDark] = createSignal(!!darkQuery?.matches);
 // On an OS light/dark flip the resolved palette changes without a theme change,
 // so re-push it to the host (below) after updating the mode signal.
+function syncModeCookie() {
+  document.cookie = `sideshow_mode=${prefersDark() ? "dark" : "light"};path=/;max-age=31536000;SameSite=Lax`;
+}
+syncModeCookie();
 darkQuery?.addEventListener("change", (e) => {
   setPrefersDark(e.matches);
+  syncModeCookie();
   emitThemeTokens();
 });
 export const resolvedMode = (): Mode => (prefersDark() ? "dark" : "light");
