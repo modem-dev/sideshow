@@ -30,6 +30,13 @@ To share read-only access without handing out the token, set
 Writes still require `SIDESHOW_TOKEN`, and authenticated owners keep the full
 UI. Invalid `SIDESHOW_PUBLIC_READ` values are ignored.
 
+Bare surface links (`/s/:surfaceId`) include Open Graph/Twitter metadata for
+inline previews. Crawlers only see useful previews when those read routes are
+publicly reachable under the settings above; tokened/private boards do not put
+`?key=` secrets into preview metadata. Preview images use
+`/s/:surfaceId.png?card=1`, which requires the Cloudflare Browser Rendering
+binding from `wrangler.jsonc` on deployed Workers.
+
 Remote agents can connect MCP straight to the deployment:
 
 ```sh
