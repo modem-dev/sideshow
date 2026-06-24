@@ -8,7 +8,11 @@ export interface SurfaceScreenshotPlan {
 
 export function matchSurfaceScreenshot(method: string, pathname: string): string | null {
   if (method !== "GET" && method !== "HEAD") return null;
-  return pathname.match(/^\/s\/([A-Za-z0-9_-]+)\.png$/)?.[1] ?? null;
+  // Keep this independent of the surface id alphabet. The store owns id
+  // validity; the Worker only recognizes the stable one-segment screenshot
+  // shape and forwards the captured id to the app for the real existence/auth
+  // check. That way a future id alphabet change doesn't break link previews.
+  return pathname.match(/^\/s\/([^/]+)\.png$/)?.[1] ?? null;
 }
 
 export function planSurfaceScreenshot(

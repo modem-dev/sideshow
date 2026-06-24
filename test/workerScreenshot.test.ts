@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { matchSurfaceScreenshot, planSurfaceScreenshot } from "../workers/screenshot.ts";
 
-test("surface screenshot route matches GET and HEAD requests for URL-safe ids", () => {
+test("surface screenshot route matches GET and HEAD requests without baking in an id alphabet", () => {
   assert.equal(matchSurfaceScreenshot("GET", "/s/4tgMLMav_WY.png"), "4tgMLMav_WY");
-  assert.equal(matchSurfaceScreenshot("HEAD", "/s/abc-123_DEF.png"), "abc-123_DEF");
+  assert.equal(matchSurfaceScreenshot("HEAD", "/s/future.id~v2.png"), "future.id~v2");
   assert.equal(matchSurfaceScreenshot("POST", "/s/abc123.png"), null);
   assert.equal(matchSurfaceScreenshot("HEAD", "/s/abc123"), null);
+  assert.equal(matchSurfaceScreenshot("GET", "/s/nested/id.png"), null);
 });
 
 test("card screenshots use stable social-card dimensions without fullPage", () => {
