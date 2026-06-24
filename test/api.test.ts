@@ -6,17 +6,21 @@ import { test } from "node:test";
 import { createApp } from "../server/app.ts";
 import { JsonFileStore } from "../server/storage.ts";
 
-function makeApp(authToken?: string, opts?: { publicRead?: "session" | "full" }) {
+function makeApp(
+  authToken?: string,
+  opts?: { publicRead?: "session" | "full"; basePath?: string; viewerHtml?: string },
+) {
   const dir = mkdtempSync(join(tmpdir(), "sideshow-test-"));
   const store = new JsonFileStore(join(dir, "data.json"));
+  const { viewerHtml = "<html><head></head><body>viewer</body></html>", ...rest } = opts ?? {};
   return createApp({
     store,
-    viewerHtml: "<html>viewer</html>",
+    viewerHtml,
     guideMarkdown: "# guide",
     setupText: "# setup",
     agentHowtoText: "# agent how-to",
     authToken,
-    ...opts,
+    ...rest,
   });
 }
 
@@ -157,6 +161,107 @@ test("the viewer render round-trip (POST /api/frames + GET /f/:id) is gone", asy
   assert.equal((await app.request("/f/anything")).status, 404);
 });
 
+test("GET /s/:id serves the viewer shell with link-preview metadata", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/snippets",
+    json({ title: "Auth Flow", html: "<p>diagram</p>", sessionTitle: "Secret session" }),
+  );
+  const surface = (await res.json()) as any;
+
+  const page = await app.request(`https://board.test/s/${surface.id}`);
+  assert.equal(page.status, 200);
+  assert.ok(page.headers.get("content-type")?.includes("text/html"));
+  assert.equal(page.headers.get("content-security-policy"), null);
+  const body = await page.text();
+  assert.ok(body.includes("viewer"), "should serve the trusted viewer shell");
+  assert.doesNotMatch(body, /<p>diagram<\/p>/, "should not inline agent HTML");
+  assert.match(body, /<meta property="og:title" content="Auth Flow">/);
+  assert.match(body, /<meta name="twitter:title" content="Auth Flow">/);
+  assert.match(body, /<meta property="og:description" content="A https:\/\/sideshow\.sh surface">/);
+  assert.match(
+    body,
+    /<meta name="twitter:description" content="A https:\/\/sideshow\.sh surface">/,
+  );
+  assert.doesNotMatch(body, /Secret session/);
+});
+
+test("GET /s/:id emits absolute token-free canonical and preview image URLs", async () => {
+  const app = makeApp("secret");
+  const res = await app.request(
+    "https://board.test/api/snippets",
+    authedJson({ title: "Preview", html: "<p>x</p>" }),
+  );
+  const surface = (await res.json()) as any;
+
+  const body = await (await app.request(`https://board.test/s/${surface.id}?key=secret`)).text();
+  const canonical = `https://board.test/s/${surface.id}`;
+  const image = `https://board.test/s/${surface.id}.png?card=1`;
+  assert.match(body, new RegExp(`<link rel="canonical" href="${canonical}">`));
+  assert.match(body, new RegExp(`<meta property="og:url" content="${canonical}">`));
+  assert.match(
+    body,
+    new RegExp(`<meta property="og:image" content="${image.replace("?", "\\?")}">`),
+  );
+  assert.match(
+    body,
+    new RegExp(`<meta name="twitter:image" content="${image.replace("?", "\\?")}">`),
+  );
+  for (const line of body.split("\n").filter((l) => /canonical|og:|twitter:/.test(l))) {
+    assert.doesNotMatch(line, /key=secret|secret/);
+  }
+});
+
+test("GET /s/:id?part=0 still serves an opaque sandboxed part document", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/snippets",
+    json({ title: "Part", html: "<script>window.x=1</script><p>part</p>" }),
+  );
+  const surface = (await res.json()) as any;
+
+  const part = await app.request(`/s/${surface.id}?part=0`);
+  assert.equal(part.status, 200);
+  const csp = part.headers.get("content-security-policy") ?? "";
+  assert.match(csp, /\bsandbox\b/);
+  assert.match(csp, /\ballow-scripts\b/);
+  assert.doesNotMatch(csp, /allow-same-origin/);
+  assert.match(await part.text(), /<p>part<\/p>/);
+});
+
+test("GET /s/:id escapes surface metadata in preview tags", async () => {
+  const app = makeApp();
+  const title = `A "quoted" <tag> & more`;
+  const res = await app.request("/api/snippets", json({ title, html: "<p>x</p>" }));
+  const surface = (await res.json()) as any;
+
+  const body = await (await app.request(`/s/${surface.id}`)).text();
+  assert.match(
+    body,
+    /<meta property="og:title" content="A &quot;quoted&quot; &lt;tag&gt; &amp; more">/,
+  );
+  assert.doesNotMatch(body, /content="A "quoted" <tag> & more"/);
+});
+
+test("GET /s/:id preview metadata respects configured base path", async () => {
+  const app = makeApp(undefined, { basePath: "/u/alice" });
+  const res = await app.request("/api/snippets", json({ title: "Base", html: "<p>x</p>" }));
+  const surface = (await res.json()) as any;
+
+  const body = await (await app.request(`https://board.test/s/${surface.id}`)).text();
+  assert.match(
+    body,
+    new RegExp(`<link rel="canonical" href="https://board.test/u/alice/s/${surface.id}">`),
+  );
+  assert.match(
+    body,
+    new RegExp(
+      `<meta property="og:image" content="https://board.test/u/alice/s/${surface.id}\\.png\\?card=1">`,
+    ),
+  );
+  assert.match(body, /window\.__SIDESHOW_BASE_PATH__="\/u\/alice"/);
+});
+
 test("/s served versioned + themed is cacheable; an unpinned load is not", async () => {
   const app = makeApp();
   const res = await app.request(
@@ -186,14 +291,14 @@ test("a snippet's kits ride the html part and inject the kit CSS/JS at /s", asyn
   assert.deepEqual(full.parts[0].kits, ["slides"]);
 
   // /s injects the kit's css (rail/deck rules) and its behavior js
-  const doc = await (await app.request(`/s/${surface.id}`)).text();
+  const doc = await (await app.request(`/s/${surface.id}?part=0`)).text();
   assert.match(doc, /\.deck>\.slide/);
   assert.match(doc, /querySelector\('\.deck'\)/);
 
   // a plain snippet (no kits) gets neither
   const plain = await app.request("/api/snippets", json({ title: "Plain", html: "<p>x</p>" }));
   const plainSurface = (await plain.json()) as any;
-  const plainDoc = await (await app.request(`/s/${plainSurface.id}`)).text();
+  const plainDoc = await (await app.request(`/s/${plainSurface.id}?part=0`)).text();
   assert.doesNotMatch(plainDoc, /querySelector\('\.deck'\)/);
 });
 
@@ -509,16 +614,16 @@ test("update bumps version and keeps history; old version renderable", async () 
   assert.equal(full.history.length, 1);
   assert.equal(full.history[0].parts[0].html, "<p>v1</p>");
 
-  const current = await (await app.request(`/s/${s.id}`)).text();
+  const current = await (await app.request(`/s/${s.id}?part=0`)).text();
   assert.ok(current.includes("<p>v2</p>"));
-  const old = await (await app.request(`/s/${s.id}?ver=1`)).text();
+  const old = await (await app.request(`/s/${s.id}?part=0&ver=1`)).text();
   assert.ok(old.includes("<p>v1</p>"));
 });
 
 test("snippet page is wrapped with CSP, bridge, and kit", async () => {
   const app = makeApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
-  const page = await (await app.request(`/s/${s.id}`)).text();
+  const page = await (await app.request(`/s/${s.id}?part=0`)).text();
   assert.ok(page.includes("Content-Security-Policy"));
   assert.ok(page.includes("window.sendPrompt"));
   assert.ok(page.includes("__sideshow"));
@@ -1495,7 +1600,7 @@ test("the surface CSP allows the server origin so assets embed by url", async ()
   const snip = (await (
     await app.request("/api/snippets", json({ html: "<img src=/a/x>" }))
   ).json()) as any;
-  const page = await (await app.request(`/s/${snip.id}`)).text();
+  const page = await (await app.request(`/s/${snip.id}?part=0`)).text();
   assert.match(page, /img-src https: data: blob: http:\/\/localhost/);
 });
 

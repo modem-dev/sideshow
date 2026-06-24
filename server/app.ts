@@ -598,6 +598,13 @@ export function createApp({
   const withOrigin = (text: string, c: { req: { url: string } }) =>
     text.replaceAll(LOCAL_ORIGIN, new URL(c.req.url).origin);
 
+  const injectHead = (text: string, head: string) => {
+    const headClose = text.lastIndexOf("</head>");
+    return headClose >= 0
+      ? `${text.slice(0, headClose)}${head}${text.slice(headClose)}`
+      : `${head}${text}`;
+  };
+
   const withViewerConfig = (text: string, request: Request, isReadonly: boolean) => {
     const config = [
       `window.__SIDESHOW_BASE_PATH__=${JSON.stringify(requestBasePath(request))};`,
@@ -606,19 +613,40 @@ export function createApp({
         ? `window.__SIDESHOW_PUBLIC_READ__=${JSON.stringify(publicRead)};`
         : "",
     ].join("");
-    const script = `<script>${config}</script>`;
-    const headClose = text.lastIndexOf("</head>");
-    return headClose >= 0
-      ? `${text.slice(0, headClose)}${script}${text.slice(headClose)}`
-      : `${script}${text}`;
+    return injectHead(text, `<script>${config}</script>`);
   };
 
-  const configuredViewerHtml = (c: Context) =>
-    withViewerConfig(
+  const surfacePreviewHead = (surface: Surface, request: Request) => {
+    const origin = new URL(request.url).origin;
+    const publicBasePath = requestBasePath(request);
+    const canonical = `${origin}${publicBasePath}/s/${surface.id}`;
+    const image = `${origin}${publicBasePath}/s/${surface.id}.png?card=1`;
+    const title = escapeHtml(surface.title);
+    const description = "A https://sideshow.sh surface";
+    return [
+      `<link rel="canonical" href="${escapeHtml(canonical)}">`,
+      `<meta property="og:type" content="website">`,
+      `<meta property="og:title" content="${title}">`,
+      `<meta property="og:description" content="${description}">`,
+      `<meta property="og:url" content="${escapeHtml(canonical)}">`,
+      `<meta property="og:image" content="${escapeHtml(image)}">`,
+      `<meta property="og:image:width" content="1200">`,
+      `<meta property="og:image:height" content="630">`,
+      `<meta name="twitter:card" content="summary_large_image">`,
+      `<meta name="twitter:title" content="${title}">`,
+      `<meta name="twitter:description" content="${description}">`,
+      `<meta name="twitter:image" content="${escapeHtml(image)}">`,
+    ].join("\n");
+  };
+
+  const configuredViewerHtml = (c: Context, surface?: Surface) => {
+    const configured = withViewerConfig(
       withOrigin(viewerHtml, { req: { url: c.req.url } }),
       c.req.raw,
       !!publicRead && !isAuthenticated(c),
     );
+    return surface ? injectHead(configured, surfacePreviewHead(surface, c.req.raw)) : configured;
+  };
   app.get("/", (c) => c.html(configuredViewerHtml(c)));
   app.get("/session/:id", async (c) => {
     if (isUnauthenticatedSessionRead(c) && !(await store.getSession(c.req.param("id")))) {
@@ -910,6 +938,9 @@ export function createApp({
   app.get("/s/:id", async (c) => {
     const surface = await store.getSurface(c.req.param("id"));
     if (!surface) return c.text("Surface not found", 404);
+    const partParam = c.req.query("part");
+    if (partParam == null) return c.html(configuredViewerHtml(c, surface));
+
     const ver = c.req.query("ver");
     let title = surface.title;
     let parts = surface.parts;
@@ -920,11 +951,6 @@ export function createApp({
       title = old.title;
       parts = old.parts;
       version = old.version;
-    }
-    const partParam = c.req.query("part");
-    const publicBasePath = requestBasePath(c.req.raw);
-    if (partParam == null && publicBasePath) {
-      return c.redirect(`${publicBasePath}/?surface=${encodeURIComponent(surface.id)}`, 302);
     }
     const idx = Number(partParam ?? 0);
     const part = parts[idx];

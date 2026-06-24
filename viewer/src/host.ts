@@ -150,11 +150,13 @@ export function createDefaultHost(): SideshowHost {
     const qSurface = new URLSearchParams(location.search).get("surface") ?? undefined;
     const m = rest.match(/^\/session\/([^/]+)(?:\/s\/([^/]+))?/);
     if (m) return { sessionId: m[1], surfaceId: m[2] ?? qSurface };
+    const surfaceOnly = rest.match(/^\/s\/([^/]+)/);
+    if (surfaceOnly) return { surfaceId: surfaceOnly[1] };
     return { surfaceId: qSurface };
   };
 
   const urlFor = (to: Route): string => {
-    if (!to.sessionId) return basePath || "/";
+    if (!to.sessionId) return to.surfaceId ? `${basePath}/s/${to.surfaceId}` : basePath || "/";
     return to.surfaceId
       ? `${basePath}/session/${to.sessionId}/s/${to.surfaceId}`
       : `${basePath}/session/${to.sessionId}`;

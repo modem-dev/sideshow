@@ -152,6 +152,17 @@ function syntheticSession(id: string): SessionRow {
 export async function refreshSessions(targetSurfaceId?: string | null) {
   if (isReadonly() && publicReadMode() === "session") {
     const route = host().router.get();
+    if (!route.sessionId && targetSurfaceId) {
+      const target = await api<Surface>(
+        `/api/surfaces/${encodeURIComponent(targetSurfaceId)}`,
+      ).catch(() => null);
+      if (!target) return;
+      if (!sessions.some((s) => s.id === target.sessionId)) {
+        setSessionsInternal(reconcile([syntheticSession(target.sessionId)], { key: "id" }));
+      }
+      await select(target.sessionId, { replace: true, initialSurfaceId: target.id });
+      return;
+    }
     if (!route.sessionId) return;
     if (!sessions.some((s) => s.id === route.sessionId)) {
       setSessionsInternal(reconcile([syntheticSession(route.sessionId)], { key: "id" }));
