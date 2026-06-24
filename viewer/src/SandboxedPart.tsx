@@ -1,10 +1,10 @@
-import { createMemo, onCleanup, onMount } from "solid-js";
+import { createEffect, createMemo, onCleanup, onMount } from "solid-js";
 import { renderSandboxedPart } from "../../server/surfacePage.ts";
 import { themeById } from "../../server/themes.ts";
 import { activeTheme, resolvedMode } from "./theme.ts";
 
 // location.origin is constant for the page lifetime — read it once, not per
-// srcdoc rebuild.
+// doc rebuild.
 const ORIGIN = location.origin;
 
 // Size a surface iframe from a height the in-frame bridge reported. Shared by
@@ -25,6 +25,14 @@ export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unkn
 // regression. `body`/`css` are reactive — a theme switch rebuilds the doc and
 // reloads the frame (the same way Card reloads html-part iframes on theme).
 //
+// The doc is loaded via a `blob:` URL rather than `srcdoc`. A blob-URL iframe
+// under `sandbox="allow-scripts"` (no `allow-same-origin`) still gets an OPAQUE
+// origin — identical isolation to srcdoc — but it is NOT the opaque-origin
+// *srcdoc* layout path that Chrome 149's field trial breaks (there, the frame
+// measures as 0 height and never resizes). The blob is created from the same
+// trusted string; it only becomes live DOM inside the opaque-origin frame, so
+// the security model (opaque origin + the tight rich-part CSP) is unchanged.
+//
 // Resize is handled locally: the bridge in the doc posts its content height, and
 // each frame sizes itself from messages whose source is its own contentWindow.
 // (Link clicks and the session-switch shortcut ride App's global bridge handler,
@@ -42,6 +50,21 @@ export function SandboxedPart(props: { body: string; css: string; class?: string
     }),
   );
 
+  // Point the frame at a fresh blob URL whenever the doc changes (theme switch,
+  // body/css update). Revoke the previous doc's URL once the new one is wired
+  // up — the old frame already loaded it — and revoke the live one on cleanup.
+  let currentUrl: string | null = null;
+  createEffect(() => {
+    const url = URL.createObjectURL(new Blob([doc()], { type: "text/html" }));
+    const prev = currentUrl;
+    currentUrl = url;
+    frame.src = url;
+    if (prev) URL.revokeObjectURL(prev);
+  });
+  onCleanup(() => {
+    if (currentUrl) URL.revokeObjectURL(currentUrl);
+  });
+
   onMount(() => {
     const onMessage = (ev: MessageEvent) => {
       if (ev.source !== frame.contentWindow) return;
@@ -51,25 +74,6 @@ export function SandboxedPart(props: { body: string; css: string; class?: string
     };
     window.addEventListener("message", onMessage);
     onCleanup(() => window.removeEventListener("message", onMessage));
-
-    // Chrome field-trial workaround: certain Chrome 149 A/B experiments break
-    // layout measurement in opaque-origin srcdoc iframes — scrollHeight,
-    // offsetHeight, innerWidth all read as 0.  The bridge may fire with only
-    // the body-padding height (≤ MIN_H) because the content was never laid
-    // out, then never re-fire because no resize occurs.  Re-setting the
-    // srcdoc attribute forces a fresh HTML parse that consistently recovers
-    // layout.  One retry after 2 s is enough; the re-parsed bridge fires
-    // within ~60 ms.
-    const retryId = setTimeout(() => {
-      if (frame.isConnected && frame.srcdoc && frame.offsetHeight <= MIN_H) {
-        const s = frame.srcdoc;
-        frame.srcdoc = "";
-        requestAnimationFrame(() => {
-          frame.srcdoc = s;
-        });
-      }
-    }, 2000);
-    onCleanup(() => clearTimeout(retryId));
   });
 
   return (
@@ -77,7 +81,6 @@ export function SandboxedPart(props: { body: string; css: string; class?: string
       ref={(el) => (frame = el)}
       class={props.class ?? "partframe"}
       sandbox="allow-scripts"
-      srcdoc={doc()}
     ></iframe>
   );
 }
