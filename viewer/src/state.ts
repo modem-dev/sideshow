@@ -240,6 +240,20 @@ export function focusSurface(surfaceId: string) {
   if (sid) host().router.navigate({ sessionId: sid, surfaceId }, { replace: true });
 }
 
+// Return to "home" — the session-less base route — and drop the current
+// selection. Drives the clickable sidebar brand: a guaranteed way back to the
+// empty board from anywhere. Always asks the host to navigate (never short-
+// circuits on the engine's own state): an embedding host may layer its own view
+// over the board — e.g. sideshow cloud's full-page Settings, which has no
+// session links to click out of on an empty board — and only this navigate()
+// clears it. The host itself dedupes a no-op move. applyRoute ignores a null
+// sessionId (back/forward to home shouldn't thrash a load), so we deselect here.
+export function goHome() {
+  setSelectedInternal(null);
+  setNavOpen(false);
+  host().router.navigate({ sessionId: null, surfaceId: null });
+}
+
 // Re-select the session when the host's route changes (back/forward).
 export function applyRoute(route: Route) {
   if (route.sessionId && route.sessionId !== selected()) {

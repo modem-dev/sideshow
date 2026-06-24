@@ -12,6 +12,7 @@ import {
   checkVersion,
   connect,
   dismissUpdate,
+  goHome,
   groupSessions,
   live,
   navOpen,
@@ -44,6 +45,20 @@ const [connectOpen, setConnectOpen] = createSignal(false);
 // current session's stream. Driven by the host's `layout` (cloud embed) or the
 // self-hosted public-read "session" link (see api.ts `layoutMode`).
 const streamMode = () => layoutMode() === "stream";
+
+// The wordmark, doubling as a home link: clicking it clears the current session
+// and returns to the empty board (goHome). A real <button> so it's keyboard- and
+// screen-reader-reachable; it shares the .brand styling with the static header
+// and aside wordmarks. This is the guaranteed way back to the board when no
+// session is selectable in the sidebar — e.g. an embedding host (sideshow cloud)
+// showing a full-page view over an empty board.
+function Brand() {
+  return (
+    <button class="brand" type="button" aria-label="sideshow — home" onClick={() => goHome()}>
+      <span class="livedot" classList={{ on: live() }}></span>sideshow
+    </button>
+  );
+}
 
 export default function App() {
   // Escape closes the integrations modal while it is open.
@@ -127,15 +142,11 @@ export default function App() {
               ☰<span class="dot" id="menuDot" classList={{ show: unread().size > 0 }}></span>
             </button>
           </Show>
-          <div class="brand">
-            <span class="livedot" classList={{ on: live() }}></span>sideshow
-          </div>
+          <Brand />
         </header>
         <Show when={!streamMode()}>
           <aside>
-            <div class="brand">
-              <span class="livedot" classList={{ on: live() }}></span>sideshow
-            </div>
+            <Brand />
             <UpdateBanner />
             <div id="sessionList">
               <For each={sessionGroups()}>

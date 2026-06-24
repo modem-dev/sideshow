@@ -96,6 +96,26 @@ test("browser back/forward navigates between sessions", async ({ page, server })
   await expect(page.locator(`#sessionList .sess[data-id="${s2.sessionId}"]`)).toHaveClass(/sel/);
 });
 
+test("clicking the sidebar wordmark returns home and clears the selection", async ({
+  page,
+  server,
+}) => {
+  const s1 = await publish(server.url, { html: "<p>one</p>", title: "First", agent: "a1" });
+  await page.goto(server.url);
+  await page.locator(`#sessionList .sess[data-id="${s1.sessionId}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}(\\b|/)`));
+  await expect(page.locator(`#sessionList .sess[data-id="${s1.sessionId}"]`)).toHaveClass(/sel/);
+
+  // The wordmark is a home button: it drops the selection and routes back to the
+  // session-less base path — the guaranteed way back to the board when no session
+  // row is available to click (e.g. a host's full-page view over an empty board).
+  await page.locator("aside .brand").click();
+  await expect(page).not.toHaveURL(/\/session\//);
+  await expect(page.locator(`#sessionList .sess[data-id="${s1.sessionId}"]`)).not.toHaveClass(
+    /sel/,
+  );
+});
+
 test("/ redirects to the last viewed session from localStorage", async ({ page, server }) => {
   const s = await publish(server.url, { html: "<p>hi</p>", title: "Sticky", agent: "pi" });
 
