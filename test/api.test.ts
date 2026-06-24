@@ -172,6 +172,23 @@ test("/s served versioned + themed is cacheable; an unpinned load is not", async
   assert.match(bare.headers.get("cache-control") ?? "", /no-cache/);
 });
 
+test("/s 404s a missing, out-of-range, or non-integer part index (never a 500)", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/surfaces",
+    json({ title: "P", parts: [{ kind: "markdown", markdown: "# hi" }] }),
+  );
+  const { id } = (await res.json()) as any;
+  // the one real part renders...
+  assert.equal((await app.request(`/s/${id}?part=0`)).status, 200);
+  // ...and out-of-range, negative, and non-integer indices all resolve to no
+  // part. Number("abc") is NaN and parts[NaN]/parts[1.5]/parts[-1] are undefined,
+  // so each 404s cleanly rather than throwing into the iframe.
+  for (const p of ["1", "999", "-1", "abc", "1.5"]) {
+    assert.equal((await app.request(`/s/${id}?part=${p}`)).status, 404, `part=${p}`);
+  }
+});
+
 test("a snippet's kits ride the html part and inject the kit CSS/JS at /s", async () => {
   const app = makeApp();
   const res = await app.request(

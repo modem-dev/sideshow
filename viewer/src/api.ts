@@ -1,17 +1,12 @@
 // Thin client over the REST API, typed against the server's data model.
 import type {
   Comment,
-  CodePart,
-  DiffPart,
   HtmlPart,
   ImagePart,
   JsonPart,
-  MarkdownPart,
-  MermaidPart,
   Session,
   Surface,
   SurfacePart,
-  TerminalPart,
   TracePart,
   TraceStep,
 } from "../../server/types.ts";
@@ -19,17 +14,12 @@ import { host } from "./host.ts";
 
 export type {
   Comment,
-  CodePart,
-  DiffPart,
   HtmlPart,
   ImagePart,
   JsonPart,
-  MarkdownPart,
-  MermaidPart,
   Session,
   Surface,
   SurfacePart,
-  TerminalPart,
   TracePart,
   TraceStep,
 };

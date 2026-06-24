@@ -304,11 +304,9 @@ async function onBridgeMessage(ev: MessageEvent) {
   if (!d || !d.__sideshow) return;
   // Every host-affecting message must come from a frame the viewer actually
   // embedded — never an unexpected/nested frame. send-prompt and resize prove
-  // this implicitly (frameForSource resolves the exact html frame); the
-  // remaining types reach the host UI directly, so gate them on isOwnFrame.
-  // (frameForSource only knows html-part frames; switch-session is sent only by
-  // those, but open-link is sent by rich-part frames too, so use the broader
-  // check that recognizes any embedded iframe.)
+  // this implicitly (frameForSource resolves the exact part frame, of any kind);
+  // the remaining types reach the host UI directly, so gate them on isOwnFrame,
+  // which recognizes any embedded iframe by identity.
   if (d.type === "switch-session") {
     if (!isOwnFrame(ev.source)) return;
     if (streamMode()) return;
@@ -318,7 +316,7 @@ async function onBridgeMessage(ev: MessageEvent) {
     return;
   }
   // Resolve the source surface + iframe by contentWindow — a surface may own
-  // several html-part iframes, so resize must target the exact one.
+  // several part iframes, so resize must target the exact one.
   const src = frameForSource(ev.source);
   if (d.type === "resize" && src) {
     applyFrameHeight(src.iframe, d.height);
@@ -359,11 +357,11 @@ async function onBridgeMessage(ev: MessageEvent) {
   }
 }
 
-// True when `source` is the contentWindow of an iframe the viewer embedded
-// (html or rich part). frameForSource only tracks html-part frames; this is the
-// broader gate for messages rich-part frames also send (open-link). Identity
-// comparison works across the opaque-origin boundary even though the frame's
-// document is unreadable.
+// True when `source` is the contentWindow of an iframe the viewer embedded.
+// frameForSource resolves the specific part it belongs to; this is a plain
+// identity gate for the messages that act on the host UI (open-link,
+// switch-session, copy) rather than a specific frame. Identity comparison works
+// across the opaque-origin boundary even though the frame's document is unreadable.
 function isOwnFrame(source: unknown): boolean {
   for (const f of root().querySelectorAll("iframe")) {
     if (f.contentWindow === source) return true;

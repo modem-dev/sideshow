@@ -962,7 +962,11 @@ export function createApp({
     // Versioned + themed requests (what the viewer always sends) are immutable,
     // so allow long-lived shared caching; an unpinned direct load is not.
     const cacheKey = `${surface.id}:${idx}:${version}:${themeId}:${mode ?? "os"}`;
-    const immutable = c.req.query("ver") != null && c.req.query("theme") != null;
+    // Only immutable when every key dimension is pinned in the URL — `mode` is in
+    // the cache key, so a `?ver=&theme=` URL without `?mode=` would let a shared
+    // cache serve the wrong scheme. The viewer always sends all three.
+    const immutable =
+      c.req.query("ver") != null && c.req.query("theme") != null && c.req.query("mode") != null;
     if (immutable) c.header("Cache-Control", "public, max-age=31536000, immutable");
     else c.header("Cache-Control", "private, no-cache");
 
@@ -973,19 +977,23 @@ export function createApp({
       if (part.kind === "mermaid") {
         return renderMermaidPage({ mermaid: part.mermaid, origin, theme, mode });
       }
-      const rendered =
-        part.kind === "markdown"
-          ? await renderMarkdown(part as MarkdownPart, { theme: themeId, mode })
-          : part.kind === "code"
-            ? await renderCode(part as CodePart, { theme: themeId, mode })
-            : part.kind === "terminal"
-              ? renderTerminal(part as TerminalPart)
-              : await renderDiff(part as DiffPart, { theme: themeId, mode }).catch((e) => ({
-                  body: `<div class="rich-error">Couldn’t render diff — ${escapeHtml(
-                    e instanceof Error ? e.message : "render error",
-                  )}</div>`,
-                  css: `.rich-error{color:var(--danger);font:13px/1.5 ui-monospace,monospace;padding:8px 12px;}`,
-                }));
+      // Any renderer failure (a bad patch, a shiki/markdown-it edge case) becomes
+      // an inline error document, never a thrown 500 — the iframe must render
+      // something, not the browser's error page. Covers every rich kind, not just
+      // diff. The error doc caches under this version's key like any other output;
+      // the content is bad for this version, so a retry would just fail the same.
+      const rendered = await (async () => {
+        if (part.kind === "markdown")
+          return renderMarkdown(part as MarkdownPart, { theme: themeId, mode });
+        if (part.kind === "code") return renderCode(part as CodePart, { theme: themeId, mode });
+        if (part.kind === "terminal") return renderTerminal(part as TerminalPart);
+        return renderDiff(part as DiffPart, { theme: themeId, mode });
+      })().catch((e) => ({
+        body: `<div class="rich-error">Couldn’t render ${part.kind} — ${escapeHtml(
+          e instanceof Error ? e.message : "render error",
+        )}</div>`,
+        css: `.rich-error{color:var(--danger);font:13px/1.5 ui-monospace,monospace;padding:8px 12px;}`,
+      }));
       return renderSandboxedPart({ body: rendered.body, css: rendered.css, origin, theme, mode });
     });
     return c.html(doc);
