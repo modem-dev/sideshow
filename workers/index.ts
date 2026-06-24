@@ -84,6 +84,7 @@ export default {
       viewport: { width, height: 800 },
       screenshotOptions: { fullPage: true },
       gotoOptions: { waitUntil: "networkidle0", timeout: 15000 },
+      cacheTTL: 0,
       cookies: [{ name: "sideshow_key", value: env.SIDESHOW_TOKEN, domain: url.hostname }],
     });
     return new Response(await screenshot.arrayBuffer(), {
