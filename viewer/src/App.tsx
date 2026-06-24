@@ -323,7 +323,14 @@ async function onBridgeMessage(ev: MessageEvent) {
     });
     toast("Added to this surface’s thread");
   } else if (d.type === "open-link" && isOwnFrame(ev.source)) {
-    if (confirm(`Open external link?\n\n${d.url}`)) window.open(d.url, "_blank", "noopener");
+    // Only ever open real external links. The in-frame click handler already
+    // forwards just http(s) hrefs, but a surface can call openLink() directly
+    // (or post this message raw) with any scheme — javascript:, data:, file: —
+    // so re-check here, host-side, where it can't be bypassed. (noopener already
+    // severs those from the board, but there's no reason to open them at all.)
+    const url = String(d.url);
+    if (!/^https?:\/\//i.test(url)) return;
+    if (confirm(`Open external link?\n\n${url}`)) window.open(url, "_blank", "noopener");
   } else if (d.type === "copy" && isOwnFrame(ev.source)) {
     void navigator.clipboard?.writeText(String(d.text)).catch(() => {});
   }

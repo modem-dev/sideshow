@@ -86,3 +86,51 @@ test("a surface send is not delivered to the agent as user feedback", async ({
   ).json();
   expect(feedback.comments).toHaveLength(0);
 });
+
+// openLink reaches the host's window.open. The in-frame click handler forwards
+// only http(s) hrefs, but a surface can post the raw bridge message with any
+// scheme, so the host must re-validate. These pin both edges against a surface
+// that auto-fires the raw message on load — the bypass an attacker would use.
+const openLinkMsg = (url: string) =>
+  `<script>parent.postMessage({__sideshow:true,type:"open-link",url:${JSON.stringify(url)}},"*")</script>`;
+
+test("openLink ignores a non-http(s) scheme — no prompt, no open", async ({ page, server }) => {
+  await publish(server.url, {
+    html: openLinkMsg("javascript:alert(1)"),
+    title: "bad",
+    agent: "e2e",
+  });
+
+  let dialogs = 0;
+  page.on("dialog", (d) => {
+    dialogs += 1;
+    void d.dismiss();
+  });
+
+  await page.goto(server.url);
+  await expect(page.locator(".card:not(#whatsNew) iframe").first()).toBeVisible();
+  await page.waitForTimeout(500);
+
+  // The scheme check returns before the confirm, so no dialog is ever raised.
+  expect(dialogs).toBe(0);
+});
+
+test("openLink still prompts for an http(s) url", async ({ page, server }) => {
+  await publish(server.url, {
+    html: openLinkMsg("https://example.com/"),
+    title: "good",
+    agent: "e2e",
+  });
+
+  let dialogMsg = "";
+  page.on("dialog", (d) => {
+    dialogMsg = d.message();
+    void d.dismiss(); // dismiss so nothing actually navigates
+  });
+
+  await page.goto(server.url);
+  await expect(page.locator(".card:not(#whatsNew) iframe").first()).toBeVisible();
+  await page.waitForTimeout(500);
+
+  expect(dialogMsg).toContain("https://example.com/");
+});
