@@ -885,6 +885,17 @@ export function createApp({
     const part = parts[idx];
     if (!part || part.kind !== "html") return c.text("No html part at that index", 404);
     c.header("X-Content-Type-Options", "nosniff");
+    // Sandbox the document however it is loaded. The viewer embeds this in an
+    // iframe whose `sandbox="allow-scripts"` attribute gives it an opaque origin,
+    // but the document is served from the board's own origin — so a TOP-LEVEL
+    // load (a user opening /s/:id in a new tab, an agent-shared link) would
+    // otherwise run the agent's script in the board origin, where it could reach
+    // same-origin storage or window.open('/') the real viewer. A `sandbox` CSP
+    // can only be set as a response header (not the meta tag the page carries),
+    // and it forces the same opaque-origin sandbox on a direct navigation:
+    // allow-scripts so the bridge still runs, but no allow-same-origin, so agent
+    // code can never touch the board origin. Mirrors the iframe's sandbox flags.
+    c.header("Content-Security-Policy", "sandbox allow-scripts");
     // Theme: an explicit ?theme= (the viewer keys iframe srcs by it so a switch
     // reloads the frame) wins; otherwise the persisted board theme; else default.
     const themeId = c.req.query("theme") ?? (await store.getSetting("theme")) ?? DEFAULT_THEME_ID;

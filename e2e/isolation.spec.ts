@@ -141,3 +141,27 @@ test("openLink still prompts for an http(s) url", async ({ page, server }) => {
 
   expect(dialogMsg).toContain("https://example.com/");
 });
+
+// The viewer embeds /s/:id in a sandboxed iframe, but the document is served
+// from the board origin — so a TOP-LEVEL load (open-in-new-tab, a shared link)
+// must not run the agent's script in the board origin. The `sandbox` CSP
+// response header forces an opaque origin however the doc is loaded; this proves
+// the browser actually applies it, not just that the header is present.
+test("a top-level surface document loads in an opaque (sandboxed) origin", async ({
+  page,
+  server,
+}) => {
+  const { id } = await publish(server.url, {
+    html: `<p id="probe">hi</p>`,
+    title: "top-level",
+    agent: "e2e",
+  });
+
+  await page.goto(`${server.url}/s/${id}?part=0`);
+  await expect(page.locator("#probe")).toHaveText("hi"); // it did render + run scripts
+
+  // ...but in an opaque origin: window.origin is "null", so this document can't
+  // read the board's cookies/storage or reach a same-origin viewer window.
+  const origin = await page.evaluate(() => window.origin);
+  expect(origin).toBe("null");
+});

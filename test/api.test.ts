@@ -131,6 +131,15 @@ test("publishes a combined html+diff surface; /s renders the html part only", as
   const part0 = await app.request(`/s/${surface.id}?part=0`);
   assert.ok((await part0.text()).includes("<p>diagram</p>"));
   assert.equal((await app.request(`/s/${surface.id}?part=1`)).status, 404);
+
+  // ...and it carries a `sandbox` CSP response header, so a top-level load of
+  // the document (not just the embedded iframe) runs the agent's script in an
+  // opaque origin — never the board origin. allow-scripts keeps the bridge
+  // working; allow-same-origin must never appear (it would defeat the sandbox).
+  const csp = part0.headers.get("content-security-policy") ?? "";
+  assert.match(csp, /\bsandbox\b/);
+  assert.match(csp, /\ballow-scripts\b/);
+  assert.doesNotMatch(csp, /allow-same-origin/);
 });
 
 test("a snippet's kits ride the html part and inject the kit CSS/JS at /s", async () => {
