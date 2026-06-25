@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
-import type { JsonPart as JsonPartData } from "./api.ts";
+import type { JsonSurface as JsonPartData } from "./api.ts";
 
 export function JsonPart(props: { part: JsonPartData }) {
   return (

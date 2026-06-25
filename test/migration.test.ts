@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { createSqliteStorage, migrateJsonToSqlite } from "../server/sqliteStorage.ts";
 import { SqlStore } from "../server/sqlStore.ts";
 import { JsonFileStore } from "../server/storage.ts";
-import type { BoardSnapshot } from "../server/types.ts";
+import type { WorkspaceSnapshot } from "../server/types.ts";
 
 const tmpJson = () => join(mkdtempSync(join(tmpdir(), "sideshow-mig-")), "data.json");
 
@@ -15,16 +15,16 @@ test("migrates a JSON board into SQLite preserving identity, history, and seq", 
   const json = new JsonFileStore(jsonPath);
   const session = await json.createSession({ agent: "pi", title: "Sess" });
   // a surface that gets updated, so it carries a version bump + one history entry
-  const surface = (await json.createSurface({
+  const surface = (await json.createPost({
     sessionId: session.id,
     title: "S",
-    parts: [{ kind: "html", html: "<p>v1</p>" }],
+    surfaces: [{ kind: "html", html: "<p>v1</p>" }],
   }))!;
-  await json.updateSurface(surface.id, { parts: [{ kind: "html", html: "<p>v2</p>" }] });
+  await json.updatePost(surface.id, { surfaces: [{ kind: "html", html: "<p>v2</p>" }] });
   // comments — seq + ordering drive the feedback cursor
   const c1 = (await json.createComment({
     sessionId: session.id,
-    surfaceId: surface.id,
+    postId: surface.id,
     author: "user",
     text: "first",
   }))!;
@@ -53,11 +53,11 @@ test("migrates a JSON board into SQLite preserving identity, history, and seq", 
   assert.equal(sessions[0].agentSeq, c1.seq);
 
   // surface version + history survive
-  const s = (await sqlite.getSurface(surface.id))!;
+  const s = (await sqlite.getPost(surface.id))!;
   assert.equal(s.version, 2);
   assert.equal(s.history.length, 1);
-  assert.equal((s.parts[0] as { html: string }).html, "<p>v2</p>");
-  assert.equal((s.history[0].parts[0] as { html: string }).html, "<p>v1</p>");
+  assert.equal((s.surfaces[0] as { html: string }).html, "<p>v2</p>");
+  assert.equal((s.history[0].surfaces[0] as { html: string }).html, "<p>v1</p>");
 
   // comments keep their seq + order, and a new comment continues past them
   const comments = await sqlite.listComments({ sessionId: session.id });
@@ -66,7 +66,7 @@ test("migrates a JSON board into SQLite preserving identity, history, and seq", 
     [c1.seq, c2.seq],
   );
   assert.equal(comments[0].id, c1.id);
-  assert.equal(comments[0].surfaceId, surface.id);
+  assert.equal(comments[0].postId, surface.id);
   const c3 = (await sqlite.createComment({
     sessionId: session.id,
     author: "user",
@@ -87,16 +87,16 @@ test("migration is idempotent — a second run is a no-op", async () => {
   const jsonPath = tmpJson();
   const json = new JsonFileStore(jsonPath);
   const session = await json.createSession({ agent: "pi" });
-  await json.createSurface({
+  await json.createPost({
     sessionId: session.id,
     title: "S",
-    parts: [{ kind: "html", html: "<p>x</p>" }],
+    surfaces: [{ kind: "html", html: "<p>x</p>" }],
   });
 
   const sqlite = new SqlStore(createSqliteStorage());
   await migrateJsonToSqlite(sqlite, jsonPath);
   await migrateJsonToSqlite(sqlite, jsonPath);
-  assert.equal((await sqlite.listSurfaces()).length, 1);
+  assert.equal((await sqlite.listPosts()).length, 1);
   assert.ok((await sqlite.getSetting("importedFrom"))?.length);
 });
 
@@ -104,23 +104,23 @@ test("migration never imports into a SQLite db that already has data", async () 
   const jsonPath = tmpJson();
   const json = new JsonFileStore(jsonPath);
   const js = await json.createSession({ agent: "pi" });
-  await json.createSurface({
+  await json.createPost({
     sessionId: js.id,
     title: "JSON",
-    parts: [{ kind: "html", html: "<p>json</p>" }],
+    surfaces: [{ kind: "html", html: "<p>json</p>" }],
   });
 
   const sqlite = new SqlStore(createSqliteStorage());
   const native = await sqlite.createSession({ agent: "amp" });
-  await sqlite.createSurface({
+  await sqlite.createPost({
     sessionId: native.id,
     title: "NATIVE",
-    parts: [{ kind: "html", html: "<p>native</p>" }],
+    surfaces: [{ kind: "html", html: "<p>native</p>" }],
   });
 
   await migrateJsonToSqlite(sqlite, jsonPath);
   assert.deepEqual(
-    (await sqlite.listSurfaces()).map((x) => x.title),
+    (await sqlite.listPosts()).map((x) => x.title),
     ["NATIVE"],
   );
 });
@@ -139,7 +139,7 @@ test("importBoard rolls back fully if an insert fails partway through", async ()
   };
   // Two sessions share a primary key: the first INSERT succeeds, the second
   // throws — so the transaction must roll the first one back too.
-  const bad: BoardSnapshot = {
+  const bad: WorkspaceSnapshot = {
     sessions: [session, session],
     surfaces: [],
     comments: [],

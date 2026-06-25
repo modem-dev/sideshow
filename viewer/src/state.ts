@@ -9,7 +9,7 @@ import {
   publicReadMode,
   type Comment,
   type SessionRow,
-  type Surface,
+  type Post,
   type TraceStep,
   type VersionInfo,
 } from "./api.ts";
@@ -72,10 +72,10 @@ export const selected = selectedState;
 // that mode; null is the normal board. The server serves the same SPA shell for
 // /s/:id (with link-preview metadata, see server/app.ts); the viewer decides the
 // layout from the route here.
-const [standaloneState, setStandaloneInternal] = createSignal<Surface | null>(null);
+const [standaloneState, setStandaloneInternal] = createSignal<Post | null>(null);
 export const standaloneSurface = standaloneState;
 export const [unread, setUnread] = createSignal<ReadonlySet<string>>(new Set<string>());
-const [surfacesStore, setSurfacesInternal] = createStore<Surface[]>([]);
+const [surfacesStore, setSurfacesInternal] = createStore<Post[]>([]);
 export const surfaces = surfacesStore;
 const [commentsState, setCommentsInternal] = createSignal<ViewComment[]>([]);
 export const comments = commentsState;
@@ -183,7 +183,7 @@ export async function bootstrap() {
 // Fetch a surface and switch into standalone mode. No-op if already showing it.
 export async function enterStandalone(id: string) {
   if (standaloneSurface()?.id === id) return;
-  const surface = await api<Surface>(`/api/surfaces/${encodeURIComponent(id)}`).catch(() => null);
+  const surface = await api<Post>(`/api/surfaces/${encodeURIComponent(id)}`).catch(() => null);
   if (surface) setStandaloneInternal(surface);
 }
 
@@ -191,9 +191,9 @@ export async function refreshSessions(targetSurfaceId?: string | null) {
   if (isReadonly() && publicReadMode() === "session") {
     const route = host().router.get();
     if (!route.sessionId && targetSurfaceId) {
-      const target = await api<Surface>(
-        `/api/surfaces/${encodeURIComponent(targetSurfaceId)}`,
-      ).catch(() => null);
+      const target = await api<Post>(`/api/surfaces/${encodeURIComponent(targetSurfaceId)}`).catch(
+        () => null,
+      );
       if (!target) return;
       if (!sessions.some((s) => s.id === target.sessionId)) {
         setSessionsInternal(reconcile([syntheticSession(target.sessionId)], { key: "id" }));
@@ -215,7 +215,7 @@ export async function refreshSessions(targetSurfaceId?: string | null) {
   await refreshSessionsQuiet();
   if (selected() && !sessions.some((s) => s.id === selected())) setSelectedInternal(null);
   if (targetSurfaceId) {
-    const target = await api<Surface>(`/api/surfaces/${encodeURIComponent(targetSurfaceId)}`).catch(
+    const target = await api<Post>(`/api/surfaces/${encodeURIComponent(targetSurfaceId)}`).catch(
       () => null,
     );
     if (target && sessions.some((s) => s.id === target.sessionId)) {
@@ -267,7 +267,7 @@ export async function select(
   void fetchTrace(id);
   const metas = await api<{ id: string }[]>(`/api/sessions/${id}/surfaces`).catch(() => []);
   const details = (
-    await Promise.all(metas.map((m) => api<Surface>(`/api/surfaces/${m.id}`).catch(() => null)))
+    await Promise.all(metas.map((m) => api<Post>(`/api/surfaces/${m.id}`).catch(() => null)))
   ).filter((s) => s !== null);
   if (selected() !== id) return; // user switched away mid-load
   setSurfacesInternal(reconcile(details, { key: "id" }));
@@ -337,7 +337,7 @@ export async function selectAdjacent(delta: 1 | -1) {
 
 // Fetch a surface and insert/update it in the open session's stream.
 async function upsertSurface(id: string, { scroll = true } = {}) {
-  const s = await api<Surface>(`/api/surfaces/${id}`).catch(() => null);
+  const s = await api<Post>(`/api/surfaces/${id}`).catch(() => null);
   if (!s || s.sessionId !== selected()) return;
   const idx = surfaces.findIndex((x) => x.id === s.id);
   if (idx >= 0) {
@@ -389,8 +389,8 @@ export async function sendComment(
     id: `local-${++localSeq}`,
     seq: 0,
     sessionId: selected() ?? "",
-    surfaceId,
-    surfaceTitle: null,
+    postId: surfaceId,
+    postTitle: null,
     author: "user",
     text,
     createdAt: new Date().toISOString(),

@@ -28,9 +28,9 @@ import {
 import { preloadFileDiff } from "@pierre/diffs/ssr";
 import { preloadHighlighter } from "@pierre/diffs";
 import { type Mode, THEMES, themeById } from "./themes.ts";
-import type { CodePart, DiffPart, MarkdownPart, TerminalPart } from "./types.ts";
+import type { CodeSurface, DiffSurface, MarkdownSurface, TerminalSurface } from "./types.ts";
 
-export type RenderedPart = { body: string; css: string };
+export type RenderedSurface = { body: string; css: string };
 export type RenderOpts = { theme?: string; mode?: Mode };
 
 // ---------------------------------------------------------------------------
@@ -163,9 +163,9 @@ function fenceLangs(src: string): string[] {
 }
 
 export async function renderMarkdown(
-  part: MarkdownPart,
+  part: MarkdownSurface,
   opts: RenderOpts = {},
-): Promise<RenderedPart> {
+): Promise<RenderedSurface> {
   const src = part.markdown ?? "";
   const pair = shikiPair(opts.theme);
   const hl = await getHighlighter();
@@ -224,7 +224,7 @@ function resolveCarriageReturns(text: string): string {
     .join("\n");
 }
 
-export function renderTerminal(part: TerminalPart): RenderedPart {
+export function renderTerminal(part: TerminalSurface): RenderedSurface {
   const au = new AnsiUp();
   au.use_classes = false;
   const ansi = au.ansi_to_html(resolveCarriageReturns(part.text ?? ""));
@@ -296,7 +296,10 @@ function plainHtml(code: string): string {
     .join("")}</code></pre>`;
 }
 
-export async function renderCode(part: CodePart, opts: RenderOpts = {}): Promise<RenderedPart> {
+export async function renderCode(
+  part: CodeSurface,
+  opts: RenderOpts = {},
+): Promise<RenderedSurface> {
   const code = part.code ?? "";
   const lang = part.language ?? "text";
   const lineStart = part.lineStart ?? 1;
@@ -347,7 +350,7 @@ diffs-container + diffs-container { border-top: 0.5px solid var(--border); }
 
 const BASE_LANGS = ["text", "json", "javascript", "typescript", "tsx", "jsx"];
 
-function buildFileDiffs(part: DiffPart): { diffs: FileDiffMetadata[]; langs: string[] } {
+function buildFileDiffs(part: DiffSurface): { diffs: FileDiffMetadata[]; langs: string[] } {
   const langs = new Set<string>(BASE_LANGS);
   const diffs: FileDiffMetadata[] = [];
   if (part.patch) {
@@ -376,7 +379,10 @@ function buildFileDiffs(part: DiffPart): { diffs: FileDiffMetadata[]; langs: str
   return { diffs, langs: [...langs] };
 }
 
-export async function renderDiff(part: DiffPart, opts: RenderOpts = {}): Promise<RenderedPart> {
+export async function renderDiff(
+  part: DiffSurface,
+  opts: RenderOpts = {},
+): Promise<RenderedSurface> {
   const t = themeById(opts.theme);
   const shiki = { dark: t.shiki.dark, light: t.shiki.light };
   const { diffs, langs } = buildFileDiffs(part);

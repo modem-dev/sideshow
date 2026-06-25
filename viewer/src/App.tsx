@@ -6,8 +6,8 @@ import {
   layoutMode,
   relTime,
   sessionLabel,
+  type Post,
   type SessionRow,
-  type Surface,
 } from "./api.ts";
 import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
 import { applyFrameHeight, Card, cardEls, frameForSource } from "./Card.tsx";
@@ -272,7 +272,7 @@ export default function App() {
 // it. The Card renders in `standalone` mode (title + parts only); its part
 // iframes are sized by the same postMessage bridge the board uses (it resolves
 // any registered card, so a standalone card sizes identically).
-function StandaloneView(props: { surface: Surface }) {
+function StandaloneView(props: { surface: Post }) {
   return (
     <div id="standalone">
       <main class="standalone-main">

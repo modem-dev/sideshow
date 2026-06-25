@@ -16,10 +16,10 @@ import {
   isReadonly,
   relTime,
   sessionLabel,
-  type ImagePart as ImagePartData,
-  type JsonPart as JsonPartData,
-  type Surface,
-  type TracePart as TracePartData,
+  type ImageSurface as ImagePartData,
+  type JsonSurface as JsonPartData,
+  type Post,
+  type TraceSurface as TracePartData,
   surfaceLink,
 } from "./api.ts";
 import { CommentIcon, LinkIcon, OpenIcon, TrashIcon } from "./icons.tsx";
@@ -135,7 +135,7 @@ function pollScrollIntoView(el: HTMLElement, surfaceId: string): () => void {
   };
 }
 
-export function Card(props: { surface: Surface; standalone?: boolean }) {
+export function Card(props: { surface: Post; standalone?: boolean }) {
   let card!: HTMLDivElement;
   const iframes = new Set<HTMLIFrameElement>();
   // Absolute part index -> its sandboxed-part iframe. Lets the version dropdown
@@ -231,7 +231,7 @@ export function Card(props: { surface: Surface; standalone?: boolean }) {
           so it shows a neutral refresh hint instead. An html iframe src changes
           only when the version, the active theme, or the resolved light/dark
           mode does, so unrelated refetches never reload it. */}
-      <Index each={props.surface.parts}>
+      <Index each={props.surface.surfaces}>
         {(part, i) => (
           <Switch
             fallback={
@@ -259,7 +259,7 @@ export function Card(props: { surface: Surface; standalone?: boolean }) {
                 sandbox="allow-scripts"
                 class={FRAME_CLASS[part().kind]}
                 title={
-                  props.surface.parts.length > 1
+                  props.surface.surfaces.length > 1
                     ? `${props.surface.title} (part ${i + 1})`
                     : props.surface.title
                 }
@@ -362,7 +362,7 @@ function Thread(props: {
   actions?: (startReply: () => void) => JSX.Element;
 }) {
   const [replying, setReplying] = createSignal(false);
-  const list = () => comments().filter((c) => c.surfaceId === props.surfaceId);
+  const list = () => comments().filter((c) => c.postId === props.surfaceId);
   return (
     <div class="thread">
       <Show when={list().length}>
@@ -399,8 +399,8 @@ function Thread(props: {
 // The paste block a copied comment puts on the clipboard — enough context
 // for an agent to act on the comment when handed it directly.
 function pasteBlock(c: ViewComment): string {
-  if (c.surfaceId) {
-    return `sideshow comment on “${c.surfaceTitle ?? "a surface"}” (surface ${c.surfaceId}):\n“${c.text}”`;
+  if (c.postId) {
+    return `sideshow comment on “${c.postTitle ?? "a surface"}” (surface ${c.postId}):\n“${c.text}”`;
   }
   const s = sessions.find((x) => x.id === c.sessionId);
   return `sideshow comment, session “${s ? sessionLabel(s) : c.sessionId}”:\n“${c.text}”`;

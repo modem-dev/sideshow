@@ -71,18 +71,18 @@ async function buildRandomBoard(store: Store, r: () => number) {
     });
     sessionIds.push(sess.id);
     for (let j = 0; j < int(r, 4); j++) {
-      const surf = await store.createSurface({
+      const surf = await store.createPost({
         sessionId: sess.id,
         title: text(r),
-        parts: randomParts(r) as never,
+        surfaces: randomParts(r) as never,
       });
       if (!surf) continue;
       surfaces.push({ id: surf.id, sessionId: sess.id });
       // sometimes more than HISTORY_LIMIT (20) updates → exercises history capping
       for (let k = 0; k < int(r, 25); k++) {
-        await store.updateSurface(surf.id, {
+        await store.updatePost(surf.id, {
           title: maybe(r, () => text(r)),
-          parts: maybe(r, () => randomParts(r) as never),
+          surfaces: maybe(r, () => randomParts(r) as never),
         });
       }
     }
@@ -104,7 +104,7 @@ async function buildRandomBoard(store: Store, r: () => number) {
       : { id: undefined, sessionId: pick(r, sessionIds) };
     await store.createComment({
       sessionId: target.sessionId,
-      surfaceId: useSurface ? target.id : undefined,
+      postId: useSurface ? target.id : undefined,
       author: pick(r, ["user", "agent", "surface", "claude"]),
       text: text(r),
     });
@@ -129,7 +129,7 @@ async function buildRandomBoard(store: Store, r: () => number) {
 async function snapshot(store: Store) {
   const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   const sessions = (await store.listSessions()).slice().sort(byId);
-  const surfaces = (await store.listSurfaces()).slice().sort(byId);
+  const surfaces = (await store.listPosts()).slice().sort(byId);
   const comments = (await store.listComments({})).slice().sort((a, b) => a.seq - b.seq);
   const trace: Record<string, unknown> = {};
   const assetIds = new Set<string>();
@@ -167,18 +167,18 @@ test("migration is byte-faithful across 25 randomized boards", async () => {
 test("history is capped at HISTORY_LIMIT and the version keeps climbing past it", async () => {
   const json = new JsonFileStore(tmpFile("hist.json"));
   const s = await json.createSession({ agent: "pi" });
-  const surf = (await json.createSurface({
+  const surf = (await json.createPost({
     sessionId: s.id,
     title: "S",
-    parts: [{ kind: "html", html: "v0" }] as never,
+    surfaces: [{ kind: "html", html: "v0" }] as never,
   }))!;
   for (let i = 1; i <= 30; i++) {
-    await json.updateSurface(surf.id, { parts: [{ kind: "html", html: `v${i}` }] as never });
+    await json.updatePost(surf.id, { surfaces: [{ kind: "html", html: `v${i}` }] as never });
   }
 
   const sqlite = new SqlStore(createSqliteStorage());
   await migrateJsonToSqlite(sqlite, filePathOf(json));
-  const migrated = (await sqlite.getSurface(surf.id))!;
+  const migrated = (await sqlite.getPost(surf.id))!;
 
   assert.equal(migrated.version, 31, "version counts every update");
   assert.equal(migrated.history.length, 20, "history capped at HISTORY_LIMIT");
@@ -187,7 +187,7 @@ test("history is capped at HISTORY_LIMIT and the version keeps climbing past it"
     migrated.history.map((h) => h.version),
     range(20).map((i) => i + 11),
   );
-  assert.equal((migrated.parts[0] as { html: string }).html, "v30");
+  assert.equal((migrated.surfaces[0] as { html: string }).html, "v30");
 });
 
 test("SqlStore round-trips adversarial text and full-byte binary", async () => {
@@ -202,14 +202,14 @@ test("SqlStore round-trips adversarial text and full-byte binary", async () => {
   assert.equal(back.title, "café ☕ 日本語 العربية 🎉👨‍👩‍👧\ttab");
   assert.equal(back.cwd, "/work/项目");
 
-  const surf = (await store.createSurface({
+  const surf = (await store.createPost({
     sessionId: sess.id,
     title: "🧵".repeat(50),
-    parts: [{ kind: "html", html: "<p>日本語 & <b>bold</b> 🎉</p>" }] as never,
+    surfaces: [{ kind: "html", html: "<p>日本語 & <b>bold</b> 🎉</p>" }] as never,
   }))!;
-  const sr = (await store.getSurface(surf.id))!;
+  const sr = (await store.getPost(surf.id))!;
   assert.equal(sr.title, "🧵".repeat(50));
-  assert.equal((sr.parts[0] as { html: string }).html, "<p>日本語 & <b>bold</b> 🎉</p>");
+  assert.equal((sr.surfaces[0] as { html: string }).html, "<p>日本語 & <b>bold</b> 🎉</p>");
 
   // SQL-injection-shaped text must be inert (bound param) and survive verbatim
   const evil = `a b'; DROP TABLE comments;-- ☕`;
@@ -273,17 +273,17 @@ test("concurrent comments get unique, gap-free, increasing seqs", async () => {
 test("concurrent updates to one surface stay version-consistent (compare-and-set)", async () => {
   const store = new SqlStore(createSqliteStorage());
   const s = await store.createSession({ agent: "pi" });
-  const surf = (await store.createSurface({
+  const surf = (await store.createPost({
     sessionId: s.id,
     title: "S",
-    parts: [{ kind: "html", html: "v0" }] as never,
+    surfaces: [{ kind: "html", html: "v0" }] as never,
   }))!;
   const results = await Promise.all(
-    range(12).map((i) => store.updateSurface(surf.id, { title: `t${i}` })),
+    range(12).map((i) => store.updatePost(surf.id, { title: `t${i}` })),
   );
   const ok = results.filter(Boolean).length;
   assert.ok(ok >= 1, "at least one update lands");
-  const final = (await store.getSurface(surf.id))!;
+  const final = (await store.getPost(surf.id))!;
   // exactly `ok` successful bumps → version ok+1, and history is the contiguous
   // run of prior versions (capped at HISTORY_LIMIT) — no lost or torn version.
   assert.equal(final.version, ok + 1);
@@ -298,12 +298,12 @@ test("file-backed SqlStore persists across a reopen of the same db", async () =>
   const dbPath = tmpFile("persist.db");
   let store = new SqlStore(createSqliteStorage(dbPath));
   const s = await store.createSession({ agent: "pi", title: "Persist" });
-  const surf = (await store.createSurface({
+  const surf = (await store.createPost({
     sessionId: s.id,
     title: "S",
-    parts: [{ kind: "html", html: "hi" }] as never,
+    surfaces: [{ kind: "html", html: "hi" }] as never,
   }))!;
-  await store.createComment({ sessionId: s.id, surfaceId: surf.id, author: "user", text: "kept" });
+  await store.createComment({ sessionId: s.id, postId: surf.id, author: "user", text: "kept" });
   await store.putAsset({
     sessionId: s.id,
     kind: "file",
@@ -315,9 +315,9 @@ test("file-backed SqlStore persists across a reopen of the same db", async () =>
   // reopen a fresh store on the same file — nothing lost
   store = new SqlStore(createSqliteStorage(dbPath));
   assert.equal((await store.listSessions())[0].title, "Persist");
-  const reopened = (await store.getSurface(surf.id))!;
+  const reopened = (await store.getPost(surf.id))!;
   assert.equal(reopened.version, 1);
-  assert.equal((reopened.parts[0] as { html: string }).html, "hi");
+  assert.equal((reopened.surfaces[0] as { html: string }).html, "hi");
   const cs = await store.listComments({ sessionId: s.id });
   assert.equal(cs[0].text, "kept");
   const assets = await store.listAssets(s.id);

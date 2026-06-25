@@ -127,9 +127,9 @@ test("publishes a combined html+diff surface; /s server-renders both parts opaqu
 
   // the full record keeps the html and the diff patch
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
-  assert.equal(full.parts.length, 2);
-  assert.equal(full.parts[0].html, "<p>diagram</p>");
-  assert.equal(full.parts[1].patch, "@@ -1 +1 @@\n-a\n+b");
+  assert.equal(full.surfaces.length, 2);
+  assert.equal(full.surfaces[0].html, "<p>diagram</p>");
+  assert.equal(full.surfaces[1].patch, "@@ -1 +1 @@\n-a\n+b");
 
   // /s renders the html part...
   const part0 = await app.request(`/s/${surface.id}?part=0`);
@@ -288,7 +288,7 @@ test("a snippet's kits ride the html part and inject the kit CSS/JS at /s", asyn
 
   // the kits persist on the stored html part
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
-  assert.deepEqual(full.parts[0].kits, ["slides"]);
+  assert.deepEqual(full.surfaces[0].kits, ["slides"]);
 
   // /s injects the kit's css (rail/deck rules) and its behavior js
   const doc = await (await app.request(`/s/${surface.id}?part=0`)).text();
@@ -349,7 +349,7 @@ test("REST surface routes reject malformed parts before storage", async () => {
 
   const unchanged = (await (await app.request(`/api/surfaces/${good.id}`)).json()) as any;
   assert.equal(unchanged.version, 1);
-  assert.deepEqual(unchanged.parts, [{ kind: "html", html: "<p>x</p>" }]);
+  assert.deepEqual(unchanged.surfaces, [{ kind: "html", html: "<p>x</p>" }]);
 });
 
 test("publish_surface MCP tool round-trips a diff part", async () => {
@@ -371,8 +371,8 @@ test("publish_surface MCP tool round-trips a diff part", async () => {
   const payload = JSON.parse(published.result.content[0].text);
   assert.ok(payload.id && payload.sessionId);
   const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
-  assert.equal(full.parts[0].kind, "diff");
-  assert.equal(full.parts[0].patch, "@@ -1 +1 @@\n-x\n+y");
+  assert.equal(full.surfaces[0].kind, "diff");
+  assert.equal(full.surfaces[0].patch, "@@ -1 +1 @@\n-x\n+y");
 });
 
 test("publishes a markdown part; /s server-renders it to sandboxed html", async () => {
@@ -386,8 +386,8 @@ test("publishes a markdown part; /s server-renders it to sandboxed html", async 
   assert.deepEqual(surface.kinds, ["markdown"]);
 
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
-  assert.equal(full.parts[0].kind, "markdown");
-  assert.equal(full.parts[0].markdown, "## Plan\n\n- step one");
+  assert.equal(full.surfaces[0].kind, "markdown");
+  assert.equal(full.surfaces[0].markdown, "## Plan\n\n- step one");
   // markdown now renders server-side: the prose is in the document, and it is
   // served opaque-sandboxed (the load-bearing CSP header).
   const doc = await app.request(`/s/${surface.id}?part=0`);
@@ -417,9 +417,9 @@ test("publish_surface MCP tool keeps markdown parts and drops empty ones", async
   ).json()) as any;
   const payload = JSON.parse(published.result.content[0].text);
   const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
-  assert.equal(full.parts.length, 1);
-  assert.equal(full.parts[0].kind, "markdown");
-  assert.equal(full.parts[0].markdown, "real prose");
+  assert.equal(full.surfaces.length, 1);
+  assert.equal(full.surfaces[0].kind, "markdown");
+  assert.equal(full.surfaces[0].markdown, "real prose");
 });
 
 test("publish_surface MCP tool round-trips a terminal part", async () => {
@@ -441,10 +441,10 @@ test("publish_surface MCP tool round-trips a terminal part", async () => {
   const payload = JSON.parse(published.result.content[0].text);
   assert.ok(payload.id && payload.sessionId);
   const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
-  assert.equal(full.parts[0].kind, "terminal");
-  assert.equal(full.parts[0].text, "$ echo hi\n\x1b[32mhi\x1b[0m");
-  assert.equal(full.parts[0].cols, 80);
-  assert.equal(full.parts[0].title, "sh");
+  assert.equal(full.surfaces[0].kind, "terminal");
+  assert.equal(full.surfaces[0].text, "$ echo hi\n\x1b[32mhi\x1b[0m");
+  assert.equal(full.surfaces[0].cols, 80);
+  assert.equal(full.surfaces[0].title, "sh");
   // terminal now renders server-side (ansi_up → styled window) at /s
   const doc = await app.request(`/s/${payload.id}?part=0`);
   assert.equal(doc.status, 200);
@@ -462,8 +462,8 @@ test("publishes a mermaid part; /s emits a self-rendering CDN doc", async () => 
   assert.deepEqual(surface.kinds, ["mermaid"]);
 
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
-  assert.equal(full.parts[0].kind, "mermaid");
-  assert.equal(full.parts[0].mermaid, "graph TD; A-->B");
+  assert.equal(full.surfaces[0].kind, "mermaid");
+  assert.equal(full.surfaces[0].mermaid, "graph TD; A-->B");
   // mermaid can't render without a DOM, so /s emits a sandboxed doc that loads
   // mermaid from the CDN and renders the source in-frame. The doc carries the
   // source and the CDN import, and is served opaque-sandboxed.
@@ -492,8 +492,8 @@ test("publishes a json part; round-trips data and 404s on /s", async () => {
   assert.deepEqual(surface.kinds, ["json"]);
 
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
-  assert.equal(full.parts[0].kind, "json");
-  assert.deepEqual(full.parts[0].data, data);
+  assert.equal(full.surfaces[0].kind, "json");
+  assert.deepEqual(full.surfaces[0].data, data);
   // json is viewer-rendered data, not a sandboxed html doc
   assert.equal((await app.request(`/s/${surface.id}?part=0`)).status, 404);
 });
@@ -507,7 +507,7 @@ test("json part with null data is valid (null is a JSON value)", async () => {
   assert.equal(res.status, 201);
   const surface = (await res.json()) as any;
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
-  assert.equal(full.parts[0].data, null);
+  assert.equal(full.surfaces[0].data, null);
 });
 
 test("json part without data key is rejected", async () => {
@@ -530,10 +530,10 @@ test("publishes a code part; round-trips code/lang/title and 404s on /s", async 
   assert.deepEqual(surface.kinds, ["code"]);
 
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
-  assert.equal(full.parts[0].kind, "code");
-  assert.equal(full.parts[0].code, "const x = 42;\n");
-  assert.equal(full.parts[0].language, "ts");
-  assert.equal(full.parts[0].title, "a.ts");
+  assert.equal(full.surfaces[0].kind, "code");
+  assert.equal(full.surfaces[0].code, "const x = 42;\n");
+  assert.equal(full.surfaces[0].language, "ts");
+  assert.equal(full.surfaces[0].title, "a.ts");
   // code now renders server-side (shiki) at /s, with the filename and copy button
   const doc = await app.request(`/s/${surface.id}?part=0`);
   assert.equal(doc.status, 200);
@@ -571,7 +571,7 @@ test("code part with lineStart round-trips", async () => {
   assert.equal(res.status, 201);
   const surface = (await res.json()) as any;
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
-  assert.equal(full.parts[0].lineStart, 80);
+  assert.equal(full.surfaces[0].lineStart, 80);
 });
 
 test("publish_surface MCP tool keeps mermaid parts and drops empty ones", async () => {
@@ -593,9 +593,9 @@ test("publish_surface MCP tool keeps mermaid parts and drops empty ones", async 
   ).json()) as any;
   const payload = JSON.parse(published.result.content[0].text);
   const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
-  assert.equal(full.parts.length, 1);
-  assert.equal(full.parts[0].kind, "mermaid");
-  assert.equal(full.parts[0].mermaid, "graph TD; A-->B");
+  assert.equal(full.surfaces.length, 1);
+  assert.equal(full.surfaces[0].kind, "mermaid");
+  assert.equal(full.surfaces[0].mermaid, "graph TD; A-->B");
 });
 
 test("update bumps version and keeps history; old version renderable", async () => {
@@ -612,7 +612,7 @@ test("update bumps version and keeps history; old version renderable", async () 
 
   const full = (await (await app.request(`/api/snippets/${s.id}`)).json()) as any;
   assert.equal(full.history.length, 1);
-  assert.equal(full.history[0].parts[0].html, "<p>v1</p>");
+  assert.equal(full.history[0].surfaces[0].html, "<p>v1</p>");
 
   const current = await (await app.request(`/s/${s.id}?part=0`)).text();
   assert.ok(current.includes("<p>v2</p>"));
@@ -644,7 +644,7 @@ test("comments attach to snippets and filter by author/after", async () => {
 
   const all = (await (await app.request(`/api/comments?session=${s.sessionId}`)).json()) as any;
   assert.equal(all.comments.length, 2);
-  assert.equal(all.comments[0].surfaceTitle, "Sketch");
+  assert.equal(all.comments[0].postTitle, "Sketch");
 
   // explicit after=0: re-read from the start regardless of the agent cursor
   const users = (await (
@@ -1406,7 +1406,7 @@ test("comment text and titles are capped before they ride the feedback channel",
   const all = (await (await app.request(`/api/comments?session=${s.sessionId}`)).json()) as any;
   assert.equal(all.comments[0].text.length, 8000);
   // the capped title is what gets snapshotted onto the comment (feedback view)
-  assert.equal(all.comments[0].surfaceTitle.length, 500);
+  assert.equal(all.comments[0].postTitle.length, 500);
 });
 
 // --- assets ---
@@ -1658,4 +1658,35 @@ test("/session routes require auth when a token is set", async () => {
   });
   assert.equal(authed.status, 200);
   assert.ok((await authed.text()).includes("viewer"));
+});
+
+test("GET /api/comments?surface= filters to that surface, not the whole session", async () => {
+  const app = makeApp();
+  // Two surfaces in one session.
+  const a = (await (
+    await app.request("/api/snippets", json({ html: "<p>A</p>", sessionTitle: "S" }))
+  ).json()) as any;
+  const b = (await (
+    await app.request("/api/snippets", json({ html: "<p>B</p>", session: a.sessionId }))
+  ).json()) as any;
+
+  // A comment on each surface.
+  await app.request("/api/comments", json({ surface: a.id, text: "on A", author: "user" }));
+  await app.request("/api/comments", json({ surface: b.id, text: "on B", author: "user" }));
+
+  // Filtering by surface must return only that surface's comment. Regression
+  // guard for the app→store query mapping (q.surfaceId → CommentQuery.postId):
+  // a misnamed key silently drops the filter and returns the whole session.
+  const onA = (await (
+    await app.request(`/api/comments?session=${a.sessionId}&surface=${a.id}`)
+  ).json()) as any;
+  assert.equal(onA.comments.length, 1);
+  assert.equal(onA.comments[0].postId, a.id);
+  assert.equal(onA.comments[0].text, "on A");
+
+  // Sanity: the session as a whole still has both comments.
+  const allInSession = (await (
+    await app.request(`/api/comments?session=${a.sessionId}`)
+  ).json()) as any;
+  assert.equal(allInSession.comments.length, 2);
 });

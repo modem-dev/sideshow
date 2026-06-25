@@ -1,17 +1,17 @@
 import {
   type Asset,
-  type BoardSnapshot,
+  type WorkspaceSnapshot,
   collectAssetIds,
   type Comment,
   type CommentQuery,
   type CreateAssetInput,
   type CreateCommentInput,
   type CreateSessionInput,
-  type CreateSurfaceInput,
+  type CreatePostInput,
   hashAssetId,
   HISTORY_LIMIT,
-  htmlPart,
-  MAX_BOARD_ASSET_BYTES,
+  htmlSurface,
+  MAX_WORKSPACE_ASSET_BYTES,
   newId,
   selectEvictions,
   type Session,
@@ -20,11 +20,11 @@ import {
   stripNul,
   stripNulStep,
   type Store,
+  type Post,
   type Surface,
-  type SurfacePart,
-  type SurfaceVersion,
+  type PostVersion,
   type TraceStep,
-  type UpdateSurfaceInput,
+  type UpdatePostInput,
 } from "./types.ts";
 
 // Store implementation on SQLite — a Durable Object's `ctx.storage.sql` in the
@@ -41,14 +41,14 @@ export class SqlStore implements Store {
         createdAt TEXT NOT NULL, lastActiveAt TEXT NOT NULL,
         agentSeq INTEGER NOT NULL DEFAULT 0
       );
-      CREATE TABLE IF NOT EXISTS surfaces (
+      CREATE TABLE IF NOT EXISTS posts (
         id TEXT PRIMARY KEY, sessionId TEXT NOT NULL, title TEXT NOT NULL,
-        parts TEXT NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
+        surfaces TEXT NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
         version INTEGER NOT NULL, history TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS comments (
         seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL,
-        sessionId TEXT NOT NULL, surfaceId TEXT, surfaceTitle TEXT,
+        sessionId TEXT NOT NULL, postId TEXT, postTitle TEXT,
         author TEXT NOT NULL, text TEXT NOT NULL, createdAt TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS assets (
@@ -72,10 +72,11 @@ export class SqlStore implements Store {
       this.sql.exec("ALTER TABLE sessions ADD COLUMN agentSeq INTEGER NOT NULL DEFAULT 0");
     }
     this.migrateToSurfaces();
+    this.migrateToPosts();
   }
 
   // Pre-0.5.0 boards stored a `snippets` table and `comments.snippetId`. Lift
-  // them into the parts model in place — deployed DOs can never be reset.
+  // them into the posts model in place — deployed DOs can never be reset.
   private migrateToSurfaces() {
     const commentCols = this.sql
       .exec("SELECT name FROM pragma_table_info('comments')")
@@ -100,18 +101,18 @@ export class SqlStore implements Store {
         html: string;
         at: string;
       }>;
-      const history: SurfaceVersion[] = legacyHistory.map((h) => ({
+      const history: PostVersion[] = legacyHistory.map((h) => ({
         version: h.version,
         title: h.title,
-        parts: [htmlPart(h.html)],
+        surfaces: [htmlSurface(h.html)],
         at: h.at,
       }));
       this.sql.exec(
-        "INSERT OR IGNORE INTO surfaces (id, sessionId, title, parts, createdAt, updatedAt, version, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO posts (id, sessionId, title, surfaces, createdAt, updatedAt, version, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         r.id as string,
         r.sessionId as string,
         r.title as string,
-        JSON.stringify([htmlPart(r.html as string)]),
+        JSON.stringify([htmlSurface(r.html as string)]),
         r.createdAt as string,
         r.updatedAt as string,
         r.version as number,
@@ -119,6 +120,49 @@ export class SqlStore implements Store {
       );
     }
     this.sql.exec("DROP TABLE snippets");
+  }
+
+  // 0.5.x boards stored a `surfaces` table with a `parts` column and
+  // `comments.surfaceId/surfaceTitle`. Lift them into the posts model in place.
+  private migrateToPosts() {
+    const commentCols = this.sql
+      .exec("SELECT name FROM pragma_table_info('comments')")
+      .toArray()
+      .map((c) => c.name as string);
+    if (commentCols.includes("surfaceId") && !commentCols.includes("postId")) {
+      this.sql.exec("ALTER TABLE comments RENAME COLUMN surfaceId TO postId");
+    }
+    if (commentCols.includes("surfaceTitle") && !commentCols.includes("postTitle")) {
+      this.sql.exec("ALTER TABLE comments RENAME COLUMN surfaceTitle TO postTitle");
+    }
+
+    const tables = this.sql
+      .exec("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .toArray()
+      .map((t) => t.name as string);
+    if (!tables.includes("surfaces")) return;
+    for (const r of this.sql.exec("SELECT * FROM surfaces").toArray()) {
+      // Re-key the history blob: 0.5.x stored each version's blocks under
+      // `parts`, but the posts model reads them as `surfaces`. Copying the blob
+      // verbatim would leave inner `parts` keys that readers (older-version
+      // views, asset GC) see as `undefined`. Mirror storage.ts liftPost so the
+      // SQLite and JSON backends stay in lockstep.
+      const history = (
+        JSON.parse((r.history as string) ?? "[]") as Array<Record<string, unknown>>
+      ).map(({ parts, ...rest }) => ({ ...rest, surfaces: parts ?? [] }));
+      this.sql.exec(
+        "INSERT OR IGNORE INTO posts (id, sessionId, title, surfaces, createdAt, updatedAt, version, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        r.id as string,
+        r.sessionId as string,
+        r.title as string,
+        r.parts as string,
+        r.createdAt as string,
+        r.updatedAt as string,
+        r.version as number,
+        JSON.stringify(history),
+      );
+    }
+    this.sql.exec("DROP TABLE surfaces");
   }
 
   private rowToSession(r: Record<string, SqlStorageValue>): Session {
@@ -133,16 +177,16 @@ export class SqlStore implements Store {
     };
   }
 
-  private rowToSurface(r: Record<string, SqlStorageValue>): Surface {
+  private rowToPost(r: Record<string, SqlStorageValue>): Post {
     return {
       id: r.id as string,
       sessionId: r.sessionId as string,
       title: r.title as string,
-      parts: JSON.parse(r.parts as string) as SurfacePart[],
+      surfaces: JSON.parse(r.surfaces as string) as Surface[],
       createdAt: r.createdAt as string,
       updatedAt: r.updatedAt as string,
       version: r.version as number,
-      history: JSON.parse(r.history as string) as SurfaceVersion[],
+      history: JSON.parse(r.history as string) as PostVersion[],
     };
   }
 
@@ -168,8 +212,8 @@ export class SqlStore implements Store {
       id: r.id as string,
       seq: r.seq as number,
       sessionId: r.sessionId as string,
-      surfaceId: (r.surfaceId as string) ?? null,
-      surfaceTitle: (r.surfaceTitle as string) ?? null,
+      postId: (r.postId as string) ?? null,
+      postTitle: (r.postTitle as string) ?? null,
       author: r.author as string,
       text: r.text as string,
       createdAt: r.createdAt as string,
@@ -224,9 +268,9 @@ export class SqlStore implements Store {
   async removeSession(id: string) {
     if (!(await this.getSession(id))) return false;
     this.sql.exec("DELETE FROM comments WHERE sessionId = ?", id);
-    this.sql.exec("DELETE FROM surfaces WHERE sessionId = ?", id);
+    this.sql.exec("DELETE FROM posts WHERE sessionId = ?", id);
     this.sql.exec("DELETE FROM trace_steps WHERE sessionId = ?", id);
-    // Surfaces are gone, so referencedAssetIds now reflects survivors only:
+    // Posts are gone, so referencedAssetIds now reflects survivors only:
     // drop this session's own assets except any a surviving surface still
     // points at (assets are content-addressed and may be shared across sessions).
     const referenced = this.referencedAssetIds();
@@ -272,40 +316,40 @@ export class SqlStore implements Store {
 
   // --- surfaces ---
 
-  async listSurfaces(sessionId?: string) {
+  async listPosts(sessionId?: string) {
     const rows =
       sessionId === undefined
-        ? this.sql.exec("SELECT * FROM surfaces ORDER BY createdAt ASC").toArray()
+        ? this.sql.exec("SELECT * FROM posts ORDER BY createdAt ASC").toArray()
         : this.sql
-            .exec("SELECT * FROM surfaces WHERE sessionId = ? ORDER BY createdAt ASC", sessionId)
+            .exec("SELECT * FROM posts WHERE sessionId = ? ORDER BY createdAt ASC", sessionId)
             .toArray();
-    return rows.map((r) => this.rowToSurface(r));
+    return rows.map((r) => this.rowToPost(r));
   }
 
-  async getSurface(id: string) {
-    const rows = this.sql.exec("SELECT * FROM surfaces WHERE id = ?", id).toArray();
-    return rows.length > 0 ? this.rowToSurface(rows[0]) : null;
+  async getPost(id: string) {
+    const rows = this.sql.exec("SELECT * FROM posts WHERE id = ?", id).toArray();
+    return rows.length > 0 ? this.rowToPost(rows[0]) : null;
   }
 
-  async createSurface(input: CreateSurfaceInput) {
+  async createPost(input: CreatePostInput) {
     if (!(await this.getSession(input.sessionId))) return null;
     const now = new Date().toISOString();
-    const surface: Surface = {
+    const surface: Post = {
       id: newId(),
       sessionId: input.sessionId,
       title: stripNul(input.title)?.trim() || "Untitled",
-      parts: input.parts,
+      surfaces: input.surfaces,
       createdAt: now,
       updatedAt: now,
       version: 1,
       history: [],
     };
     this.sql.exec(
-      "INSERT INTO surfaces (id, sessionId, title, parts, createdAt, updatedAt, version, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO posts (id, sessionId, title, surfaces, createdAt, updatedAt, version, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       surface.id,
       surface.sessionId,
       surface.title,
-      JSON.stringify(surface.parts),
+      JSON.stringify(surface.surfaces),
       surface.createdAt,
       surface.updatedAt,
       surface.version,
@@ -315,13 +359,13 @@ export class SqlStore implements Store {
     return surface;
   }
 
-  async updateSurface(id: string, patch: UpdateSurfaceInput) {
+  async updatePost(id: string, patch: UpdatePostInput) {
     // Compare-and-set: the expected-version guard makes two concurrent
     // updates serializable without a read-then-write gap. Only one UPDATE
     // can match the WHERE clause; the loser sees 0 rows affected and retries
     // with the now-current version.
     for (let attempt = 0; attempt < 4; attempt++) {
-      const surface = await this.getSurface(id);
+      const surface = await this.getPost(id);
       if (!surface) return null;
       const expectedVersion = surface.version;
       const history = [
@@ -329,20 +373,20 @@ export class SqlStore implements Store {
         {
           version: surface.version,
           title: surface.title,
-          parts: surface.parts,
+          surfaces: surface.surfaces,
           at: surface.updatedAt,
         },
       ];
       if (history.length > HISTORY_LIMIT) history.shift();
       const title =
         patch.title !== undefined ? stripNul(patch.title).trim() || surface.title : surface.title;
-      const parts = patch.parts !== undefined ? patch.parts : surface.parts;
+      const surfaces = patch.surfaces !== undefined ? patch.surfaces : surface.surfaces;
       const version = surface.version + 1;
       const updatedAt = new Date().toISOString();
       this.sql.exec(
-        "UPDATE surfaces SET title = ?, parts = ?, updatedAt = ?, version = ?, history = ? WHERE id = ? AND version = ?",
+        "UPDATE posts SET title = ?, surfaces = ?, updatedAt = ?, version = ?, history = ? WHERE id = ? AND version = ?",
         title,
-        JSON.stringify(parts),
+        JSON.stringify(surfaces),
         updatedAt,
         version,
         JSON.stringify(history),
@@ -352,17 +396,17 @@ export class SqlStore implements Store {
       const affected = this.sql.exec("SELECT changes() AS n").one().n as number;
       if (affected > 0) {
         this.touch(surface.sessionId);
-        return { ...surface, title, parts, version, updatedAt, history };
+        return { ...surface, title, surfaces, version, updatedAt, history };
       }
       // Lost the race — retry with the now-current version.
     }
     return null;
   }
 
-  async removeSurface(id: string) {
-    if (!(await this.getSurface(id))) return false;
-    this.sql.exec("DELETE FROM comments WHERE surfaceId = ?", id);
-    this.sql.exec("DELETE FROM surfaces WHERE id = ?", id);
+  async removePost(id: string) {
+    if (!(await this.getPost(id))) return false;
+    this.sql.exec("DELETE FROM comments WHERE postId = ?", id);
+    this.sql.exec("DELETE FROM posts WHERE id = ?", id);
     return true;
   }
 
@@ -375,9 +419,9 @@ export class SqlStore implements Store {
       clauses.push("sessionId = ?");
       params.push(query.sessionId);
     }
-    if (query.surfaceId !== undefined) {
-      clauses.push("surfaceId = ?");
-      params.push(query.surfaceId);
+    if (query.postId !== undefined) {
+      clauses.push("postId = ?");
+      params.push(query.postId);
     }
     if (query.afterSeq !== undefined) {
       clauses.push("seq > ?");
@@ -392,13 +436,13 @@ export class SqlStore implements Store {
 
   async createComment(input: CreateCommentInput) {
     if (!(await this.getSession(input.sessionId))) return null;
-    const surface = input.surfaceId ? await this.getSurface(input.surfaceId) : null;
+    const surface = input.postId ? await this.getPost(input.postId) : null;
     const id = newId();
     const createdAt = new Date().toISOString();
     const author = stripNul(input.author).trim() || "user";
     const text = stripNul(input.text);
     this.sql.exec(
-      "INSERT INTO comments (id, sessionId, surfaceId, surfaceTitle, author, text, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO comments (id, sessionId, postId, postTitle, author, text, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
       id,
       input.sessionId,
       surface?.id ?? null,
@@ -413,8 +457,8 @@ export class SqlStore implements Store {
       id,
       seq,
       sessionId: input.sessionId,
-      surfaceId: surface?.id ?? null,
-      surfaceTitle: surface?.title ?? null,
+      postId: surface?.id ?? null,
+      postTitle: surface?.title ?? null,
       author,
       text,
       createdAt,
@@ -462,10 +506,10 @@ export class SqlStore implements Store {
 
   private referencedAssetIds(): Set<string> {
     const out = new Set<string>();
-    for (const r of this.sql.exec("SELECT parts, history FROM surfaces").toArray()) {
-      collectAssetIds(JSON.parse(r.parts as string) as SurfacePart[], out);
-      for (const h of JSON.parse(r.history as string) as SurfaceVersion[]) {
-        collectAssetIds(h.parts, out);
+    for (const r of this.sql.exec("SELECT surfaces, history FROM posts").toArray()) {
+      collectAssetIds(JSON.parse(r.surfaces as string) as Surface[], out);
+      for (const h of JSON.parse(r.history as string) as PostVersion[]) {
+        collectAssetIds(h.surfaces, out);
       }
     }
     return out;
@@ -491,7 +535,11 @@ export class SqlStore implements Store {
         lastAccessedAt: r.lastAccessedAt as string,
         referenced: referenced.has(r.id as string),
       }));
-    for (const id of selectEvictions(candidates, input.data.byteLength, MAX_BOARD_ASSET_BYTES)) {
+    for (const id of selectEvictions(
+      candidates,
+      input.data.byteLength,
+      MAX_WORKSPACE_ASSET_BYTES,
+    )) {
       this.sql.exec("DELETE FROM assets WHERE id = ?", id);
     }
     const now = new Date().toISOString();
@@ -565,7 +613,7 @@ export class SqlStore implements Store {
   // Wrapped in a transaction so a crash mid-copy rolls back to an empty db
   // rather than a half-migrated board. Intended for an empty database; the
   // caller gates on that. Only ever runs through the node:sqlite adapter.
-  importBoard(snapshot: BoardSnapshot): void {
+  importBoard(snapshot: WorkspaceSnapshot): void {
     this.sql.exec("BEGIN");
     try {
       for (const s of snapshot.sessions) {
@@ -582,11 +630,11 @@ export class SqlStore implements Store {
       }
       for (const s of snapshot.surfaces) {
         this.sql.exec(
-          "INSERT INTO surfaces (id, sessionId, title, parts, createdAt, updatedAt, version, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO posts (id, sessionId, title, surfaces, createdAt, updatedAt, version, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
           s.id,
           s.sessionId,
           s.title,
-          JSON.stringify(s.parts),
+          JSON.stringify(s.surfaces),
           s.createdAt,
           s.updatedAt,
           s.version,
@@ -595,12 +643,12 @@ export class SqlStore implements Store {
       }
       for (const c of snapshot.comments) {
         this.sql.exec(
-          "INSERT INTO comments (seq, id, sessionId, surfaceId, surfaceTitle, author, text, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO comments (seq, id, sessionId, postId, postTitle, author, text, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
           c.seq,
           c.id,
           c.sessionId,
-          c.surfaceId ?? null,
-          c.surfaceTitle ?? null,
+          c.postId ?? null,
+          c.postTitle ?? null,
           c.author,
           c.text,
           c.createdAt,

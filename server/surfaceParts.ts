@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { isKnownKit, KIT_IDS } from "./kits.ts";
-import type { SurfacePart } from "./types.ts";
+import type { Surface } from "./types.ts";
 
 export interface SurfacePartParseResult {
-  parts: SurfacePart[];
+  parts: Surface[];
   errors: string[];
 }
 
@@ -253,28 +253,25 @@ function parseSurfaceParts(raw: unknown, opts: { strict?: boolean } = {}): Surfa
     };
   }
 
-  const parts: SurfacePart[] = raw.flatMap((part) => {
+  const parts: Surface[] = raw.flatMap((part) => {
     const parsed = looseSurfacePart.safeParse(part);
-    return parsed.success ? [parsed.data as SurfacePart] : [];
+    return parsed.success ? [parsed.data as Surface] : [];
   });
   return { parts, errors: [] };
 }
 
-export const coerceSurfaceParts = (raw: unknown): SurfacePart[] => parseSurfaceParts(raw).parts;
+export const coerceSurfaceParts = (raw: unknown): Surface[] => parseSurfaceParts(raw).parts;
 
 export function validateSurfaceParts(
   raw: unknown,
-): { ok: true; parts: SurfacePart[] } | { ok: false; error: string } {
+): { ok: true; parts: Surface[] } | { ok: false; error: string } {
   const result = parseSurfaceParts(raw, { strict: true });
   return result.errors.length > 0
     ? { ok: false, error: result.errors.join("; ") }
     : { ok: true, parts: result.parts };
 }
 
-function parseStrictPart(
-  raw: unknown,
-  index: number,
-): { part: SurfacePart | null; errors: string[] } {
+function parseStrictPart(raw: unknown, index: number): { part: Surface | null; errors: string[] } {
   const path = `parts[${index}]`;
   if (!raw || typeof raw !== "object")
     return { part: null, errors: [`${path}: must be an object`] };
@@ -289,7 +286,7 @@ function parseStrictPart(
     : { part: null, errors: formatZodErrors(parsed.error, path) };
 }
 
-function schemaForKind(kind: unknown): z.ZodType<SurfacePart, z.ZodTypeDef, any> | null {
+function schemaForKind(kind: unknown): z.ZodType<Surface, z.ZodTypeDef, any> | null {
   switch (kind) {
     case "html":
       return strictHtmlPart;

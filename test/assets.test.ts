@@ -4,9 +4,9 @@ import { coerceParts } from "../server/mcpHttp.ts";
 import {
   collectAssetIds,
   type EvictionCandidate,
-  partsByteLength,
+  surfacesByteLength,
   selectEvictions,
-  type SurfacePart,
+  type Surface,
 } from "../server/types.ts";
 import { validateSurfaceParts } from "../server/surfaceParts.ts";
 
@@ -54,7 +54,7 @@ test("selectEvictions falls back to referenced assets only as a last resort", ()
 // --- collectAssetIds ---
 
 test("collectAssetIds gathers image and trace asset ids, ignoring html/diff", () => {
-  const parts: SurfacePart[] = [
+  const parts: Surface[] = [
     { kind: "html", html: "<img src=/a/raw>" }, // raw-url embeds are invisible here
     { kind: "diff", patch: "x" },
     { kind: "image", assetId: "img1" },
@@ -66,10 +66,10 @@ test("collectAssetIds gathers image and trace asset ids, ignoring html/diff", ()
   assert.deepEqual([...out].sort(), ["img1", "tr1"]);
 });
 
-// --- partsByteLength ---
+// --- surfacesByteLength ---
 
-test("partsByteLength counts image/trace parts without throwing", () => {
-  const n = partsByteLength([
+test("surfacesByteLength counts image/trace surfaces without throwing", () => {
+  const n = surfacesByteLength([
     { kind: "image", assetId: "abc", caption: "hi" },
     { kind: "trace", steps: [{ label: "step", detail: "body" }] },
   ]);

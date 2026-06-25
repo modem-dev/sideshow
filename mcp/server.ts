@@ -142,8 +142,8 @@ server.registerTool(
     }
     return text({
       comments: result.comments.map((c: any) => ({
-        surfaceId: c.surfaceId,
-        surfaceTitle: c.surfaceTitle,
+        surfaceId: c.postId,
+        surfaceTitle: c.postTitle,
         text: c.text,
         at: c.createdAt,
       })),

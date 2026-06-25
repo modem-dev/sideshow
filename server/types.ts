@@ -18,7 +18,7 @@ export interface Session {
 // `markdown`, `terminal`, and `mermaid` parts are structured data rendered by
 // the trusted viewer. A snippet is just a surface with one html part; a
 // diagram-with-its-diff is `[html, diff]`.
-export type SurfacePartKind =
+export type SurfaceKind =
   | "html"
   | "diff"
   | "image"
@@ -29,7 +29,7 @@ export type SurfacePartKind =
   | "json"
   | "code";
 
-export interface HtmlPart {
+export interface HtmlSurface {
   kind: "html";
   html: string;
   // Opt-in style/behavior bundles (see kits.ts). The sandbox doc gets each
@@ -42,7 +42,7 @@ export interface HtmlPart {
 // renders it to HTML in its own origin, so raw HTML embedded in the source is
 // escaped, not executed (see MarkdownPart.tsx). Agents wanting live markup use
 // an html part instead.
-export interface MarkdownPart {
+export interface MarkdownSurface {
   kind: "markdown";
   markdown: string;
 }
@@ -53,7 +53,7 @@ export interface MarkdownPart {
 // securityLevel 'strict', sanitizing the SVG and disabling scripts/HTML labels
 // (see MermaidPart.tsx). Agents wanting hand-drawn vector art use an html part
 // with inline <svg> instead.
-export interface MermaidPart {
+export interface MermaidSurface {
   kind: "mermaid";
   mermaid: string;
 }
@@ -66,7 +66,7 @@ export interface DiffFile {
   language?: string;
 }
 
-export interface DiffPart {
+export interface DiffSurface {
   kind: "diff";
   // A unified/git patch (may span multiple files) and/or explicit before/after
   // file pairs. At least one must be present; the viewer prefers `patch`.
@@ -78,7 +78,7 @@ export interface DiffPart {
 // An image part references an uploaded asset by id; the trusted viewer renders
 // it as a plain <img> in its own chrome (no iframe). Agents can also embed the
 // asset's URL inside an html part instead — both paths resolve to /a/:id.
-export interface ImagePart {
+export interface ImageSurface {
   kind: "image";
   assetId: string;
   alt?: string;
@@ -98,7 +98,7 @@ export interface TraceStep {
 // `steps` travel inline (small, structured); `assetId` points at a larger
 // uploaded trace file (JSON/JSONL), offered for download and rendered when it
 // parses. At least one of the two is present.
-export interface TracePart {
+export interface TraceSurface {
   kind: "trace";
   steps?: TraceStep[];
   assetId?: string;
@@ -112,7 +112,7 @@ export interface TracePart {
 // width hint; `title` labels the window chrome. The renderer is intentionally
 // SGR-only for now (cursor-addressing TUIs aren't resolved) — the wire shape
 // is renderer-agnostic so a full VT emulator can replace it later.
-export interface TerminalPart {
+export interface TerminalSurface {
   kind: "terminal";
   text: string;
   cols?: number;
@@ -126,7 +126,7 @@ export interface TerminalPart {
 // execute in the trusted viewer origin, and no sandboxed iframe is needed.
 // `data` is `unknown` (any JSON value, including null); the wire body already
 // parsed it, so the viewer never needs to JSON.parse.
-export interface JsonPart {
+export interface JsonSurface {
   kind: "json";
   data: unknown;
 }
@@ -138,7 +138,7 @@ export interface JsonPart {
 // opaque-origin iframe. `language` is a shiki lang id (ts, js, python, rust,
 // go, ...); omit or use "text" for plain monospace. `title` is an optional
 // label (e.g. a filename) shown above the code.
-export interface CodePart {
+export interface CodeSurface {
   kind: "code";
   code: string;
   language?: string;
@@ -149,41 +149,41 @@ export interface CodePart {
   lineStart?: number;
 }
 
-export type SurfacePart =
-  | HtmlPart
-  | DiffPart
-  | ImagePart
-  | TracePart
-  | MarkdownPart
-  | TerminalPart
-  | MermaidPart
-  | JsonPart
-  | CodePart;
+export type Surface =
+  | HtmlSurface
+  | DiffSurface
+  | ImageSurface
+  | TraceSurface
+  | MarkdownSurface
+  | TerminalSurface
+  | MermaidSurface
+  | JsonSurface
+  | CodeSurface;
 
-export interface SurfaceVersion {
+export interface PostVersion {
   version: number;
   title: string;
-  parts: SurfacePart[];
+  surfaces: Surface[];
   at: string;
 }
 
-export interface Surface {
+export interface Post {
   id: string;
   sessionId: string;
   title: string;
-  parts: SurfacePart[];
+  surfaces: Surface[];
   createdAt: string;
   updatedAt: string;
   version: number;
-  history: SurfaceVersion[];
+  history: PostVersion[];
 }
 
 export interface Comment {
   id: string;
   seq: number;
   sessionId: string;
-  surfaceId: string | null;
-  surfaceTitle: string | null;
+  postId: string | null;
+  postTitle: string | null;
   author: string;
   text: string;
   createdAt: string;
@@ -222,27 +222,27 @@ export interface CreateSessionInput {
   cwd?: string;
 }
 
-export interface CreateSurfaceInput {
+export interface CreatePostInput {
   sessionId: string;
   title?: string;
-  parts: SurfacePart[];
+  surfaces: Surface[];
 }
 
-export interface UpdateSurfaceInput {
+export interface UpdatePostInput {
   title?: string;
-  parts?: SurfacePart[];
+  surfaces?: Surface[];
 }
 
 export interface CreateCommentInput {
   sessionId: string;
-  surfaceId?: string;
+  postId?: string;
   author: string;
   text: string;
 }
 
 export interface CommentQuery {
   sessionId?: string;
-  surfaceId?: string;
+  postId?: string;
   afterSeq?: number;
 }
 
@@ -262,11 +262,11 @@ export interface Store {
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
 
-  listSurfaces(sessionId?: string): Promise<Surface[]>;
-  getSurface(id: string): Promise<Surface | null>;
-  createSurface(input: CreateSurfaceInput): Promise<Surface | null>;
-  updateSurface(id: string, patch: UpdateSurfaceInput): Promise<Surface | null>;
-  removeSurface(id: string): Promise<boolean>;
+  listPosts(sessionId?: string): Promise<Post[]>;
+  getPost(id: string): Promise<Post | null>;
+  createPost(input: CreatePostInput): Promise<Post | null>;
+  updatePost(id: string, patch: UpdatePostInput): Promise<Post | null>;
+  removePost(id: string): Promise<boolean>;
 
   listComments(query: CommentQuery): Promise<Comment[]>;
   createComment(input: CreateCommentInput): Promise<Comment | null>;
@@ -277,7 +277,7 @@ export interface Store {
   listTrace(sessionId: string): Promise<TraceStep[]>;
   setTrace(sessionId: string, steps: TraceStep[]): Promise<void>;
 
-  // Assets. putAsset evicts to stay under MAX_BOARD_ASSET_BYTES (see
+  // Assets. putAsset evicts to stay under MAX_WORKSPACE_ASSET_BYTES (see
   // selectEvictions) and returns null only if the session is missing.
   putAsset(input: CreateAssetInput): Promise<Asset | null>;
   getAsset(id: string): Promise<Asset | null>;
@@ -309,9 +309,9 @@ export interface SqlStorage {
 // (JSON file → SQLite). Carries every field verbatim — ids, versions, history,
 // comment `seq`, `agentSeq`, asset bytes — so identity and the feedback cursor
 // survive the copy.
-export interface BoardSnapshot {
+export interface WorkspaceSnapshot {
   sessions: Session[];
-  surfaces: Surface[];
+  surfaces: Post[];
   comments: Comment[];
   traces: { sessionId: string; steps: TraceStep[] }[];
   assets: Asset[];
@@ -347,7 +347,7 @@ export function stripNulStep(s: TraceStep): TraceStep {
 // budget the store evicts down to. One Durable Object holds the whole board, so
 // the budget sits well under its ~10 GB SQLite ceiling.
 export const MAX_ASSET_BYTES = 5 * 1024 * 1024;
-export const MAX_BOARD_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
+export const MAX_WORKSPACE_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
 
 // Short, unguessable id: 8 random bytes (64 bits) as 11 url-safe base64 chars —
 // YouTube-video-id sized. These double as bearer capabilities: in publicRead
@@ -378,7 +378,7 @@ export async function hashAssetId(data: Uint8Array): Promise<string> {
 // A snippet is sugar for a single html part; this bridges the legacy
 // `{ html }` shape (CLI `publish`, `POST /api/snippets`) to the parts model.
 // An optional `kits` list opts the part into style/behavior bundles (kits.ts).
-export const htmlPart = (html: string, kits?: unknown): HtmlPart => ({
+export const htmlSurface = (html: string, kits?: unknown): HtmlSurface => ({
   kind: "html",
   html,
   ...(Array.isArray(kits) && kits.length > 0
@@ -389,9 +389,9 @@ export const htmlPart = (html: string, kits?: unknown): HtmlPart => ({
 // The combined byte weight of a surface's parts, for size limits. image/trace
 // parts are tiny (refs + inline steps) — the asset bytes they point at are
 // bounded separately by MAX_ASSET_BYTES, not this surface cap.
-export function partsByteLength(parts: SurfacePart[]): number {
+export function surfacesByteLength(surfaces: Surface[]): number {
   let n = 0;
-  for (const p of parts) {
+  for (const p of surfaces) {
     if (p.kind === "html") n += p.html.length;
     else if (p.kind === "diff") {
       n += p.patch?.length ?? 0;
@@ -423,8 +423,8 @@ export function partsByteLength(parts: SurfacePart[]): number {
 // Used to keep referenced assets out of eviction's first wave. Note: assets
 // embedded by raw URL inside html markup are invisible here — touch-on-serve
 // keeps those warm instead.
-export function collectAssetIds(parts: SurfacePart[], out: Set<string>): void {
-  for (const p of parts) {
+export function collectAssetIds(surfaces: Surface[], out: Set<string>): void {
+  for (const p of surfaces) {
     if (p.kind === "image") out.add(p.assetId);
     else if (p.kind === "trace" && p.assetId) out.add(p.assetId);
   }

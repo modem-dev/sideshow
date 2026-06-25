@@ -1,5 +1,5 @@
 import { createSignal, For, onMount, Show } from "solid-js";
-import type { TracePart as TracePartData, TraceStep } from "./api.ts";
+import type { TraceSurface as TracePartData, TraceStep } from "./api.ts";
 
 // Render an agent trace as a step timeline the user can scan beside the surface.
 // Steps may travel inline in the part, or live in an uploaded JSON/JSONL asset

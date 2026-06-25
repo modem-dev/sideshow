@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
-import type { Surface, TraceStep } from "./api.ts";
+import type { Post, TraceStep } from "./api.ts";
 import { Card } from "./Card.tsx";
 import { streamLoading, surfaces, traceSteps } from "./state.ts";
 
@@ -13,14 +13,14 @@ import { streamLoading, surfaces, traceSteps } from "./state.ts";
 // with surfaces by time.
 
 interface Gap {
-  surface: Surface | null; // the surface this gap leads into; null = trailing
+  surface: Post | null; // the surface this gap leads into; null = trailing
   steps: TraceStep[];
 }
 
-function buildGaps(surfs: readonly Surface[], steps: readonly TraceStep[]): Gap[] {
+function buildGaps(surfs: readonly Post[], steps: readonly TraceStep[]): Gap[] {
   const gaps: Gap[] = surfs.map((s) => ({ surface: s, steps: [] }));
   gaps.push({ surface: null, steps: [] });
-  const at = (s: Surface) => Date.parse(s.createdAt);
+  const at = (s: Post) => Date.parse(s.createdAt);
   for (const step of steps) {
     const t = step.ts ? Date.parse(step.ts) : NaN;
     let idx = gaps.length - 1; // default: trailing

@@ -189,7 +189,7 @@ test("publish --kit puts the (deduped) kit ids on the html part", async () => {
     assert.equal(code, 0);
     const out = JSON.parse(stdout);
     const full = await fetch(`${server.url}/api/surfaces/${out.id}`).then((r) => r.json() as any);
-    assert.deepEqual(full.parts[0].kits, ["issues", "slides"]);
+    assert.deepEqual(full.surfaces[0].kits, ["issues", "slides"]);
   } finally {
     await server.close();
   }

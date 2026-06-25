@@ -476,8 +476,8 @@ function watchLine(c) {
   const text = String(c.text ?? "")
     .replace(/\s+/g, " ")
     .trim();
-  const where = c.surfaceId
-    ? `on “${c.surfaceTitle ?? "a surface"}” (surface ${c.surfaceId})`
+  const where = c.postId
+    ? `on “${c.postTitle ?? "a surface"}” (surface ${c.postId})`
     : "on the session";
   return `sideshow comment ${where}: “${text}”`;
 }

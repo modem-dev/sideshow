@@ -5,10 +5,10 @@ import {
   type Asset,
   type AssetKind,
   type Comment,
-  htmlPart,
+  htmlSurface,
   type Store,
+  type Post,
   type Surface,
-  type SurfacePart,
 } from "./types.ts";
 import { HTTP_MCP_TOOLS, MCP_INSTRUCTIONS, MCP_SERVER_INFO } from "./mcpSpec.ts";
 import { coerceSurfaceParts } from "./surfaceParts.ts";
@@ -25,13 +25,13 @@ export interface McpDeps {
   store: Store;
   basePath?: (request: Request) => string;
   publishSurface(input: {
-    parts: SurfacePart[];
+    parts: Surface[];
     title?: string;
     session?: string;
     sessionTitle?: string;
     agent?: string;
-  }): FlowResult<Surface>;
-  reviseSurface(id: string, patch: { parts?: SurfacePart[]; title?: string }): FlowResult<Surface>;
+  }): FlowResult<Post>;
+  reviseSurface(id: string, patch: { parts?: Surface[]; title?: string }): FlowResult<Post>;
   createComment(input: {
     text: string;
     surface?: string;
@@ -54,7 +54,7 @@ export interface McpDeps {
 export const coerceParts = coerceSurfaceParts;
 
 export function registerMcp(app: Hono, deps: McpDeps) {
-  const surfaceResult = (result: { surface: Surface; userFeedback?: Feedback[] }, origin: string) =>
+  const surfaceResult = (result: { surface: Post; userFeedback?: Feedback[] }, origin: string) =>
     JSON.stringify(
       {
         id: result.surface.id,
@@ -73,7 +73,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       case "publish_snippet": {
         const parts =
           name === "publish_snippet"
-            ? coerceParts([htmlPart(String(args.html ?? ""), args.kits)])
+            ? coerceParts([htmlSurface(String(args.html ?? ""), args.kits)])
             : coerceParts(args.parts);
         if (parts.length === 0) throw new Error("a surface needs at least one part");
         const result = await deps.publishSurface({
@@ -88,12 +88,12 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       }
       case "update_surface":
       case "update_snippet": {
-        const patch: { parts?: SurfacePart[]; title?: string } = {
+        const patch: { parts?: Surface[]; title?: string } = {
           title: typeof args.title === "string" ? args.title : undefined,
         };
         if (name === "update_snippet") {
           if (typeof args.html === "string")
-            patch.parts = coerceParts([htmlPart(args.html, args.kits)]);
+            patch.parts = coerceParts([htmlSurface(args.html, args.kits)]);
         } else if (args.parts !== undefined) {
           patch.parts = coerceParts(args.parts);
         }
@@ -118,8 +118,8 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         return JSON.stringify(
           {
             comments: result.comments.map((c) => ({
-              surfaceId: c.surfaceId,
-              surfaceTitle: c.surfaceTitle,
+              surfaceId: c.postId,
+              surfaceTitle: c.postTitle,
               text: c.text,
               at: c.createdAt,
             })),
@@ -149,7 +149,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       }
       case "list_surfaces":
       case "list_snippets": {
-        const surfaces = await deps.store.listSurfaces(
+        const surfaces = await deps.store.listPosts(
           typeof args.session === "string" ? args.session : undefined,
         );
         return JSON.stringify(
@@ -157,7 +157,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
             id: s.id,
             sessionId: s.sessionId,
             title: s.title,
-            kinds: s.parts.map((p) => p.kind),
+            kinds: s.surfaces.map((p) => p.kind),
             version: s.version,
             updatedAt: s.updatedAt,
           })),

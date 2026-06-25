@@ -17,17 +17,17 @@ import { DEFAULT_THEME_ID, themeById, themeOptions } from "./themes.ts";
 import {
   type Asset,
   type AssetKind,
-  type CodePart,
+  type CodeSurface,
   type Comment,
-  type DiffPart,
-  htmlPart,
-  type MarkdownPart,
+  type DiffSurface,
+  htmlSurface,
+  type MarkdownSurface,
   MAX_ASSET_BYTES,
-  partsByteLength,
+  surfacesByteLength,
   type Store,
+  type Post,
   type Surface,
-  type SurfacePart,
-  type TerminalPart,
+  type TerminalSurface,
   type TraceStep,
 } from "./types.ts";
 import { validateSurfaceParts } from "./surfaceParts.ts";
@@ -183,17 +183,17 @@ const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 // html parts carry arbitrary markup the viewer renders via a sandboxed iframe,
 // so the card list never needs their bodies — strip them to a kind marker.
 // diff parts are structured data the viewer renders inline, so keep them whole.
-const stripParts = (parts: SurfacePart[]): SurfacePart[] =>
+const stripParts = (parts: Surface[]): Surface[] =>
   parts.map((p) => (p.kind === "html" ? { kind: "html", html: "" } : p));
 
-const surfaceMeta = (s: Surface) => ({
+const surfaceMeta = (s: Post) => ({
   id: s.id,
   sessionId: s.sessionId,
   title: s.title,
   createdAt: s.createdAt,
   updatedAt: s.updatedAt,
   version: s.version,
-  parts: stripParts(s.parts),
+  parts: stripParts(s.surfaces),
 });
 
 function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
@@ -214,15 +214,15 @@ function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
 
 // Response to an agent's own write: it already holds the parts it just sent,
 // so echo only the identifiers (a diff patch can be large — never send it
-// back). Reads (`surfaceMeta`, GET /api/surfaces/:id) still carry parts.
-const writeResult = (s: Surface) => ({
+// back). Reads (the surface list and GET /api/surfaces/:id) carry the blocks.
+const writeResult = (s: Post) => ({
   id: s.id,
   sessionId: s.sessionId,
   title: s.title,
   createdAt: s.createdAt,
   updatedAt: s.updatedAt,
   version: s.version,
-  kinds: s.parts.map((p) => p.kind),
+  kinds: s.surfaces.map((p) => p.kind),
 });
 
 export interface CommentWait {
@@ -242,8 +242,8 @@ export interface Feedback {
 
 // Lean comment shape attached to agent-facing responses.
 const feedbackView = (c: Comment): Feedback => ({
-  surfaceId: c.surfaceId,
-  surfaceTitle: c.surfaceTitle,
+  surfaceId: c.postId,
+  surfaceTitle: c.postTitle,
   text: c.text,
   at: c.createdAt,
 });
@@ -341,19 +341,19 @@ export function createApp({
   }
 
   async function publishSurface(input: {
-    parts: SurfacePart[];
+    parts: Surface[];
     title?: string;
     session?: string;
     sessionTitle?: string;
     agent?: string;
     cwd?: string;
   }): Promise<
-    { surface: Surface; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
   > {
     if (input.parts.length === 0) {
       return { error: "a surface needs at least one part", status: 400 };
     }
-    if (partsByteLength(input.parts) > MAX_SURFACE_BYTES) {
+    if (surfacesByteLength(input.parts) > MAX_SURFACE_BYTES) {
       return { error: `surface exceeds ${MAX_SURFACE_BYTES} bytes`, status: 413 };
     }
     let sessionId = input.session;
@@ -371,9 +371,9 @@ export function createApp({
       bus.broadcast({ type: "session-created", id: session.id });
       sessionId = session.id;
     }
-    const surface = await store.createSurface({
+    const surface = await store.createPost({
       sessionId,
-      parts: input.parts,
+      surfaces: input.parts,
       title: input.title?.slice(0, MAX_TITLE),
     });
     if (!surface) return { error: "session not found", status: 404 };
@@ -419,20 +419,20 @@ export function createApp({
 
   async function reviseSurface(
     id: string,
-    patch: { parts?: SurfacePart[]; title?: string },
+    patch: { parts?: Surface[]; title?: string },
   ): Promise<
-    { surface: Surface; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
   > {
     if (patch.parts) {
       if (patch.parts.length === 0) {
         return { error: "a surface needs at least one part", status: 400 };
       }
-      if (partsByteLength(patch.parts) > MAX_SURFACE_BYTES) {
+      if (surfacesByteLength(patch.parts) > MAX_SURFACE_BYTES) {
         return { error: `surface exceeds ${MAX_SURFACE_BYTES} bytes`, status: 413 };
       }
     }
     if (patch.title !== undefined) patch.title = patch.title.slice(0, MAX_TITLE);
-    const surface = await store.updateSurface(id, patch);
+    const surface = await store.updatePost(id, { surfaces: patch.parts, title: patch.title });
     if (!surface) return { error: "surface not found", status: 404 };
     bus.broadcast({
       type: "surface-updated",
@@ -453,11 +453,11 @@ export function createApp({
     // Comments always attach to a surface — a comment with nothing to point at
     // is just a message to the agent, which is what the agent's own prompt is for.
     if (!input.surface) return { error: 'provide a "surface" id', status: 400 };
-    const surface = await store.getSurface(input.surface);
+    const surface = await store.getPost(input.surface);
     if (!surface) return { error: "surface not found", status: 404 };
     const comment = await store.createComment({
       sessionId: surface.sessionId,
-      surfaceId: surface.id,
+      postId: surface.id,
       author: input.author,
       text: input.text.trim().slice(0, MAX_COMMENT_TEXT),
     });
@@ -466,7 +466,7 @@ export function createApp({
       type: "comment-created",
       id: comment.id,
       sessionId: comment.sessionId,
-      surfaceId: comment.surfaceId,
+      surfaceId: comment.postId,
       seq: comment.seq,
     });
     // agent replies are writes too — piggyback pending feedback on them, but
@@ -487,7 +487,7 @@ export function createApp({
     if (afterSeq === undefined && q.author === "user" && q.sessionId) {
       afterSeq = (await store.getSession(q.sessionId))?.agentSeq;
     }
-    const query = { sessionId: q.sessionId, surfaceId: q.surfaceId, afterSeq };
+    const query = { sessionId: q.sessionId, postId: q.surfaceId, afterSeq };
     const matches = (list: Comment[]) =>
       q.author ? list.filter((cm) => cm.author === q.author) : list;
     const wait = Math.min(Math.max(q.waitSeconds, 0), MAX_WAIT_SECONDS);
@@ -616,7 +616,7 @@ export function createApp({
     return injectHead(text, `<script>${config}</script>`);
   };
 
-  const surfacePreviewHead = (surface: Surface, request: Request) => {
+  const surfacePreviewHead = (surface: Post, request: Request) => {
     const origin = new URL(request.url).origin;
     const publicBasePath = requestBasePath(request);
     const canonical = `${origin}${publicBasePath}/s/${surface.id}`;
@@ -639,7 +639,7 @@ export function createApp({
     ].join("\n");
   };
 
-  const configuredViewerHtml = (c: Context, surface?: Surface) => {
+  const configuredViewerHtml = (c: Context, surface?: Post) => {
     const configured = withViewerConfig(
       withOrigin(viewerHtml, { req: { url: c.req.url } }),
       c.req.raw,
@@ -657,7 +657,7 @@ export function createApp({
   app.get("/session/:id/s/:surfaceId", async (c) => {
     if (isUnauthenticatedSessionRead(c)) {
       const session = await store.getSession(c.req.param("id"));
-      const surface = await store.getSurface(c.req.param("surfaceId"));
+      const surface = await store.getPost(c.req.param("surfaceId"));
       if (!session || !surface || surface.sessionId !== session.id) {
         return c.text("Session or surface not found", 404);
       }
@@ -693,7 +693,7 @@ export function createApp({
   // --- sessions ---
 
   app.get("/api/sessions", async (c) => {
-    const [sessions, surfaces] = await Promise.all([store.listSessions(), store.listSurfaces()]);
+    const [sessions, surfaces] = await Promise.all([store.listSessions(), store.listPosts()]);
     const counts = new Map<string, number>();
     for (const s of surfaces) counts.set(s.sessionId, (counts.get(s.sessionId) ?? 0) + 1);
     return c.json(sessions.map((s) => ({ ...s, surfaceCount: counts.get(s.id) ?? 0 })));
@@ -731,7 +731,7 @@ export function createApp({
   const listSessionSurfaces = async (c: any) => {
     const session = await store.getSession(c.req.param("id"));
     if (!session) return c.json({ error: "session not found" }, 404);
-    const surfaces = await store.listSurfaces(session.id);
+    const surfaces = await store.listPosts(session.id);
     return c.json(surfaces.map(surfaceMeta));
   };
   app.get("/api/sessions/:id/surfaces", listSessionSurfaces);
@@ -777,7 +777,7 @@ export function createApp({
   // --- surfaces ---
 
   const getSurface = async (c: any) => {
-    const surface = await store.getSurface(c.req.param("id"));
+    const surface = await store.getPost(c.req.param("id"));
     if (!surface) return c.json({ error: "surface not found" }, 404);
     return c.json(surface);
   };
@@ -804,12 +804,12 @@ export function createApp({
     if (!body || typeof body.html !== "string" || !body.html.trim()) {
       return c.json({ error: 'body must include non-empty "html" string' }, 400);
     }
-    const parsed = validateSurfaceParts([htmlPart(body.html, body.kits)]);
+    const parsed = validateSurfaceParts([htmlSurface(body.html, body.kits)]);
     if (!parsed.ok) return c.json({ error: parsed.error }, 400);
     return publish(c, body, parsed.parts);
   });
 
-  async function publish(c: any, body: any, parts: SurfacePart[]) {
+  async function publish(c: any, body: any, parts: Surface[]) {
     const result = await publishSurface({
       parts,
       title: typeof body.title === "string" ? body.title : undefined,
@@ -832,14 +832,14 @@ export function createApp({
     const body = await c.req.json().catch(() => null);
     if (!body) return c.json({ error: "invalid JSON body" }, 400);
     // surfaces: a `parts` array; snippets: an `html` string (single html part).
-    let parts: SurfacePart[] | undefined;
+    let parts: Surface[] | undefined;
     if (body.parts !== undefined) {
       if (!Array.isArray(body.parts)) return c.json({ error: '"parts" must be an array' }, 400);
       const parsed = validateSurfaceParts(body.parts);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
       parts = parsed.parts;
     } else if (typeof body.html === "string") {
-      const parsed = validateSurfaceParts([htmlPart(body.html, body.kits)]);
+      const parsed = validateSurfaceParts([htmlSurface(body.html, body.kits)]);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
       parts = parsed.parts;
     }
@@ -857,9 +857,9 @@ export function createApp({
   app.put("/api/snippets/:id", revise); // legacy alias
 
   const remove = async (c: any) => {
-    const surface = await store.getSurface(c.req.param("id"));
+    const surface = await store.getPost(c.req.param("id"));
     if (!surface) return c.json({ error: "surface not found" }, 404);
-    await store.removeSurface(surface.id);
+    await store.removePost(surface.id);
     bus.broadcast({ type: "surface-deleted", id: surface.id, sessionId: surface.sessionId });
     return c.json({ ok: true });
   };
@@ -911,7 +911,7 @@ export function createApp({
         return c.json({ error: "session not found" }, 404);
       }
       if (surfaceId) {
-        const surface = await store.getSurface(surfaceId);
+        const surface = await store.getPost(surfaceId);
         if (!surface || (sessionId && surface.sessionId !== sessionId)) {
           return c.json({ error: "surface not found" }, 404);
         }
@@ -936,20 +936,20 @@ export function createApp({
   // are data the viewer renders natively (text nodes / <img> / JSX), so they
   // never reach here.
   app.get("/s/:id", async (c) => {
-    const surface = await store.getSurface(c.req.param("id"));
+    const surface = await store.getPost(c.req.param("id"));
     if (!surface) return c.text("Surface not found", 404);
     const partParam = c.req.query("part");
     if (partParam == null) return c.html(configuredViewerHtml(c, surface));
 
     const ver = c.req.query("ver");
     let title = surface.title;
-    let parts = surface.parts;
+    let parts = surface.surfaces;
     let version = surface.version;
     if (ver && Number(ver) !== surface.version) {
       const old = surface.history.find((h) => h.version === Number(ver));
       if (!old) return c.text(`Version ${ver} not available`, 404);
       title = old.title;
-      parts = old.parts;
+      parts = old.surfaces;
       version = old.version;
     }
     const idx = Number(partParam ?? 0);
@@ -1001,12 +1001,12 @@ export function createApp({
       }
       const rendered =
         part.kind === "markdown"
-          ? await renderMarkdown(part as MarkdownPart, { theme: themeId, mode })
+          ? await renderMarkdown(part as MarkdownSurface, { theme: themeId, mode })
           : part.kind === "code"
-            ? await renderCode(part as CodePart, { theme: themeId, mode })
+            ? await renderCode(part as CodeSurface, { theme: themeId, mode })
             : part.kind === "terminal"
-              ? renderTerminal(part as TerminalPart)
-              : await renderDiff(part as DiffPart, { theme: themeId, mode }).catch((e) => ({
+              ? renderTerminal(part as TerminalSurface)
+              : await renderDiff(part as DiffSurface, { theme: themeId, mode }).catch((e) => ({
                   body: `<div class="rich-error">Couldn’t render diff — ${escapeHtml(
                     e instanceof Error ? e.message : "render error",
                   )}</div>`,

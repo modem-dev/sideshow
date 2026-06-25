@@ -1,5 +1,5 @@
 import { createSignal, Show } from "solid-js";
-import type { ImagePart as ImagePartData } from "./api.ts";
+import type { ImageSurface as ImagePartData } from "./api.ts";
 
 // A trusted, viewer-chrome <img> for an uploaded asset (no iframe). The bytes
 // live at /a/:id; an evicted/missing asset 404s, so show a placeholder rather

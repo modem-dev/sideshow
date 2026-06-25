@@ -2,27 +2,29 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   type Asset,
-  type BoardSnapshot,
+  type WorkspaceSnapshot,
   collectAssetIds,
   type Comment,
   type CommentQuery,
   type CreateAssetInput,
   type CreateCommentInput,
   type CreateSessionInput,
-  type CreateSurfaceInput,
+  type CreatePostInput,
   hashAssetId,
   HISTORY_LIMIT,
-  htmlPart,
-  MAX_BOARD_ASSET_BYTES,
+  htmlSurface,
+  MAX_WORKSPACE_ASSET_BYTES,
   newId,
   selectEvictions,
   type Session,
   stripNul,
   stripNulStep,
   type Store,
+  type Post,
+  type PostVersion,
   type Surface,
   type TraceStep,
-  type UpdateSurfaceInput,
+  type UpdatePostInput,
 } from "./types.ts";
 
 export type * from "./types.ts";
@@ -37,7 +39,7 @@ const cloneOrNull = <T>(value: T | null | undefined): T | null =>
 
 interface FileShape {
   sessions: Session[];
-  surfaces: Surface[];
+  surfaces: Post[];
   comments: Comment[];
   assets: StoredAsset[];
   trace: Record<string, TraceStep[]>;
@@ -63,46 +65,80 @@ interface LegacySnippet {
   version: number;
   history: LegacySnippetVersion[];
 }
-interface LegacyShape extends Partial<FileShape> {
+interface LegacyShape extends Omit<Partial<FileShape>, "surfaces"> {
+  surfaces?: LegacyPost[];
   snippets?: LegacySnippet[];
 }
 
-function liftSnippet(s: LegacySnippet): Surface {
+function liftSnippet(s: LegacySnippet): Post {
   return {
     id: s.id,
     sessionId: s.sessionId,
     title: s.title,
-    parts: [htmlPart(s.html)],
+    surfaces: [htmlSurface(s.html)],
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
     version: s.version,
     history: (s.history ?? []).map((h) => ({
       version: h.version,
       title: h.title,
-      parts: [htmlPart(h.html)],
+      surfaces: [htmlSurface(h.html)],
       at: h.at,
     })),
   };
 }
 
-type LegacyComment = Comment & { snippetId?: string | null; snippetTitle?: string | null };
+type LegacyComment = Comment & {
+  snippetId?: string | null;
+  snippetTitle?: string | null;
+  // 0.5.x boards keyed comments by `surfaceId`/`surfaceTitle`.
+  surfaceId?: string | null;
+  surfaceTitle?: string | null;
+};
 
 function liftComment(c: LegacyComment): Comment {
   return {
     id: c.id,
     seq: c.seq,
     sessionId: c.sessionId,
-    surfaceId: c.surfaceId ?? c.snippetId ?? null,
-    surfaceTitle: c.surfaceTitle ?? c.snippetTitle ?? null,
+    postId: c.postId ?? c.surfaceId ?? c.snippetId ?? null,
+    postTitle: c.postTitle ?? c.surfaceTitle ?? c.snippetTitle ?? null,
     author: c.author,
     text: c.text,
     createdAt: c.createdAt,
   };
 }
 
+// 0.5.x boards stored each post's blocks under a `parts` field (and
+// `history[].parts`). Map those to the `surfaces` field so old files still load.
+type LegacyPostVersion = PostVersion & { parts?: Surface[] };
+type LegacyPost = Omit<Post, "surfaces" | "history"> & {
+  surfaces?: Surface[];
+  parts?: Surface[];
+  history?: LegacyPostVersion[];
+};
+
+function liftPost(s: LegacyPost): Post {
+  return {
+    id: s.id,
+    sessionId: s.sessionId,
+    title: s.title,
+    surfaces: s.surfaces ?? s.parts ?? [],
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+    version: s.version,
+    history: (s.history ?? []).map((h) => ({
+      version: h.version,
+      title: h.title,
+      surfaces: h.surfaces ?? h.parts ?? [],
+      at: h.at,
+    })),
+  };
+}
+
 export class JsonFileStore implements Store {
   private sessions = new Map<string, Session>();
-  private surfaces = new Map<string, Surface>();
+  private surfaces = new Map<string, Post>();
   private comments: Comment[] = [];
   private assets = new Map<string, Asset>();
   private trace = new Map<string, TraceStep[]>();
@@ -136,7 +172,7 @@ export class JsonFileStore implements Store {
       }
       // Prefer the surfaces array; fall back to lifting legacy snippets.
       if (data.surfaces) {
-        for (const s of data.surfaces) this.surfaces.set(s.id, s);
+        for (const s of data.surfaces) this.surfaces.set(s.id, liftPost(s));
       } else if (data.snippets) {
         for (const s of data.snippets) this.surfaces.set(s.id, liftSnippet(s));
       }
@@ -186,7 +222,7 @@ export class JsonFileStore implements Store {
   // Snapshot the whole board for a one-time backend migration (→ SqlStore.
   // importBoard). Returns live references — fine for a read-once-then-import
   // migration, which never mutates the store afterward.
-  async exportBoard(): Promise<BoardSnapshot> {
+  async exportBoard(): Promise<WorkspaceSnapshot> {
     await this.load();
     return {
       sessions: [...this.sessions.values()],
@@ -286,7 +322,7 @@ export class JsonFileStore implements Store {
 
   // --- surfaces ---
 
-  async listSurfaces(sessionId?: string) {
+  async listPosts(sessionId?: string) {
     await this.load();
     const all = [...this.surfaces.values()].filter(
       (s) => sessionId === undefined || s.sessionId === sessionId,
@@ -294,20 +330,20 @@ export class JsonFileStore implements Store {
     return all.map(clone).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  async getSurface(id: string) {
+  async getPost(id: string) {
     await this.load();
     return cloneOrNull(this.surfaces.get(id));
   }
 
-  async createSurface(input: CreateSurfaceInput) {
+  async createPost(input: CreatePostInput) {
     await this.load();
     if (!this.sessions.has(input.sessionId)) return null;
     const now = new Date().toISOString();
-    const surface: Surface = {
+    const surface: Post = {
       id: newId(),
       sessionId: input.sessionId,
       title: stripNul(input.title)?.trim() || "Untitled",
-      parts: clone(input.parts),
+      surfaces: clone(input.surfaces),
       createdAt: now,
       updatedAt: now,
       version: 1,
@@ -319,19 +355,19 @@ export class JsonFileStore implements Store {
     return clone(surface);
   }
 
-  async updateSurface(id: string, patch: UpdateSurfaceInput) {
+  async updatePost(id: string, patch: UpdatePostInput) {
     await this.load();
     const surface = this.surfaces.get(id);
     if (!surface) return null;
     surface.history.push({
       version: surface.version,
       title: surface.title,
-      parts: clone(surface.parts),
+      surfaces: clone(surface.surfaces),
       at: surface.updatedAt,
     });
     if (surface.history.length > HISTORY_LIMIT) surface.history.shift();
     if (patch.title !== undefined) surface.title = stripNul(patch.title).trim() || surface.title;
-    if (patch.parts !== undefined) surface.parts = clone(patch.parts);
+    if (patch.surfaces !== undefined) surface.surfaces = clone(patch.surfaces);
     surface.version += 1;
     surface.updatedAt = new Date().toISOString();
     this.touch(surface.sessionId);
@@ -339,12 +375,12 @@ export class JsonFileStore implements Store {
     return clone(surface);
   }
 
-  async removeSurface(id: string) {
+  async removePost(id: string) {
     await this.load();
     const surface = this.surfaces.get(id);
     if (!surface) return false;
     this.surfaces.delete(id);
-    this.comments = this.comments.filter((c) => c.surfaceId !== id);
+    this.comments = this.comments.filter((c) => c.postId !== id);
     await this.persist();
     return true;
   }
@@ -357,7 +393,7 @@ export class JsonFileStore implements Store {
       .filter(
         (c) =>
           (query.sessionId === undefined || c.sessionId === query.sessionId) &&
-          (query.surfaceId === undefined || c.surfaceId === query.surfaceId) &&
+          (query.postId === undefined || c.postId === query.postId) &&
           (query.afterSeq === undefined || c.seq > query.afterSeq),
       )
       .map(clone);
@@ -366,13 +402,13 @@ export class JsonFileStore implements Store {
   async createComment(input: CreateCommentInput) {
     await this.load();
     if (!this.sessions.has(input.sessionId)) return null;
-    const surface = input.surfaceId ? this.surfaces.get(input.surfaceId) : null;
+    const surface = input.postId ? this.surfaces.get(input.postId) : null;
     const comment: Comment = {
       id: newId(),
       seq: ++this.lastSeq,
       sessionId: input.sessionId,
-      surfaceId: surface?.id ?? null,
-      surfaceTitle: surface?.title ?? null,
+      postId: surface?.id ?? null,
+      postTitle: surface?.title ?? null,
       author: stripNul(input.author).trim() || "user",
       text: stripNul(input.text),
       createdAt: new Date().toISOString(),
@@ -402,8 +438,8 @@ export class JsonFileStore implements Store {
   private referencedAssetIds(): Set<string> {
     const out = new Set<string>();
     for (const s of this.surfaces.values()) {
-      collectAssetIds(s.parts, out);
-      for (const h of s.history) collectAssetIds(h.parts, out);
+      collectAssetIds(s.surfaces, out);
+      for (const h of s.history) collectAssetIds(h.surfaces, out);
     }
     return out;
   }
@@ -428,7 +464,11 @@ export class JsonFileStore implements Store {
       lastAccessedAt: a.lastAccessedAt,
       referenced: referenced.has(a.id),
     }));
-    for (const id of selectEvictions(candidates, input.data.byteLength, MAX_BOARD_ASSET_BYTES)) {
+    for (const id of selectEvictions(
+      candidates,
+      input.data.byteLength,
+      MAX_WORKSPACE_ASSET_BYTES,
+    )) {
       this.assets.delete(id);
     }
     const now = new Date().toISOString();
