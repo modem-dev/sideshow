@@ -18,16 +18,26 @@ export interface Session {
 // `markdown`, `terminal`, and `mermaid` parts are structured data rendered by
 // the trusted viewer. A snippet is just a surface with one html part; a
 // diagram-with-its-diff is `[html, diff]`.
-export type SurfaceKind =
-  | "html"
-  | "diff"
-  | "image"
-  | "trace"
-  | "markdown"
-  | "terminal"
-  | "mermaid"
-  | "json"
-  | "code";
+// The canonical, ordered list of every surface kind — the single source of
+// truth. `SurfaceKind` derives from it, and the MCP tool schemas (mcpSpec.ts)
+// build their `kind` enums from it, so a kind can't be added to the model
+// without the MCP tier advertising it too (the gap that left `json`/`code`
+// publishable over CLI/REST but invisible to MCP). The per-kind FIELD schemas
+// in surfaceParts.ts and mcpSpec.ts are still hand-written; test/mcpSpec.test.ts
+// guards that every kind here round-trips through both the MCP schema and the
+// validator with its fields, so neither half can silently fall behind.
+export const SURFACE_KINDS = [
+  "html",
+  "diff",
+  "image",
+  "trace",
+  "markdown",
+  "terminal",
+  "mermaid",
+  "json",
+  "code",
+] as const;
+export type SurfaceKind = (typeof SURFACE_KINDS)[number];
 
 export interface HtmlSurface {
   kind: "html";

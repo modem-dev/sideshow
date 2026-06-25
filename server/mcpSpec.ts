@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { KIT_IDS } from "./kits.ts";
+import { SURFACE_KINDS, type SurfaceKind } from "./types.ts";
 
 export const MCP_SERVER_INFO = { name: "sideshow", version: "0.1.0" };
+
+// The `kind` enum both MCP transports advertise — derived from the one canonical
+// list (types.ts) so the MCP tier can never again fall behind what REST/CLI
+// accept. Non-empty tuple cast so z.enum keeps the literal union.
+const PART_KIND_ENUM = [...SURFACE_KINDS] as [SurfaceKind, ...SurfaceKind[]];
 
 export const MCP_INSTRUCTIONS =
   "sideshow is a live visual surface the user watches in a browser. Publish posts to illustrate " +
@@ -9,7 +15,8 @@ export const MCP_INSTRUCTIONS =
   "ordered list of surfaces: an `html` surface is markup you write (a body fragment), a `markdown` surface is " +
   "prose the viewer renders with consistent typography, a `mermaid` surface is diagram source the viewer " +
   "renders to an SVG (flowchart, sequence, ERD, …), a `diff` surface is a patch the viewer renders as " +
-  "a syntax-highlighted split/unified diff. Combine them — e.g. a markdown rationale above a diff surface — " +
+  "a syntax-highlighted split/unified diff, a `json` surface is any JSON value rendered as a collapsible " +
+  "tree, and a `code` surface is source the viewer syntax-highlights. Combine them — e.g. a markdown rationale above a diff surface — " +
   "in one card. publish_post is the general tool; publish_snippet is " +
   "sugar for a single html surface. Call get_design_guide once before your first publish. On your first " +
   'publish, also pass sessionTitle to name the session after the task (e.g. "Auth refactor"). The ' +
@@ -57,6 +64,13 @@ const d = {
   traceTs: "ISO timestamp",
   terminalText: "terminal surface: raw output (ANSI SGR color escapes are rendered)",
   terminalCols: "terminal surface: optional render width in columns",
+  surfaceData:
+    "json surface: any JSON value (object, array, string, number, boolean, null) — the viewer renders it as a collapsible tree",
+  surfaceCode: "code surface: source code the viewer syntax-highlights and shows with line numbers",
+  surfaceLanguage:
+    "code surface: language id (ts, js, python, go, rust, …); omit or use 'text' for plain monospace",
+  surfaceLineStart:
+    "code surface: 1-based starting line number for an excerpt (the viewer numbers from here instead of 1)",
 };
 
 const MCP_SURFACES_DESCRIPTION =
@@ -73,7 +87,9 @@ const MCP_SURFACES_DESCRIPTION =
   "{kind:'trace', steps:[{label, kind?, detail?, ts?}]} renders a step timeline, and/or " +
   "{kind:'trace', assetId} for an uploaded trace file (downloadable). terminal: {kind:'terminal', " +
   "text:'<output>', cols?, title?} renders monospace terminal output (ANSI SGR colors supported; " +
-  "cursor-addressing TUIs are not resolved). Optional diff layout " +
+  "cursor-addressing TUIs are not resolved). json: {kind:'json', data:<any JSON value>} renders a " +
+  "collapsible tree. code: {kind:'code', code:'<source>', language?, title?, lineStart?} renders " +
+  "syntax-highlighted source with line numbers. Optional diff layout " +
   "'unified'|'split'. Combine freely, e.g. [{kind:'html',...},{kind:'image',assetId},{kind:'trace',steps}].";
 
 const MCP_SURFACE_JSON_SCHEMA = {
@@ -81,7 +97,7 @@ const MCP_SURFACE_JSON_SCHEMA = {
   properties: {
     kind: {
       type: "string",
-      enum: ["html", "markdown", "mermaid", "diff", "image", "trace", "terminal"],
+      enum: PART_KIND_ENUM,
     },
     html: { type: "string", description: d.surfaceHtml },
     kits: { type: "array", items: { type: "string" }, description: d.surfaceKits },
@@ -109,6 +125,10 @@ const MCP_SURFACE_JSON_SCHEMA = {
     title: { type: "string", description: d.traceTitle },
     text: { type: "string", description: d.terminalText },
     cols: { type: "number", description: d.terminalCols },
+    data: { description: d.surfaceData },
+    code: { type: "string", description: d.surfaceCode },
+    language: { type: "string", description: d.surfaceLanguage },
+    lineStart: { type: "number", description: d.surfaceLineStart },
     steps: {
       type: "array",
       description: d.traceSteps,
@@ -135,17 +155,17 @@ const MCP_SURFACES_JSON_SCHEMA = {
 
 export const MCP_TOOL_DESCRIPTIONS = {
   publishPostHttp:
-    "Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace). Returns the post id, view URL, and sessionId — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+    "Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id, view URL, and sessionId — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
   publishPostStdio:
-    "Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace). Returns the post id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+    "Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
   updatePost:
     "Revise a post in place (same card, new version). Prefer this over publishing a near-duplicate. Pass the full replacement surfaces array. If the result includes userFeedback, read it.",
   listPostsHttp: "List posts — pass a session id to scope, or omit for all sessions.",
   listPostsStdio: "List posts in this conversation's session.",
   publishSurfaceHttp:
-    "Deprecated alias of publish_post — Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace). Returns the post id, view URL, and sessionId — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+    "Deprecated alias of publish_post — Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id, view URL, and sessionId — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
   publishSurfaceStdio:
-    "Deprecated alias of publish_post — Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace). Returns the post id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+    "Deprecated alias of publish_post — Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
   updateSurface:
     "Deprecated alias of update_post — Revise a post in place (same card, new version). Prefer this over publishing a near-duplicate. Pass the full replacement surfaces array. If the result includes userFeedback, read it.",
   publishSnippet:
@@ -342,7 +362,7 @@ const traceStepSchema = z.object({
 
 const mcpPartSchema = z
   .object({
-    kind: z.enum(["html", "markdown", "mermaid", "diff", "image", "trace", "terminal"]),
+    kind: z.enum(PART_KIND_ENUM),
     html: z.string().optional().describe(d.surfaceHtml),
     kits: z.array(z.string()).optional().describe(d.surfaceKits),
     markdown: z.string().optional().describe(d.surfaceMarkdown),
@@ -357,12 +377,17 @@ const mcpPartSchema = z
     steps: z.array(traceStepSchema).optional().describe(d.traceSteps),
     text: z.string().optional().describe(d.terminalText),
     cols: z.number().optional().describe(d.terminalCols),
+    data: z.unknown().optional().describe(d.surfaceData),
+    code: z.string().optional().describe(d.surfaceCode),
+    language: z.string().optional().describe(d.surfaceLanguage),
+    lineStart: z.number().int().min(1).optional().describe(d.surfaceLineStart),
   })
   .describe(
     "A surface: html {kind:'html',html}; markdown {kind:'markdown',markdown} (prose); mermaid " +
       "{kind:'mermaid',mermaid} (diagram source → SVG); diff {kind:'diff',patch}; image " +
       "{kind:'image',assetId} (from upload_asset); trace {kind:'trace',steps} and/or {kind:'trace',assetId}; " +
-      "terminal {kind:'terminal',text} (monospace output; ANSI SGR colors rendered)",
+      "terminal {kind:'terminal',text} (monospace output; ANSI SGR colors rendered); json {kind:'json',data} " +
+      "(any JSON value → collapsible tree); code {kind:'code',code,language?,lineStart?} (highlighted source)",
   );
 
 export const STDIO_MCP_INPUT_SCHEMAS = {
