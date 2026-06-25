@@ -1,0 +1,53 @@
+# CodeQL via advanced setup. We moved off default setup because default setup
+# does not analyze pull requests from forks, and the `code_scanning` branch
+# ruleset on main requires a CodeQL result — so every fork PR was unmergeable.
+# A workflow's pull_request trigger DOES run on fork PRs (gated once by the
+# repo's first-time-contributor approval), so this restores CodeQL coverage for
+# outside contributors. Keep languages/query-suite/schedule in sync with what
+# default setup ran: actions + javascript-typescript + python, default queries,
+# weekly schedule.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, mirroring the cadence default setup used.
+    - cron: "27 4 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to upload CodeQL results to the code-scanning dashboard.
+      security-events: write
+      # Only needed for workflows in private repos; harmless here.
+      packages: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # javascript-typescript covers both JS and TS in one analysis.
+        language: [actions, javascript-typescript, python]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Default query suite, matching the prior default setup.
+          queries: ""
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
