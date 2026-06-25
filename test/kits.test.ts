@@ -75,25 +75,29 @@ test("kitSummaries advertises each kit without leaking the css/js payload", () =
 
 // --- validation: strict (REST) rejects, loose (MCP) filters ---
 
-test("validateSurfaceParts accepts an html part with known kits", () => {
-  const r = validateSurfaceParts([{ kind: "html", html: "<p>x</p>", kits: ["issues", "slides"] }]);
+test("validateSurfaceParts accepts an html part with known kits", async () => {
+  const r = await validateSurfaceParts([
+    { kind: "html", html: "<p>x</p>", kits: ["issues", "slides"] },
+  ]);
   assert.equal(r.ok, true);
   if (r.ok)
     assert.deepEqual(r.parts[0], { kind: "html", html: "<p>x</p>", kits: ["issues", "slides"] });
 });
 
-test("validateSurfaceParts rejects an unknown kit id with the valid set", () => {
-  const r = validateSurfaceParts([{ kind: "html", html: "<p>x</p>", kits: ["bogus"] }]);
+test("validateSurfaceParts rejects an unknown kit id with the valid set", async () => {
+  const r = await validateSurfaceParts([{ kind: "html", html: "<p>x</p>", kits: ["bogus"] }]);
   assert.equal(r.ok, false);
   if (!r.ok) assert.match(r.error, /unknown kit "bogus".*issues/);
 });
 
-test("coerceSurfaceParts filters unknown kits rather than dropping the part", () => {
-  const parts = coerceSurfaceParts([{ kind: "html", html: "<p>x</p>", kits: ["issues", "bogus"] }]);
+test("coerceSurfaceParts filters unknown kits rather than dropping the part", async () => {
+  const parts = await coerceSurfaceParts([
+    { kind: "html", html: "<p>x</p>", kits: ["issues", "bogus"] },
+  ]);
   assert.deepEqual(parts, [{ kind: "html", html: "<p>x</p>", kits: ["issues"] }]);
 });
 
-test("coerceSurfaceParts drops an all-unknown kits field entirely", () => {
-  const parts = coerceSurfaceParts([{ kind: "html", html: "<p>x</p>", kits: ["nope"] }]);
+test("coerceSurfaceParts drops an all-unknown kits field entirely", async () => {
+  const parts = await coerceSurfaceParts([{ kind: "html", html: "<p>x</p>", kits: ["nope"] }]);
   assert.deepEqual(parts, [{ kind: "html", html: "<p>x</p>" }]);
 });

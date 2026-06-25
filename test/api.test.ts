@@ -120,7 +120,7 @@ test("publishes a combined html+diff surface; /s server-renders both parts opaqu
       title: "Review",
       parts: [
         { kind: "html", html: "<p>diagram</p>" },
-        { kind: "diff", patch: "@@ -1 +1 @@\n-a\n+b", layout: "split" },
+        { kind: "diff", patch: "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b", layout: "split" },
       ],
     }),
   );
@@ -134,7 +134,7 @@ test("publishes a combined html+diff surface; /s server-renders both parts opaqu
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
   assert.equal(full.surfaces.length, 2);
   assert.equal(full.surfaces[0].html, "<p>diagram</p>");
-  assert.equal(full.surfaces[1].patch, "@@ -1 +1 @@\n-a\n+b");
+  assert.equal(full.surfaces[1].patch, "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b");
 
   // /s renders the html part...
   const part0 = await app.request(`/s/${surface.id}?part=0`);
@@ -369,7 +369,10 @@ test("publish_surface MCP tool round-trips a diff part", async () => {
       "/mcp",
       mcpCall(2, "tools/call", {
         name: "publish_surface",
-        arguments: { title: "Diff", parts: [{ kind: "diff", patch: "@@ -1 +1 @@\n-x\n+y" }] },
+        arguments: {
+          title: "Diff",
+          parts: [{ kind: "diff", patch: "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-x\n+y" }],
+        },
       }),
     )
   ).json()) as any;
@@ -377,7 +380,7 @@ test("publish_surface MCP tool round-trips a diff part", async () => {
   assert.ok(payload.id && payload.sessionId);
   const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
   assert.equal(full.surfaces[0].kind, "diff");
-  assert.equal(full.surfaces[0].patch, "@@ -1 +1 @@\n-x\n+y");
+  assert.equal(full.surfaces[0].patch, "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-x\n+y");
 });
 
 test("publishes a markdown part; /s server-renders it to sandboxed html", async () => {

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { processFile, parsePatchFiles } from "@pierre/diffs";
+import { parse as parseMermaid } from "@mermaid-js/parser";
 import { isKnownKit, KIT_IDS } from "./kits.ts";
 import type { Surface } from "./types.ts";
 
@@ -242,36 +244,104 @@ const looseSurfacePart = z.union([
 // Runtime SurfacePart parser shared by REST and MCP. REST uses strict mode to
 // reject malformed input before it reaches storage; MCP uses tolerant mode so
 // slightly-off tool calls still publish whatever valid parts they contain.
-function parseSurfaceParts(raw: unknown, opts: { strict?: boolean } = {}): SurfacePartParseResult {
+// Async because mermaid validation awaits the parser (@mermaid-js/parser).
+async function parseSurfaceParts(
+  raw: unknown,
+  opts: { strict?: boolean } = {},
+): Promise<SurfacePartParseResult> {
   if (!Array.isArray(raw)) return { parts: [], errors: ["parts must be an array"] };
 
   if (opts.strict === true) {
-    const results = raw.map((part, i) => parseStrictPart(part, i));
+    const results = await Promise.all(raw.map((part, i) => parseStrictPart(part, i)));
     return {
       parts: results.flatMap((r) => (r.part ? [r.part] : [])),
       errors: results.flatMap((r) => r.errors),
     };
   }
 
-  const parts: Surface[] = raw.flatMap((part) => {
+  const parts: Surface[] = [];
+  for (const part of raw) {
     const parsed = looseSurfacePart.safeParse(part);
-    return parsed.success ? [parsed.data as Surface] : [];
-  });
+    if (!parsed.success) continue;
+    if ((await validateSemantics(parsed.data as Surface)).length === 0)
+      parts.push(parsed.data as Surface);
+  }
   return { parts, errors: [] };
 }
 
-export const coerceSurfaceParts = (raw: unknown): Surface[] => parseSurfaceParts(raw).parts;
+export const coerceSurfaceParts = (raw: unknown): Promise<Surface[]> =>
+  parseSurfaceParts(raw).then((r) => r.parts);
 
-export function validateSurfaceParts(
+export async function validateSurfaceParts(
   raw: unknown,
-): { ok: true; parts: Surface[] } | { ok: false; error: string } {
-  const result = parseSurfaceParts(raw, { strict: true });
+): Promise<{ ok: true; parts: Surface[] } | { ok: false; error: string }> {
+  const result = await parseSurfaceParts(raw, { strict: true });
   return result.errors.length > 0
     ? { ok: false, error: result.errors.join("; ") }
     : { ok: true, parts: result.parts };
 }
 
-function parseStrictPart(raw: unknown, index: number): { part: Surface | null; errors: string[] } {
+// Renderability checks that run after the structural zod parse succeeds. Strict
+// mode reports these as 400s; loose mode (MCP) drops the part. Runtime-agnostic:
+// the parsers used here are the same ones richRender.ts runs server-side (JS
+// regex engine, no DOM/WASM), so this is safe on the Worker DO too. The mermaid
+// parser (@mermaid-js/parser, the official extraction) covers the 15
+// Langium-migrated diagram types; types still on Jison (flowchart, sequence,
+// class, state, er, gantt, …) are not yet in that package, so we skip
+// validation for them — the viewer's existing graceful fallback handles any
+// render failure. No `node:` imports, no DOM usage on the parse path.
+function diffPatchHasContent(patch: string): boolean {
+  let files = 0;
+  for (const parsed of parsePatchFiles(patch)) files += parsed.files.length;
+  if (files > 0) return true;
+  const fd = processFile(patch);
+  return !!(fd && (fd.name || fd.hunks?.length));
+}
+
+// Extract the diagram type keyword from mermaid source (the first non-empty,
+// non-comment line's first word). The official parser's `parse(diagramType,
+// text)` takes this as a separate parameter.
+function mermaidDiagramType(src: string): string | null {
+  for (const line of src.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("%%") || trimmed.startsWith("#")) continue;
+    return trimmed.split(/\s+/)[0] ?? null;
+  }
+  return null;
+}
+
+async function validateSemantics(part: Surface): Promise<string[]> {
+  if (part.kind === "diff" && part.patch) {
+    try {
+      if (!diffPatchHasContent(part.patch))
+        return [
+          'diff part "patch" did not parse to any file — expected a unified/git patch with --- /+++ headers and @@ hunks',
+        ];
+    } catch (e) {
+      return ['diff part "patch" failed to parse: ' + (e instanceof Error ? e.message : "error")];
+    }
+  }
+  if (part.kind === "mermaid") {
+    const diagramType = mermaidDiagramType(part.mermaid);
+    if (!diagramType)
+      return ['mermaid part has no diagram type (first line should be e.g. "flowchart TD")'];
+    try {
+      await parseMermaid(diagramType as never, part.mermaid);
+    } catch (e) {
+      // Unsupported diagram types (flowchart, sequence, etc. — still on Jison)
+      // skip validation; the viewer's graceful fallback handles render failures.
+      if (e instanceof Error && /unknown diagram type/i.test(e.message)) return [];
+      const msg = e instanceof Error ? (e.message.split("\n")[0] ?? "parse error") : "parse error";
+      return [`mermaid part failed to parse: ${msg}`];
+    }
+  }
+  return [];
+}
+
+async function parseStrictPart(
+  raw: unknown,
+  index: number,
+): Promise<{ part: Surface | null; errors: string[] }> {
   const path = `parts[${index}]`;
   if (!raw || typeof raw !== "object")
     return { part: null, errors: [`${path}: must be an object`] };
@@ -281,9 +351,11 @@ function parseStrictPart(raw: unknown, index: number): { part: Surface | null; e
   if (!schema) return { part: null, errors: [`${path}: unknown part kind`] };
 
   const parsed = schema.safeParse(raw);
-  return parsed.success
-    ? { part: parsed.data, errors: [] }
-    : { part: null, errors: formatZodErrors(parsed.error, path) };
+  if (!parsed.success) return { part: null, errors: formatZodErrors(parsed.error, path) };
+  const semantic = await validateSemantics(parsed.data);
+  return semantic.length > 0
+    ? { part: null, errors: semantic.map((m) => `${path}: ${m}`) }
+    : { part: parsed.data, errors: [] };
 }
 
 function schemaForKind(kind: unknown): z.ZodType<Surface, z.ZodTypeDef, any> | null {

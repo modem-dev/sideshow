@@ -73,8 +73,8 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       case "publish_snippet": {
         const parts =
           name === "publish_snippet"
-            ? coerceParts([htmlSurface(String(args.html ?? ""), args.kits)])
-            : coerceParts(args.parts);
+            ? await coerceParts([htmlSurface(String(args.html ?? ""), args.kits)])
+            : await coerceParts(args.parts);
         if (parts.length === 0) throw new Error("a surface needs at least one part");
         const result = await deps.publishSurface({
           parts,
@@ -93,9 +93,9 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         };
         if (name === "update_snippet") {
           if (typeof args.html === "string")
-            patch.parts = coerceParts([htmlSurface(args.html, args.kits)]);
+            patch.parts = await coerceParts([htmlSurface(args.html, args.kits)]);
         } else if (args.parts !== undefined) {
-          patch.parts = coerceParts(args.parts);
+          patch.parts = await coerceParts(args.parts);
         }
         const result = await deps.reviseSurface(String(args.id ?? ""), patch);
         if ("error" in result) throw new Error(result.error);

@@ -799,7 +799,7 @@ export function createApp({
     if (!body || !Array.isArray(body.parts)) {
       return c.json({ error: 'body must include a "parts" array' }, 400);
     }
-    const parsed = validateSurfaceParts(body.parts);
+    const parsed = await validateSurfaceParts(body.parts);
     if (!parsed.ok) return c.json({ error: parsed.error }, 400);
     return publish(c, body, parsed.parts);
   });
@@ -812,7 +812,7 @@ export function createApp({
     if (!body || typeof body.html !== "string" || !body.html.trim()) {
       return c.json({ error: 'body must include non-empty "html" string' }, 400);
     }
-    const parsed = validateSurfaceParts([htmlSurface(body.html, body.kits)]);
+    const parsed = await validateSurfaceParts([htmlSurface(body.html, body.kits)]);
     if (!parsed.ok) return c.json({ error: parsed.error }, 400);
     return publish(c, body, parsed.parts);
   });
@@ -843,11 +843,11 @@ export function createApp({
     let parts: Surface[] | undefined;
     if (body.parts !== undefined) {
       if (!Array.isArray(body.parts)) return c.json({ error: '"parts" must be an array' }, 400);
-      const parsed = validateSurfaceParts(body.parts);
+      const parsed = await validateSurfaceParts(body.parts);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
       parts = parsed.parts;
     } else if (typeof body.html === "string") {
-      const parsed = validateSurfaceParts([htmlSurface(body.html, body.kits)]);
+      const parsed = await validateSurfaceParts([htmlSurface(body.html, body.kits)]);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
       parts = parsed.parts;
     }
