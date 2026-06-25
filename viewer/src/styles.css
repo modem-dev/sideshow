@@ -489,7 +489,7 @@ select.vbadge {
 .card-head .act.icon.del:hover {
   color: var(--danger);
 }
-/* Every part that becomes HTML (html, markdown, code, diff, terminal, mermaid)
+/* Every surface that becomes HTML (html, markdown, code, diff, terminal, mermaid)
    renders as a sandboxed iframe pointed at /s/:id. These rules only size the
    frame and draw the card separator; the in-frame resize bridge sets the real
    height (this 120px is just a seed so there's no zero-height flash). */
@@ -501,14 +501,14 @@ iframe {
   border-top: 0.5px solid var(--border);
   background: transparent;
 }
-/* Shown when a part's kind isn't recognized by this (possibly stale) viewer. */
-.part-unsupported {
+/* Shown when a surface's kind isn't recognized by this (possibly stale) viewer. */
+.surface-unsupported {
   border-top: 0.5px solid var(--border);
   padding: 10px 14px;
   font-size: 12px;
   color: var(--faint);
 }
-.imagepart {
+.image-surface {
   border-top: 0.5px solid var(--border);
   padding: 12px 14px;
 }
@@ -529,7 +529,7 @@ iframe {
   font-size: 12px;
   color: var(--faint);
 }
-.tracepart {
+.trace-surface {
   border-top: 0.5px solid var(--border);
   padding: 10px 14px 12px;
   font-size: 13px;
@@ -613,7 +613,7 @@ iframe {
   white-space: pre-wrap;
   overflow-x: auto;
 }
-.jsonpart {
+.json-surface {
   border-top: 0.5px solid var(--border);
   padding: 10px 14px 12px;
   font: 13px/1.5 var(--font-mono, ui-monospace, monospace);
@@ -1438,9 +1438,9 @@ iframe {
   z-index: 0;
 }
 /* Left rail, not a centered spine: the line runs down the left and ONLY the
-   anchors get a node on it — user prompts and published surfaces. Everything
+   anchors get a node on it — user prompts and published posts. Everything
    else (the agent's prose, the folded command summary) is quiet text indented
-   past the rail, so the eye lands on prompts and surfaces and the work reads as
+   past the rail, so the eye lands on prompts and posts and the work reads as
    the connective tissue between them. */
 .tl-rail-pad {
   padding-left: 28px;
@@ -1449,7 +1449,7 @@ iframe {
   position: relative;
   z-index: 1;
 }
-.tl-surface {
+.tl-post {
   position: relative;
   z-index: 1;
   padding-left: 28px;
@@ -1605,11 +1605,11 @@ iframe {
   .tl-marker.prompt {
     display: none;
   }
-  .tl-surface {
+  .tl-post {
     padding-left: 0;
     margin: 12px 0 14px;
   }
-  .tl-surface .tl-node {
+  .tl-post .tl-node {
     display: none;
   }
   .tl-prompt {

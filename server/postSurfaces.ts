@@ -269,10 +269,10 @@ async function parseSurfaceParts(
   return { parts, errors: [] };
 }
 
-export const coerceSurfaceParts = (raw: unknown): Promise<Surface[]> =>
+export const coerceSurfaces = (raw: unknown): Promise<Surface[]> =>
   parseSurfaceParts(raw).then((r) => r.parts);
 
-export async function validateSurfaceParts(
+export async function validateSurfaces(
   raw: unknown,
 ): Promise<{ ok: true; parts: Surface[] } | { ok: false; error: string }> {
   const result = await parseSurfaceParts(raw, { strict: true });

@@ -1,31 +1,31 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
 import type { Post, TraceStep } from "./api.ts";
 import { Card } from "./Card.tsx";
-import { streamLoading, surfaces, traceSteps } from "./state.ts";
+import { streamLoading, posts, traceSteps } from "./state.ts";
 
 // Treatment E, refined (A → C). A left rail where only anchors get a node —
-// user prompts and published surfaces. Each turn shows just its intent (first
+// user prompts and published posts. Each turn shows just its intent (first
 // note) and outcome (last note); everything between — the middle notes AND the
 // tool calls, in their real chronological order — folds into one "··· N steps
 // ···" toggle. Expanding it reveals the work in order (a note, then the
 // commands it triggered, then the next note), not an end-of-turn command dump.
 // Steps are the real session trace (synced from the transcript) interleaved
-// with surfaces by time.
+// with posts by time.
 
 interface Gap {
-  surface: Post | null; // the surface this gap leads into; null = trailing
+  post: Post | null; // the post this gap leads into; null = trailing
   steps: TraceStep[];
 }
 
-function buildGaps(surfs: readonly Post[], steps: readonly TraceStep[]): Gap[] {
-  const gaps: Gap[] = surfs.map((s) => ({ surface: s, steps: [] }));
-  gaps.push({ surface: null, steps: [] });
+function buildGaps(postList: readonly Post[], steps: readonly TraceStep[]): Gap[] {
+  const gaps: Gap[] = postList.map((s) => ({ post: s, steps: [] }));
+  gaps.push({ post: null, steps: [] });
   const at = (s: Post) => Date.parse(s.createdAt);
   for (const step of steps) {
     const t = step.ts ? Date.parse(step.ts) : NaN;
     let idx = gaps.length - 1; // default: trailing
     if (!Number.isNaN(t)) {
-      const found = surfs.findIndex((s) => at(s) >= t);
+      const found = postList.findIndex((s) => at(s) >= t);
       if (found >= 0) idx = found;
     }
     gaps[idx].steps.push(step);
@@ -63,29 +63,29 @@ function groupTurns(steps: readonly TraceStep[]): Turn[] {
 }
 
 export function SessionTimeline() {
-  const gaps = createMemo(() => buildGaps(surfaces, traceSteps()));
-  const empty = () => !streamLoading() && surfaces.length === 0 && traceSteps().length === 0;
+  const gaps = createMemo(() => buildGaps(posts, traceSteps()));
+  const empty = () => !streamLoading() && posts.length === 0 && traceSteps().length === 0;
   return (
     <div class="timeline">
       <Show when={empty()}>
-        <div class="empty">No surfaces in this session yet.</div>
+        <div class="empty">No posts in this session yet.</div>
       </Show>
       <For each={gaps()}>
         {(gap) => (
           <>
             <For each={groupTurns(gap.steps)}>{(turn) => <TurnBlock turn={turn} />}</For>
-            <Show when={gap.surface}>
+            <Show when={gap.post}>
               {(s) => (
-                <div class="tl-surface">
+                <div class="tl-post">
                   <span class="tl-node"></span>
-                  <Card surface={s()} />
+                  <Card post={s()} />
                 </div>
               )}
             </Show>
           </>
         )}
       </For>
-      <Show when={surfaces.length > 0 || traceSteps().length > 0}>
+      <Show when={posts.length > 0 || traceSteps().length > 0}>
         <div class="tl-row tl-tail">
           <div class="body">waiting for feedback…</div>
         </div>

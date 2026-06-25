@@ -36,7 +36,8 @@ export type {
 
 export type PublicReadMode = "session" | "full";
 
-// GET /api/sessions decorates each session with its surface count.
+// GET /api/sessions decorates each session with its post count. The wire field
+// name `surfaceCount` is kept (server-provided).
 export interface SessionRow extends Session {
   surfaceCount: number;
 }
@@ -88,17 +89,19 @@ export function layoutMode(): "full" | "stream" {
   return host().layout ?? (publicReadMode() === "session" ? "stream" : "full");
 }
 
-export function surfaceLink(id: string): string {
+// `/s/:id` is the legacy wire alias for a post's permalink.
+export function postLink(id: string): string {
   return `${location.origin}${appPath(`/s/${encodeURIComponent(id)}`)}`;
 }
 
-// The PNG screenshot of a surface (the same /s/:id page, captured server-side).
+// The PNG screenshot of a post (the same /s/:id page, captured server-side).
 // Only reachable where `canScreenshot()` is true — see that helper.
-export function surfaceImageLink(id: string): string {
+// `/s/:id.png` is the legacy wire alias.
+export function postImageLink(id: string): string {
   return `${location.origin}${appPath(`/s/${encodeURIComponent(id)}.png`)}`;
 }
 
-// Whether the deployment can render surface screenshots (the /s/:id.png route).
+// Whether the deployment can render post screenshots (the /s/:id.png route).
 // Host-first (cloud embed), falling back to the self-hosted global, mirroring
 // isReadonly(). False on a plain Node server, which has no Browser Rendering.
 export function canScreenshot(): boolean {

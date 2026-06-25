@@ -30,7 +30,7 @@ import {
   type TerminalSurface,
   type TraceStep,
 } from "./types.ts";
-import { validateSurfaceParts } from "./surfaceParts.ts";
+import { validateSurfaces } from "./postSurfaces.ts";
 
 const MAX_SURFACE_BYTES = 2 * 1024 * 1024;
 const MAX_WAIT_SECONDS = 300;
@@ -808,7 +808,7 @@ export function createApp({
     if (!body || !Array.isArray(blocks)) {
       return c.json({ error: 'body must include a "surfaces" (or legacy "parts") array' }, 400);
     }
-    const parsed = await validateSurfaceParts(blocks);
+    const parsed = await validateSurfaces(blocks);
     if (!parsed.ok) return c.json({ error: parsed.error }, 400);
     return publish(c, body, parsed.parts);
   };
@@ -823,7 +823,7 @@ export function createApp({
     if (!body || typeof body.html !== "string" || !body.html.trim()) {
       return c.json({ error: 'body must include non-empty "html" string' }, 400);
     }
-    const parsed = await validateSurfaceParts([htmlSurface(body.html, body.kits)]);
+    const parsed = await validateSurfaces([htmlSurface(body.html, body.kits)]);
     if (!parsed.ok) return c.json({ error: parsed.error }, 400);
     return publish(c, body, parsed.parts);
   });
@@ -860,11 +860,11 @@ export function createApp({
       if (!Array.isArray(blocks)) {
         return c.json({ error: '"surfaces" (or legacy "parts") must be an array' }, 400);
       }
-      const parsed = await validateSurfaceParts(blocks);
+      const parsed = await validateSurfaces(blocks);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
       parts = parsed.parts;
     } else if (typeof body.html === "string") {
-      const parsed = await validateSurfaceParts([htmlSurface(body.html, body.kits)]);
+      const parsed = await validateSurfaces([htmlSurface(body.html, body.kits)]);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
       parts = parsed.parts;
     }

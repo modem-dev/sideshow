@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isKnownKit, KIT_IDS, kitAssets, kitSummaries } from "../server/kits.ts";
 import { renderHtmlPage } from "../server/surfacePage.ts";
-import { coerceSurfaceParts, validateSurfaceParts } from "../server/surfaceParts.ts";
+import { coerceSurfaces, validateSurfaces } from "../server/postSurfaces.ts";
 
 // --- kitAssets ---
 
@@ -75,8 +75,8 @@ test("kitSummaries advertises each kit without leaking the css/js payload", () =
 
 // --- validation: strict (REST) rejects, loose (MCP) filters ---
 
-test("validateSurfaceParts accepts an html part with known kits", async () => {
-  const r = await validateSurfaceParts([
+test("validateSurfaces accepts an html part with known kits", async () => {
+  const r = await validateSurfaces([
     { kind: "html", html: "<p>x</p>", kits: ["issues", "slides"] },
   ]);
   assert.equal(r.ok, true);
@@ -84,20 +84,20 @@ test("validateSurfaceParts accepts an html part with known kits", async () => {
     assert.deepEqual(r.parts[0], { kind: "html", html: "<p>x</p>", kits: ["issues", "slides"] });
 });
 
-test("validateSurfaceParts rejects an unknown kit id with the valid set", async () => {
-  const r = await validateSurfaceParts([{ kind: "html", html: "<p>x</p>", kits: ["bogus"] }]);
+test("validateSurfaces rejects an unknown kit id with the valid set", async () => {
+  const r = await validateSurfaces([{ kind: "html", html: "<p>x</p>", kits: ["bogus"] }]);
   assert.equal(r.ok, false);
   if (!r.ok) assert.match(r.error, /unknown kit "bogus".*issues/);
 });
 
-test("coerceSurfaceParts filters unknown kits rather than dropping the part", async () => {
-  const parts = await coerceSurfaceParts([
+test("coerceSurfaces filters unknown kits rather than dropping the part", async () => {
+  const parts = await coerceSurfaces([
     { kind: "html", html: "<p>x</p>", kits: ["issues", "bogus"] },
   ]);
   assert.deepEqual(parts, [{ kind: "html", html: "<p>x</p>", kits: ["issues"] }]);
 });
 
-test("coerceSurfaceParts drops an all-unknown kits field entirely", async () => {
-  const parts = await coerceSurfaceParts([{ kind: "html", html: "<p>x</p>", kits: ["nope"] }]);
+test("coerceSurfaces drops an all-unknown kits field entirely", async () => {
+  const parts = await coerceSurfaces([{ kind: "html", html: "<p>x</p>", kits: ["nope"] }]);
   assert.deepEqual(parts, [{ kind: "html", html: "<p>x</p>" }]);
 });

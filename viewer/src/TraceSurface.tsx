@@ -1,28 +1,28 @@
 import { createSignal, For, onMount, Show } from "solid-js";
-import type { TraceSurface as TracePartData, TraceStep } from "./api.ts";
+import type { TraceSurface as TraceSurfaceData, TraceStep } from "./api.ts";
 
-// Render an agent trace as a step timeline the user can scan beside the surface.
-// Steps may travel inline in the part, or live in an uploaded JSON/JSONL asset
-// (assetId) — which we also offer for download. When only an assetId is given we
-// fetch it and render it if it parses to an array of steps.
-export function TracePart(props: { part: TracePartData }) {
-  const [steps, setSteps] = createSignal<TraceStep[]>(props.part.steps ?? []);
+// Render an agent trace as a step timeline the user can scan beside the post.
+// Steps may travel inline in the surface, or live in an uploaded JSON/JSONL
+// asset (assetId) — which we also offer for download. When only an assetId is
+// given we fetch it and render it if it parses to an array of steps.
+export function TraceSurface(props: { surface: TraceSurfaceData }) {
+  const [steps, setSteps] = createSignal<TraceStep[]>(props.surface.steps ?? []);
   const [note, setNote] = createSignal<string | null>(null);
 
   onMount(() => {
-    if ((props.part.steps?.length ?? 0) > 0 || !props.part.assetId) return;
-    void fetch(`/a/${props.part.assetId}`)
+    if ((props.surface.steps?.length ?? 0) > 0 || !props.surface.assetId) return;
+    void fetch(`/a/${props.surface.assetId}`)
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((text) => setSteps(parseTrace(text)))
       .catch(() => setNote("Trace file unavailable — it may have been evicted."));
   });
 
   return (
-    <div class="tracepart">
+    <div class="trace-surface">
       <div class="trace-head">
-        <span class="trace-title">{props.part.title ?? "Agent trace"}</span>
-        <Show when={props.part.assetId}>
-          <a class="trace-dl" href={`/a/${props.part.assetId}`} target="_blank" rel="noopener">
+        <span class="trace-title">{props.surface.title ?? "Agent trace"}</span>
+        <Show when={props.surface.assetId}>
+          <a class="trace-dl" href={`/a/${props.surface.assetId}`} target="_blank" rel="noopener">
             download ↓
           </a>
         </Show>

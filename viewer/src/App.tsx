@@ -37,9 +37,9 @@ import {
   setPillTarget,
   setUnread,
   setViewMode,
-  standaloneSurface,
+  standalonePost,
   streamLoading,
-  surfaces,
+  posts,
   toast,
   toastShow,
   toastText,
@@ -82,7 +82,7 @@ export default function App() {
   });
 
   onMount(() => {
-    // Await the initial route resolution (the standalone surface fetch, or the
+    // Await the initial route resolution (the standalone post fetch, or the
     // first session fetch), then mark the board decided and tell the host
     // (onReady). Until then #onboard stays hidden, so neither the empty board
     // nor a host's loading overlay flips to real content before we know what to
@@ -137,10 +137,10 @@ export default function App() {
 
   // unseen activity badges the tab title — self-hosted only; an embedding host
   // owns its own document title. The standalone page titles itself after the
-  // surface instead (set below), so don't fight it here.
+  // post instead (set below), so don't fight it here.
   createEffect(() => {
     if (isShadow()) return;
-    const solo = standaloneSurface();
+    const solo = standalonePost();
     if (solo) document.title = solo.title ? `${solo.title} · sideshow` : "sideshow";
     else document.title = unread().size ? `(${unread().size}) sideshow` : "sideshow";
   });
@@ -155,7 +155,7 @@ export default function App() {
 
   return (
     <Show
-      when={standaloneSurface()}
+      when={standalonePost()}
       keyed
       fallback={
         <>
@@ -257,26 +257,26 @@ export default function App() {
               setPillTarget(null);
             }}
           >
-            new surface ↓
+            new post ↓
           </button>
         </>
       }
     >
-      {(surface) => <StandaloneView surface={surface} />}
+      {(post) => <StandaloneView post={post} />}
     </Show>
   );
 }
 
-// The full-page view a bare /s/:id direct link lands on: just the one surface,
+// The full-page view a bare /s/:id direct link lands on: just the one post,
 // no sidebar/session chrome/comments, with a small sideshow watermark beneath
-// it. The Card renders in `standalone` mode (title + parts only); its part
+// it. The Card renders in `standalone` mode (title + surfaces only); its
 // iframes are sized by the same postMessage bridge the board uses (it resolves
 // any registered card, so a standalone card sizes identically).
-function StandaloneView(props: { surface: Post }) {
+function StandaloneView(props: { post: Post }) {
   return (
     <div id="standalone">
       <main class="standalone-main">
-        <Card surface={props.surface} standalone />
+        <Card post={props.post} standalone />
         <footer class="standalone-foot">
           <a href="https://sideshow.sh" target="_blank" rel="noopener">
             made with <strong>sideshow</strong>
@@ -323,7 +323,7 @@ function UpdateBanner() {
   );
 }
 
-// Release notes as a card in the stream — the surface already renders cards,
+// Release notes as a card in the stream — the post already renders cards,
 // so "what's new" is just content. Shares dismissal with the banner.
 function WhatsNewCard() {
   return (
@@ -345,7 +345,7 @@ function WhatsNewCard() {
   );
 }
 
-// Messages from sandboxed surface iframes (see server/surfacePage.ts bridge).
+// Messages from sandboxed post iframes (see server/surfacePage.ts bridge).
 async function onBridgeMessage(ev: MessageEvent) {
   const d = ev.data as {
     __sideshow?: boolean;
@@ -360,40 +360,41 @@ async function onBridgeMessage(ev: MessageEvent) {
   // embedded — never an unexpected/nested frame. send-prompt and resize prove
   // this implicitly (frameForSource resolves the exact html frame); the
   // remaining types reach the host UI directly, so gate them on isOwnFrame.
-  // (frameForSource only knows html-part frames; switch-session is sent only by
-  // those, but open-link is sent by rich-part frames too, so use the broader
-  // check that recognizes any embedded iframe.)
+  // (frameForSource only knows html-surface frames; switch-session is sent only
+  // by those, but open-link is sent by rich-surface frames too, so use the
+  // broader check that recognizes any embedded iframe.)
   if (d.type === "switch-session") {
     if (!isOwnFrame(ev.source)) return;
     if (streamMode()) return;
-    // A surface iframe forwarded the session-switch shortcut because focus was
+    // A post iframe forwarded the session-switch shortcut because focus was
     // inside it (see server/surfacePage.ts). Mirror the parent keydown handler.
     void selectAdjacent(d.key === "ArrowUp" ? -1 : 1);
     return;
   }
-  // Resolve the source surface + iframe by contentWindow — a surface may own
-  // several html-part iframes, so resize must target the exact one.
+  // Resolve the source post + iframe by contentWindow — a post may own
+  // several html-surface iframes, so resize must target the exact one.
   const src = frameForSource(ev.source);
   if (d.type === "resize" && src) {
     applyFrameHeight(src.iframe, d.height);
   } else if (d.type === "send-prompt" && src) {
     if (isReadonly()) return;
-    // sendPrompt is surface-originated: a script inside the sandbox can fire it
+    // sendPrompt is post-originated: a script inside the sandbox can fire it
     // (or post this message directly) with no user involvement. It must NEVER
     // become an author:"user" comment — that label is reserved for the composer
     // (genuine keystrokes in this trusted origin), so untrusted content rendered
-    // in a surface can't impersonate the user to the agent. We stamp it
-    // author:"surface": it shows in the surface's thread, but the feedback
-    // channel only delivers "user" comments, so it never reaches the agent on
-    // its own. The user can relay it deliberately if they choose.
+    // in a post can't impersonate the user to the agent. We stamp it
+    // author:"surface" (a wire value the server reads): it shows in the post's
+    // thread, but the feedback channel only delivers "user" comments, so it
+    // never reaches the agent on its own. The user can relay it deliberately.
     await api("/api/comments", {
       method: "POST",
+      // `surface` here is the wire body key the server reads (legacy alias).
       body: JSON.stringify({ surface: src.id, text: String(d.text), author: "surface" }),
     });
-    toast("Added to this surface’s thread");
+    toast("Added to this post’s thread");
   } else if (d.type === "open-link" && isOwnFrame(ev.source)) {
     // Only ever open real external links. The in-frame click handler forwards
-    // just http(s) hrefs, but a surface can call openLink() directly (or post
+    // just http(s) hrefs, but a post can call openLink() directly (or post
     // this message raw) with any scheme — javascript:, data:, file: — so
     // re-check host-side, where it can't be bypassed. Parse once and act on the
     // parsed result: validate `protocol` and open the normalized `href` from the
@@ -414,10 +415,10 @@ async function onBridgeMessage(ev: MessageEvent) {
 }
 
 // True when `source` is the contentWindow of an iframe the viewer embedded
-// (html or rich part). frameForSource only tracks html-part frames; this is the
-// broader gate for messages rich-part frames also send (open-link). Identity
-// comparison works across the opaque-origin boundary even though the frame's
-// document is unreadable.
+// (html or rich surface). frameForSource only tracks html-surface frames; this
+// is the broader gate for messages rich-surface frames also send (open-link).
+// Identity comparison works across the opaque-origin boundary even though the
+// frame's document is unreadable.
 function isOwnFrame(source: unknown): boolean {
   for (const f of root().querySelectorAll("iframe")) {
     if (f.contentWindow === source) return true;
@@ -465,7 +466,7 @@ function SessionItem(props: { session: SessionRow }) {
           aria-label={`Delete session "${label()}"`}
           onClick={async (e) => {
             e.stopPropagation();
-            if (!confirm(`Delete "${label()}" and its surfaces?`)) return;
+            if (!confirm(`Delete "${label()}" and its posts?`)) return;
             await api(`/api/sessions/${props.session.id}`, { method: "DELETE" });
           }}
         >
@@ -498,12 +499,12 @@ function SessionView() {
           fallback={
             <>
               <WhatsNewCard />
-              <Show when={!streamLoading() && surfaces.length === 0}>
+              <Show when={!streamLoading() && posts.length === 0}>
                 <div class="empty" id="streamEmpty">
-                  No surfaces in this session yet.
+                  No posts in this session yet.
                 </div>
               </Show>
-              <For each={surfaces}>{(s) => <Card surface={s} />}</For>
+              <For each={posts}>{(s) => <Card post={s} />}</For>
             </>
           }
         >
@@ -515,7 +516,7 @@ function SessionView() {
 }
 
 // Stream ↔ timeline switch in the session head. Timeline is treatment E — the
-// session's surfaces on a center spine with the trace steps between them.
+// session's posts on a center spine with the trace steps between them.
 function ViewToggle() {
   return (
     <div class="view-toggle" role="group" aria-label="View mode">
@@ -605,8 +606,8 @@ function Onboard() {
         >
           <h1>The show hasn&rsquo;t started yet</h1>
           <p class="sub">
-            sideshow is a live surface where coding agents draw HTML snippets — diagrams, sketches,
-            explainers — while they work in your terminal.
+            sideshow is a live stage where coding agents post HTML — diagrams, sketches, explainers
+            — while they work in your terminal.
           </p>
           <h2>teach your agent about it</h2>
           <Snip text={SETUP_SNIP} />
@@ -675,7 +676,7 @@ function ConnectModal(props: { onClose: () => void }) {
 }
 
 // Board-level theme selector. Persists via PUT /api/theme; the choice re-themes
-// chrome, markdown/diff syntax, and html surface parts together (see theme.ts).
+// chrome, markdown/diff syntax, and html surfaces together (see theme.ts).
 function ThemePicker() {
   return (
     <div class="theme-picker">

@@ -17,21 +17,21 @@ import {
   isReadonly,
   relTime,
   sessionLabel,
-  type ImageSurface as ImagePartData,
-  type JsonSurface as JsonPartData,
+  type ImageSurface as ImageSurfaceData,
+  type JsonSurface as JsonSurfaceData,
   type Post,
-  type TraceSurface as TracePartData,
-  surfaceLink,
-  surfaceImageLink,
+  type TraceSurface as TraceSurfaceData,
+  postLink,
+  postImageLink,
 } from "./api.ts";
 import { CommentIcon, ImageIcon, LinkIcon, OpenIcon, TrashIcon } from "./icons.tsx";
-import { ImagePart } from "./ImagePart.tsx";
-import { JsonPart } from "./JsonPart.tsx";
+import { ImageSurface } from "./ImageSurface.tsx";
+import { JsonSurface } from "./JsonSurface.tsx";
 import { activeTheme, resolvedMode } from "./theme.ts";
-import { TracePart } from "./TracePart.tsx";
+import { TraceSurface } from "./TraceSurface.tsx";
 import {
   comments,
-  focusSurface,
+  focusPost,
   scrollTarget,
   sendComment,
   sessions,
@@ -40,15 +40,15 @@ import {
   type ViewComment,
 } from "./state.ts";
 
-// Part kinds that become HTML and so render inside a sandboxed iframe served
+// Surface kinds that become HTML and so render inside a sandboxed iframe served
 // from /s/:id — author html plus the server-rendered rich kinds (markdown/code/
 // diff/terminal) and the self-rendering mermaid doc. image/trace/json are data
 // the viewer renders natively (text nodes / <img> / JSX), never an iframe.
 const SANDBOXED_KINDS = new Set(["html", "markdown", "code", "diff", "terminal", "mermaid"]);
 
-// A per-kind class on each part iframe — purely a stable styling/selector hook
-// (sizing comes from the bare `iframe` rule); html parts carry none, matching
-// the generic `.card iframe` they always used.
+// A per-kind class on each surface iframe — purely a stable styling/selector
+// hook (sizing comes from the bare `iframe` rule); html surfaces carry none,
+// matching the generic `.card iframe` they always used.
 const FRAME_CLASS: Record<string, string> = {
   markdown: "mdframe",
   code: "codeframe",
@@ -57,13 +57,13 @@ const FRAME_CLASS: Record<string, string> = {
   mermaid: "mermaidframe",
 };
 
-// Card registry keyed by surface id: the "new surface" pill scrolls to the
-// card element, and each card tracks its sandboxed-part iframes so the
-// postMessage bridge in App can resolve the source surface + iframe by
-// contentWindow (a surface may have several sandboxed parts → several frames).
+// Card registry keyed by post id: the "new post" pill scrolls to the
+// card element, and each card tracks its sandboxed-surface iframes so the
+// postMessage bridge in App can resolve the source post + iframe by
+// contentWindow (a post may have several sandboxed surfaces → several frames).
 export const cardEls = new Map<string, { card: HTMLDivElement; iframes: Set<HTMLIFrameElement> }>();
 
-// Resolve which surface + iframe a postMessage came from, by contentWindow.
+// Resolve which post + iframe a postMessage came from, by contentWindow.
 export function frameForSource(source: unknown): { id: string; iframe: HTMLIFrameElement } | null {
   for (const [id, { iframes }] of cardEls) {
     for (const iframe of iframes) {
@@ -73,8 +73,8 @@ export function frameForSource(source: unknown): { id: string; iframe: HTMLIFram
   return null;
 }
 
-// Size a surface iframe from a height the in-frame bridge reported. Min one
-// line, max generous enough for a long diff/markdown without runaway growth.
+// Size a post's surface iframe from a height the in-frame bridge reported. Min
+// one line, max generous enough for a long diff/markdown without runaway growth.
 const MIN_FRAME_H = 24;
 const MAX_FRAME_H = 4000;
 export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unknown): void {
@@ -82,23 +82,23 @@ export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unkn
 }
 
 // While a deep-link scroll poll is active, IntersectionObserver callbacks on
-// other cards must not call focusSurface — they would overwrite the URL with
+// other cards must not call focusPost — they would overwrite the URL with
 // whichever card happens to cross the 50% threshold mid-scroll. The poll sets
 // this to true and clears it when the position stabilises, at which point it
-// calls focusSurface with the correct target surface id.
+// calls focusPost with the correct target post id.
 let deepLinkScrolling = false;
 
 // Repeatedly scroll an element into view until its position stabilises.
 // Iframe heights resolve asynchronously (postMessage resize), so a single
 // scrollIntoView fires before the layout settles and the target drifts.
 // Returns a cancel function so the caller can abort on cleanup.
-function pollScrollIntoView(el: HTMLElement, surfaceId: string): () => void {
+function pollScrollIntoView(el: HTMLElement, postId: string): () => void {
   // If the card is already near the top of the viewport, no polling needed —
-  // skip straight to focusSurface so the app behaves identically to a load
+  // skip straight to focusPost so the app behaves identically to a load
   // without a deep-link target (no IO suppression window, no timers).
   const top = el.getBoundingClientRect().top;
   if (top >= -10 && top <= 200) {
-    focusSurface(surfaceId);
+    focusPost(postId);
     return () => {};
   }
 
@@ -111,7 +111,7 @@ function pollScrollIntoView(el: HTMLElement, surfaceId: string): () => void {
 
   const finish = () => {
     deepLinkScrolling = false;
-    focusSurface(surfaceId);
+    focusPost(postId);
   };
 
   const tick = () => {
@@ -137,43 +137,43 @@ function pollScrollIntoView(el: HTMLElement, surfaceId: string): () => void {
   };
 }
 
-export function Card(props: { surface: Post; standalone?: boolean }) {
+export function Card(props: { post: Post; standalone?: boolean }) {
   let card!: HTMLDivElement;
   const iframes = new Set<HTMLIFrameElement>();
-  // Absolute part index -> its sandboxed-part iframe. Lets the version dropdown
-  // rebuild each `/s/:id?part=N` src across every part that has a frame.
-  const partFrames = new Map<number, HTMLIFrameElement>();
+  // Absolute surface index -> its sandboxed-surface iframe. Lets the version
+  // dropdown rebuild each `/s/:id?part=N` src across every surface with a frame.
+  const surfaceFrames = new Map<number, HTMLIFrameElement>();
   let stopPoll: (() => void) | undefined;
 
   // React to scrollTarget changes — start the polling scroll when this card
   // becomes the target.  createEffect tracks scrollTarget(); onMount covers
   // the initial render (card ref isn't assigned when the effect first runs).
   const scrollIfTarget = () => {
-    if (!card || scrollTarget() !== props.surface.id) return;
+    if (!card || scrollTarget() !== props.post.id) return;
     setScrollTarget(null);
     stopPoll?.();
-    stopPoll = pollScrollIntoView(card, props.surface.id);
+    stopPoll = pollScrollIntoView(card, props.post.id);
   };
 
   createEffect(scrollIfTarget);
   onCleanup(() => stopPoll?.());
 
   onMount(() => {
-    cardEls.set(props.surface.id, { card, iframes });
-    onCleanup(() => cardEls.delete(props.surface.id));
-    // Standalone is a single, full-page surface — there is no feed to scroll
+    cardEls.set(props.post.id, { card, iframes });
+    onCleanup(() => cardEls.delete(props.post.id));
+    // Standalone is a single, full-page post — there is no feed to scroll
     // through and no session route to track, so skip the deep-link scroll and
     // the URL-syncing observer. The cardEls registration above still runs so the
-    // resize bridge can size this surface's part iframes.
+    // resize bridge can size this post's surface iframes.
     if (props.standalone) return;
     scrollIfTarget();
-    // Update the URL as the user scrolls past surfaces (replaceState, no
+    // Update the URL as the user scrolls past posts (replaceState, no
     // history noise). The first card that crosses the 50% threshold wins.
     const observer = new IntersectionObserver(
       (entries) => {
         if (deepLinkScrolling) return;
         for (const entry of entries) {
-          if (entry.isIntersecting) focusSurface(props.surface.id);
+          if (entry.isIntersecting) focusPost(props.post.id);
         }
       },
       { threshold: 0.5 },
@@ -184,23 +184,23 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
 
   const versionRange = (latest: number) => {
     const out = [];
-    for (let v = latest; v >= Math.max(1, latest - props.surface.history.length); v--) out.push(v);
+    for (let v = latest; v >= Math.max(1, latest - props.post.history.length); v--) out.push(v);
     return out;
   };
 
   return (
-    <div class="card" data-id={props.surface.id} ref={(el) => (card = el)}>
+    <div class="card" data-id={props.post.id} ref={(el) => (card = el)}>
       <div class="card-head">
-        <span class="card-title">{props.surface.title}</span>
+        <span class="card-title">{props.post.title}</span>
         {/* The version dropdown and "updated" meta are board-feed affordances;
-            the standalone page is a clean, single-surface view, so it shows only
+            the standalone page is a clean, single-post view, so it shows only
             the title (and the watermark its parent adds below). */}
         <Show when={!props.standalone}>
           <span class="vslot">
             {/* keyed on version: a new version rebuilds the select, resetting
               the selection to the latest like the live iframe src does */}
             <Show
-              when={props.surface.version > 1 && props.surface.version}
+              when={props.post.version > 1 && props.post.version}
               keyed
               fallback={<span class="vbadge">v1</span>}
             >
@@ -210,9 +210,10 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
                   onChange={(e) => {
                     const ver = e.currentTarget.value;
                     const cb = Date.now();
-                    for (const [part, frame] of partFrames) {
+                    for (const [surface, frame] of surfaceFrames) {
+                      // `?part=` is the legacy wire query key for a surface index.
                       frame.src = appPath(
-                        `/s/${props.surface.id}?part=${part}&ver=${ver}&cb=${cb}&theme=${activeTheme()}&mode=${resolvedMode()}`,
+                        `/s/${props.post.id}?part=${surface}&ver=${ver}&cb=${cb}&theme=${activeTheme()}&mode=${resolvedMode()}`,
                       );
                     }
                   }}
@@ -223,22 +224,22 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
             </Show>
           </span>
           <span class="sp"></span>
-          <span class="card-meta">{relTime(props.surface.updatedAt)}</span>
+          <span class="card-meta">{relTime(props.post.updatedAt)}</span>
         </Show>
       </div>
-      {/* Parts render in order, dispatched by kind. Each kind is an explicit
+      {/* Surfaces render in order, dispatched by kind. Each kind is an explicit
           Match; the fallback is reserved for a kind this viewer build doesn't
-          know — which happens when a long-open tab predates a newly added part
-          type. It must NOT assume diff (an unknown part is not a broken diff),
-          so it shows a neutral refresh hint instead. An html iframe src changes
-          only when the version, the active theme, or the resolved light/dark
-          mode does, so unrelated refetches never reload it. */}
-      <Index each={props.surface.surfaces}>
-        {(part, i) => (
+          know — which happens when a long-open tab predates a newly added
+          surface type. It must NOT assume diff (an unknown surface is not a
+          broken diff), so it shows a neutral refresh hint instead. An html
+          iframe src changes only when the version, the active theme, or the
+          resolved light/dark mode does, so unrelated refetches never reload it. */}
+      <Index each={props.post.surfaces}>
+        {(surface, i) => (
           <Switch
             fallback={
-              <div class="part-unsupported">
-                Can&rsquo;t show this part — refresh sideshow to update the viewer.
+              <div class="surface-unsupported">
+                Can&rsquo;t show this surface — refresh sideshow to update the viewer.
               </div>
             }
           >
@@ -247,44 +248,45 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
                 html, server-rendered markdown/code/diff/terminal, or the
                 self-rendering mermaid doc). The src changes only when the
                 version, active theme, or resolved light/dark mode does, so
-                unrelated refetches never reload it. */}
-            <Match when={SANDBOXED_KINDS.has(part().kind)}>
+                unrelated refetches never reload it. (`?part=` is the legacy wire
+                query key for a surface index.) */}
+            <Match when={SANDBOXED_KINDS.has(surface().kind)}>
               <iframe
                 ref={(el) => {
-                  partFrames.set(i, el);
+                  surfaceFrames.set(i, el);
                   iframes.add(el);
                   onCleanup(() => {
-                    partFrames.delete(i);
+                    surfaceFrames.delete(i);
                     iframes.delete(el);
                   });
                 }}
                 sandbox="allow-scripts"
-                class={FRAME_CLASS[part().kind]}
+                class={FRAME_CLASS[surface().kind]}
                 title={
-                  props.surface.surfaces.length > 1
-                    ? `${props.surface.title} (part ${i + 1})`
-                    : props.surface.title
+                  props.post.surfaces.length > 1
+                    ? `${props.post.title} (surface ${i + 1})`
+                    : props.post.title
                 }
                 src={appPath(
-                  `/s/${props.surface.id}?part=${i}&ver=${props.surface.version}&cb=${props.surface.version}&theme=${activeTheme()}&mode=${resolvedMode()}`,
+                  `/s/${props.post.id}?part=${i}&ver=${props.post.version}&cb=${props.post.version}&theme=${activeTheme()}&mode=${resolvedMode()}`,
                 )}
               ></iframe>
             </Match>
-            <Match when={part().kind === "image"}>
-              <ImagePart part={part() as ImagePartData} />
+            <Match when={surface().kind === "image"}>
+              <ImageSurface surface={surface() as ImageSurfaceData} />
             </Match>
-            <Match when={part().kind === "trace"}>
-              <TracePart part={part() as TracePartData} />
+            <Match when={surface().kind === "trace"}>
+              <TraceSurface surface={surface() as TraceSurfaceData} />
             </Match>
-            <Match when={part().kind === "json"}>
-              <JsonPart part={part() as JsonPartData} />
+            <Match when={surface().kind === "json"}>
+              <JsonSurface surface={surface() as JsonSurfaceData} />
             </Match>
           </Switch>
         )}
       </Index>
       <Show when={!props.standalone}>
         <Thread
-          surfaceId={props.surface.id}
+          postId={props.post.id}
           placeholder="Leave a comment…"
           collapsible
           readonly={isReadonly()}
@@ -303,11 +305,11 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
               <span class="sp"></span>
               <button
                 class="act icon copy"
-                title="Copy link to this surface"
-                aria-label="Copy link to this surface"
+                title="Copy link to this post"
+                aria-label="Copy link to this post"
                 onClick={async () => {
                   try {
-                    await navigator.clipboard.writeText(surfaceLink(props.surface.id));
+                    await navigator.clipboard.writeText(postLink(props.post.id));
                     toast("Link copied");
                   } catch {
                     toast("Couldn't copy the link");
@@ -319,13 +321,13 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
               <a
                 class="act icon open"
                 target="_blank"
-                href={surfaceLink(props.surface.id)}
+                href={postLink(props.post.id)}
                 title="Open in a new tab"
                 aria-label="Open in a new tab"
               >
                 <OpenIcon />
               </a>
-              {/* Open the surface as a PNG. The image is rendered server-side by
+              {/* Open the post as a PNG. The image is rendered server-side by
                   the Browser Rendering Worker, so the action is only live where
                   that exists; on a plain Node server it's disabled with a tooltip
                   that points at the README. */}
@@ -335,7 +337,7 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
                   <button
                     class="act icon shot"
                     disabled
-                    title="Saving a surface as an image needs Cloudflare Browser Rendering, which this server doesn't have. See the README."
+                    title="Saving a post as an image needs Cloudflare Browser Rendering, which this server doesn't have. See the README."
                     aria-label="Screenshots aren't available on this server"
                   >
                     <ImageIcon />
@@ -345,7 +347,7 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
                 <a
                   class="act icon shot"
                   target="_blank"
-                  href={surfaceImageLink(props.surface.id)}
+                  href={postImageLink(props.post.id)}
                   title="Open as an image (PNG)"
                   aria-label="Open as an image (PNG)"
                 >
@@ -356,11 +358,12 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
                 <span class="divider"></span>
                 <button
                   class="act icon del"
-                  title="Delete surface"
-                  aria-label={`Delete "${props.surface.title}"`}
+                  title="Delete post"
+                  aria-label={`Delete "${props.post.title}"`}
                   onClick={async () => {
-                    if (confirm(`Delete "${props.surface.title}"?`)) {
-                      await api(`/api/surfaces/${props.surface.id}`, { method: "DELETE" });
+                    if (confirm(`Delete "${props.post.title}"?`)) {
+                      // /api/surfaces/:id is the legacy wire alias for a post.
+                      await api(`/api/surfaces/${props.post.id}`, { method: "DELETE" });
                     }
                   }}
                 >
@@ -370,7 +373,7 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
             </>
           )}
           send={(text) =>
-            sendComment({ surface: props.surface.id, text, author: "user" }, props.surface.id, text)
+            sendComment({ surface: props.post.id, text, author: "user" }, props.post.id, text)
           }
         />
       </Show>
@@ -379,19 +382,19 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
 }
 
 function Thread(props: {
-  surfaceId: string | null;
+  postId: string | null;
   placeholder: string;
   send: (text: string) => Promise<string | null>;
   // When set, the composer is hidden behind a Comment action and the other
   // per-card actions (open/delete/…) share the footer toolbar. The bar sits on
-  // the card surface, set off by a hairline divider and muted action styling,
+  // the card's face, set off by a hairline divider and muted action styling,
   // so a user's comment never reads as part of the agent-rendered UI.
   collapsible?: boolean;
   readonly?: boolean;
   actions?: (startReply: () => void) => JSX.Element;
 }) {
   const [replying, setReplying] = createSignal(false);
-  const list = () => comments().filter((c) => c.postId === props.surfaceId);
+  const list = () => comments().filter((c) => c.postId === props.postId);
   return (
     <div class="thread">
       <Show when={list().length}>
@@ -429,7 +432,7 @@ function Thread(props: {
 // for an agent to act on the comment when handed it directly.
 function pasteBlock(c: ViewComment): string {
   if (c.postId) {
-    return `sideshow comment on “${c.postTitle ?? "a surface"}” (surface ${c.postId}):\n“${c.text}”`;
+    return `sideshow comment on “${c.postTitle ?? "a post"}” (post ${c.postId}):\n“${c.text}”`;
   }
   const s = sessions.find((x) => x.id === c.sessionId);
   return `sideshow comment, session “${s ? sessionLabel(s) : c.sessionId}”:\n“${c.text}”`;

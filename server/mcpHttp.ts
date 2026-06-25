@@ -11,7 +11,7 @@ import {
   type Surface,
 } from "./types.ts";
 import { HTTP_MCP_TOOLS, MCP_INSTRUCTIONS, MCP_SERVER_INFO } from "./mcpSpec.ts";
-import { coerceSurfaceParts } from "./surfaceParts.ts";
+import { coerceSurfaces } from "./postSurfaces.ts";
 
 // Stateless MCP over streamable HTTP: every request is self-contained, which
 // is what a serverless deployment needs. Session continuity is explicit —
@@ -51,7 +51,7 @@ export interface McpDeps {
 // Coerce loosely-typed tool args into validated SurfacePart[]. Unknown kinds
 // and empty parts are dropped rather than rejected, so a slightly-off call
 // still publishes what it can.
-export const coerceParts = coerceSurfaceParts;
+export const coerceParts = coerceSurfaces;
 
 export function registerMcp(app: Hono, deps: McpDeps) {
   // The view URL's path segment: legacy tools emit /s/<id>; the new post tools

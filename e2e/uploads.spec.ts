@@ -9,7 +9,7 @@ import {
   upload,
 } from "./fixtures.ts";
 
-test("an image part renders an <img> served from /a/:id", async ({ page, server }) => {
+test("an image surface renders an <img> served from /a/:id", async ({ page, server }) => {
   const asset = await upload(server.url, {
     data: TINY_PNG_B64,
     contentType: "image/png",
@@ -34,7 +34,7 @@ test("an image part renders an <img> served from /a/:id", async ({ page, server 
   await expect(page.locator(".asset-caption")).toHaveText("one pixel");
 });
 
-test("a trace part renders a step timeline with expandable detail", async ({ page, server }) => {
+test("a trace surface renders a step timeline with expandable detail", async ({ page, server }) => {
   await publishParts(server.url, {
     title: "Run trace",
     agent: "e2e",
@@ -62,7 +62,7 @@ test("a trace part renders a step timeline with expandable detail", async ({ pag
   await expect(card.locator(".trace-detail")).toHaveText("opened the file at line 1");
 });
 
-test("a trace part backed by an uploaded file offers a download and renders steps", async ({
+test("a trace surface backed by an uploaded file offers a download and renders steps", async ({
   page,
   server,
 }) => {
@@ -88,7 +88,7 @@ test("a trace part backed by an uploaded file offers a download and renders step
   await expect(card.locator(".trace-label").first()).toHaveText("step one");
 });
 
-test("a trace part stays readable on an iPhone-sized viewport", async ({ page, server }) => {
+test("a trace surface stays readable on an iPhone-sized viewport", async ({ page, server }) => {
   await publishParts(server.url, {
     title: "Trace on mobile",
     agent: "e2e",
@@ -128,7 +128,7 @@ test("a trace part stays readable on an iPhone-sized viewport", async ({ page, s
 
   await expectNoHorizontalOverflow(page, "main");
   await expectNoHorizontalOverflow(page, ".card");
-  await expectNoHorizontalOverflow(page, ".tracepart");
+  await expectNoHorizontalOverflow(page, ".trace-surface");
 });
 
 test("all native surface primitives fit the iPhone 14 Pro viewer", async ({ page, server }) => {
@@ -202,17 +202,17 @@ test("all native surface primitives fit the iPhone 14 Pro viewer", async ({ page
   await expect(card.locator("iframe").first()).toBeVisible();
   await expectIframesNoHorizontalOverflow(page, card);
   await expect(card.locator(".asset-img")).toBeVisible();
-  await expect(card.locator(".jsonpart")).toContainText("primitives");
+  await expect(card.locator(".json-surface")).toContainText("primitives");
   await expect(card.locator(".trace-step")).toHaveCount(1);
   await card.locator(".trace-row.clickable").click();
   await expect(card.locator(".trace-detail")).toBeVisible();
 
   await expectNoHorizontalOverflow(page, "main");
   await expectNoHorizontalOverflow(page, ".card");
-  await expectNoHorizontalOverflow(page, ".tracepart");
+  await expectNoHorizontalOverflow(page, ".trace-surface");
 });
 
-test("an uploaded image embeds by URL inside an html part under the CSP", async ({
+test("an uploaded image embeds by URL inside an html surface under the CSP", async ({
   page,
   server,
 }) => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
 import { HTTP_MCP_TOOLS, STDIO_MCP_INPUT_SCHEMAS } from "../server/mcpSpec.ts";
-import { validateSurfaceParts } from "../server/surfaceParts.ts";
+import { validateSurfaces } from "../server/postSurfaces.ts";
 import { SURFACE_KINDS, type Surface } from "../server/types.ts";
 
 // This suite is the guard against the regression where `json` and `code`
@@ -69,7 +69,7 @@ test("the stdio publish schema rejects an unknown kind", () => {
 
 test("the runtime validator accepts a minimal example of every kind", async () => {
   for (const kind of SURFACE_KINDS) {
-    const result = await validateSurfaceParts([EXAMPLES[kind]]);
+    const result = await validateSurfaces([EXAMPLES[kind]]);
     assert.ok(result.ok, `validator rejected kind "${kind}": ${result.ok ? "" : result.error}`);
   }
 });

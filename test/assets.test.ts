@@ -8,7 +8,7 @@ import {
   selectEvictions,
   type Surface,
 } from "../server/types.ts";
-import { validateSurfaceParts } from "../server/surfaceParts.ts";
+import { validateSurfaces } from "../server/postSurfaces.ts";
 
 // --- selectEvictions ---
 
@@ -78,8 +78,8 @@ test("surfacesByteLength counts image/trace surfaces without throwing", () => {
 
 // --- SurfacePart validation/coercion ---
 
-test("validateSurfaceParts accepts all supported part kinds", async () => {
-  const result = await validateSurfaceParts([
+test("validateSurfaces accepts all supported part kinds", async () => {
+  const result = await validateSurfaces([
     { kind: "html", html: "<p>x</p>" },
     { kind: "html", html: "<div class=tree></div>", kits: ["issues"] },
     { kind: "diff", patch: "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b", layout: "unified" },
@@ -118,7 +118,7 @@ test("validateSurfaceParts accepts all supported part kinds", async () => {
     );
 });
 
-test("validateSurfaceParts rejects malformed parts", async () => {
+test("validateSurfaces rejects malformed parts", async () => {
   for (const parts of [
     [{ kind: "html", html: 1 }],
     [{ kind: "html", html: "<p>x</p>", kits: ["nope"] }], // unknown kit id (strict)
@@ -131,41 +131,41 @@ test("validateSurfaceParts rejects malformed parts", async () => {
     [{ kind: "code" }], // missing code
     [{ kind: "unknown" }],
   ]) {
-    const result = await validateSurfaceParts(parts);
+    const result = await validateSurfaces(parts);
     assert.equal(result.ok, false, JSON.stringify(parts));
   }
 });
 
-test("validateSurfaceParts rejects a diff patch with no parseable file content", async () => {
+test("validateSurfaces rejects a diff patch with no parseable file content", async () => {
   for (const patch of [
     "not a patch at all",
     "hello world\nfoo bar",
     "@@ -1 +1 @@\n-a\n+b", // hunk with no --- /+++ file headers
   ]) {
-    const result = await validateSurfaceParts([{ kind: "diff", patch }]);
+    const result = await validateSurfaces([{ kind: "diff", patch }]);
     assert.equal(result.ok, false, `patch ${JSON.stringify(patch)} should be rejected`);
     if (!result.ok) assert.match(result.error, /did not parse to any file/);
   }
 });
 
-test("validateSurfaceParts accepts real unified and git-style diff patches", async () => {
+test("validateSurfaces accepts real unified and git-style diff patches", async () => {
   for (const patch of [
     "--- a/x.ts\n+++ b/x.ts\n@@ -1 +1 @@\n-a\n+b",
     "diff --git a/x b/x\nindex 0..1 100644\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b",
     "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n a\n-b\n+c\n d\n--- a/y\n+++ b/y\n@@ -1 +1 @@\n-e\n+f", // multi-file
   ]) {
-    const result = await validateSurfaceParts([{ kind: "diff", patch }]);
+    const result = await validateSurfaces([{ kind: "diff", patch }]);
     assert.equal(result.ok, true, `patch ${JSON.stringify(patch)} should be accepted`);
   }
 });
 
-test("validateSurfaceParts accepts valid mermaid diagrams (supported types)", async () => {
+test("validateSurfaces accepts valid mermaid diagrams (supported types)", async () => {
   for (const mermaid of [
     'pie title Pets\n  "Dogs" : 386\n  "Cats" : 85',
     "gitGraph\n  commit\n  commit\n  branch develop",
     "architecture-beta\n  group api(cloud)[API]",
   ]) {
-    const result = await validateSurfaceParts([{ kind: "mermaid", mermaid }]);
+    const result = await validateSurfaces([{ kind: "mermaid", mermaid }]);
     assert.equal(
       result.ok,
       true,
@@ -174,7 +174,7 @@ test("validateSurfaceParts accepts valid mermaid diagrams (supported types)", as
   }
 });
 
-test("validateSurfaceParts lets unsupported mermaid types through (Jison types)", async () => {
+test("validateSurfaces lets unsupported mermaid types through (Jison types)", async () => {
   // flowchart, sequence, class, state, er, gantt are still on Jison — the
   // official parser doesn't cover them, so validation is skipped and the
   // viewer's graceful fallback handles any render failure.
@@ -186,7 +186,7 @@ test("validateSurfaceParts lets unsupported mermaid types through (Jison types)"
     "gantt\n  title Project\n  section Phase 1\n  Task 1 :a1, 2024-01-01, 30d",
     "classDiagram\n  Animal <|-- Dog",
   ]) {
-    const result = await validateSurfaceParts([{ kind: "mermaid", mermaid }]);
+    const result = await validateSurfaces([{ kind: "mermaid", mermaid }]);
     assert.equal(
       result.ok,
       true,
@@ -195,12 +195,12 @@ test("validateSurfaceParts lets unsupported mermaid types through (Jison types)"
   }
 });
 
-test("validateSurfaceParts rejects invalid mermaid with a parse error (supported types)", async () => {
+test("validateSurfaces rejects invalid mermaid with a parse error (supported types)", async () => {
   for (const mermaid of [
     'pie title Pets\n  "Dogs" : broken !!@@',
     "gitGraph\n  commit\n  !!bad syntax!!",
   ]) {
-    const result = await validateSurfaceParts([{ kind: "mermaid", mermaid }]);
+    const result = await validateSurfaces([{ kind: "mermaid", mermaid }]);
     assert.equal(
       result.ok,
       false,

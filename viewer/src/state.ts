@@ -37,7 +37,7 @@ export interface SessionGroup {
 
 // Bucket sessions by last-active recency (Today / Yesterday / Earlier) so the
 // freshest work stays on top and a long history reads at a glance. Within a
-// bucket, sessions with no surfaces yet sink to the bottom (and render dimmed)
+// bucket, sessions with no posts yet sink to the bottom (and render dimmed)
 // — present but out of the way. Empty buckets are omitted. `now` is injectable
 // for tests; callers pass the real clock.
 export function groupSessions(list: readonly SessionRow[], now: Date): SessionGroup[] {
@@ -67,16 +67,16 @@ const [selectedState, setSelectedInternal] = createSignal<string | null>(null);
 export const selected = selectedState;
 
 // Standalone (direct-link) mode: a bare /s/:id route with no session shows that
-// one surface full-page — no sidebar, no session feed, no comments — instead of
-// resolving it into its session's stream. Holds the fetched surface while in
+// one post full-page — no sidebar, no session feed, no comments — instead of
+// resolving it into its session's stream. Holds the fetched post while in
 // that mode; null is the normal board. The server serves the same SPA shell for
 // /s/:id (with link-preview metadata, see server/app.ts); the viewer decides the
 // layout from the route here.
 const [standaloneState, setStandaloneInternal] = createSignal<Post | null>(null);
-export const standaloneSurface = standaloneState;
+export const standalonePost = standaloneState;
 export const [unread, setUnread] = createSignal<ReadonlySet<string>>(new Set<string>());
-const [surfacesStore, setSurfacesInternal] = createStore<Post[]>([]);
-export const surfaces = surfacesStore;
+const [postsStore, setPostsInternal] = createStore<Post[]>([]);
+export const posts = postsStore;
 const [commentsState, setCommentsInternal] = createSignal<ViewComment[]>([]);
 export const comments = commentsState;
 // Session-scoped agent trace steps for the selected session (timeline view).
@@ -96,15 +96,15 @@ export const setInitialLoaded = setInitialLoadedInternal;
 const [liveState, setLiveInternal] = createSignal(false);
 export const live = liveState;
 export const [navOpen, setNavOpen] = createSignal(false);
-// Stream (cards top-to-bottom) vs. timeline (treatment E: surfaces on a center
+// Stream (cards top-to-bottom) vs. timeline (treatment E: posts on a center
 // spine with the trace steps between them). Per-board view preference.
 export type ViewMode = "stream" | "timeline";
 export const [viewMode, setViewMode] = createSignal<ViewMode>("stream");
-// Surface id the next mounted card should scroll to (set for SSE arrivals
+// Post id the next mounted card should scroll to (set for SSE arrivals
 // landing while the user is near the bottom, not the initial batch of a
 // session switch).
 export const [scrollTarget, setScrollTarget] = createSignal<string | null>(null);
-// Surface id the "new surface ↓" pill jumps to — set instead of scrolling
+// Post id the "new post ↓" pill jumps to — set instead of scrolling
 // when the user is reading further up.
 export const [pillTarget, setPillTarget] = createSignal<string | null>(null);
 
@@ -167,38 +167,40 @@ function syntheticSession(id: string): SessionRow {
   };
 }
 
-// Entry point on load: a bare surface route (/s/:id, no session) opens the
+// Entry point on load: a bare post route (/s/:id, no session) opens the
 // full-page standalone view; anything else falls through to the normal board.
-// If the surface can't be fetched (deleted / bad id) we drop to the board so the
+// If the post can't be fetched (deleted / bad id) we drop to the board so the
 // user lands somewhere usable rather than a blank page.
 export async function bootstrap() {
   const route = host().router.get();
   if (route.surfaceId && !route.sessionId) {
     await enterStandalone(route.surfaceId);
-    if (standaloneSurface()) return;
+    if (standalonePost()) return;
   }
   await refreshSessions(route.surfaceId);
 }
 
-// Fetch a surface and switch into standalone mode. No-op if already showing it.
+// Fetch a post and switch into standalone mode. No-op if already showing it.
 export async function enterStandalone(id: string) {
-  if (standaloneSurface()?.id === id) return;
-  const surface = await api<Post>(`/api/surfaces/${encodeURIComponent(id)}`).catch(() => null);
-  if (surface) setStandaloneInternal(surface);
+  if (standalonePost()?.id === id) return;
+  // /api/surfaces/:id is the legacy wire alias for fetching a post.
+  const post = await api<Post>(`/api/surfaces/${encodeURIComponent(id)}`).catch(() => null);
+  if (post) setStandaloneInternal(post);
 }
 
-export async function refreshSessions(targetSurfaceId?: string | null) {
+export async function refreshSessions(targetPostId?: string | null) {
   if (isReadonly() && publicReadMode() === "session") {
     const route = host().router.get();
-    if (!route.sessionId && targetSurfaceId) {
-      const target = await api<Post>(`/api/surfaces/${encodeURIComponent(targetSurfaceId)}`).catch(
+    if (!route.sessionId && targetPostId) {
+      // /api/surfaces/:id is the legacy wire alias for fetching a post.
+      const target = await api<Post>(`/api/surfaces/${encodeURIComponent(targetPostId)}`).catch(
         () => null,
       );
       if (!target) return;
       if (!sessions.some((s) => s.id === target.sessionId)) {
         setSessionsInternal(reconcile([syntheticSession(target.sessionId)], { key: "id" }));
       }
-      await select(target.sessionId, { replace: true, initialSurfaceId: target.id });
+      await select(target.sessionId, { replace: true, initialPostId: target.id });
       return;
     }
     if (!route.sessionId) return;
@@ -207,19 +209,20 @@ export async function refreshSessions(targetSurfaceId?: string | null) {
     }
     await select(route.sessionId, {
       replace: true,
-      initialSurfaceId: route.surfaceId ?? undefined,
+      initialPostId: route.surfaceId ?? undefined,
     });
     return;
   }
 
   await refreshSessionsQuiet();
   if (selected() && !sessions.some((s) => s.id === selected())) setSelectedInternal(null);
-  if (targetSurfaceId) {
-    const target = await api<Post>(`/api/surfaces/${encodeURIComponent(targetSurfaceId)}`).catch(
+  if (targetPostId) {
+    // /api/surfaces/:id is the legacy wire alias for fetching a post.
+    const target = await api<Post>(`/api/surfaces/${encodeURIComponent(targetPostId)}`).catch(
       () => null,
     );
     if (target && sessions.some((s) => s.id === target.sessionId)) {
-      await select(target.sessionId, { replace: true, initialSurfaceId: target.id });
+      await select(target.sessionId, { replace: true, initialPostId: target.id });
       return;
     }
   }
@@ -234,20 +237,20 @@ export async function refreshSessions(targetSurfaceId?: string | null) {
       sessions[0].id;
     await select(target, {
       replace: true,
-      initialSurfaceId: target === route.sessionId ? (route.surfaceId ?? undefined) : undefined,
+      initialPostId: target === route.sessionId ? (route.surfaceId ?? undefined) : undefined,
     });
   }
 }
 
 export async function select(
   id: string,
-  opts?: { fromPopState?: boolean; replace?: boolean; initialSurfaceId?: string },
+  opts?: { fromPopState?: boolean; replace?: boolean; initialPostId?: string },
 ) {
   setSelectedInternal(id);
   if (opts?.fromPopState) {
     // The host already moved the route (back/forward); don't touch it.
   } else if (opts?.replace) {
-    host().router.navigate({ sessionId: id, surfaceId: opts.initialSurfaceId }, { replace: true });
+    host().router.navigate({ sessionId: id, surfaceId: opts.initialPostId }, { replace: true });
   } else {
     host().router.navigate({ sessionId: id });
   }
@@ -261,20 +264,21 @@ export async function select(
   setPillTarget(null);
   setNavOpen(false);
   setStreamLoadingInternal(true);
-  setSurfacesInternal(reconcile([]));
+  setPostsInternal(reconcile([]));
   setCommentsInternal([]);
   setTraceStepsInternal([]);
   void fetchTrace(id);
+  // /api/sessions/:id/surfaces and /api/surfaces/:id are the legacy wire aliases.
   const metas = await api<{ id: string }[]>(`/api/sessions/${id}/surfaces`).catch(() => []);
   const details = (
     await Promise.all(metas.map((m) => api<Post>(`/api/surfaces/${m.id}`).catch(() => null)))
   ).filter((s) => s !== null);
   if (selected() !== id) return; // user switched away mid-load
-  setSurfacesInternal(reconcile(details, { key: "id" }));
-  // Scroll to a specific surface if requested (deep link).
-  if (opts?.initialSurfaceId && details.some((s) => s.id === opts.initialSurfaceId)) {
-    setScrollTarget(opts.initialSurfaceId);
-    host().router.navigate({ sessionId: id, surfaceId: opts.initialSurfaceId }, { replace: true });
+  setPostsInternal(reconcile(details, { key: "id" }));
+  // Scroll to a specific post if requested (deep link).
+  if (opts?.initialPostId && details.some((s) => s.id === opts.initialPostId)) {
+    setScrollTarget(opts.initialPostId);
+    host().router.navigate({ sessionId: id, surfaceId: opts.initialPostId }, { replace: true });
   }
   setStreamLoadingInternal(false);
   const res = await api<{ comments: Comment[] }>(`/api/comments?session=${id}`).catch(() => null);
@@ -282,11 +286,11 @@ export async function select(
   mergeComments(res.comments);
 }
 
-// Reflect the currently visible surface in the route (replace, so scrolling
+// Reflect the currently visible post in the route (replace, so scrolling
 // doesn't pollute history).
-export function focusSurface(surfaceId: string) {
+export function focusPost(postId: string) {
   const sid = selected();
-  if (sid) host().router.navigate({ sessionId: sid, surfaceId }, { replace: true });
+  if (sid) host().router.navigate({ sessionId: sid, surfaceId: postId }, { replace: true });
 }
 
 // Return to "home" — the session-less base route — and drop the current
@@ -305,17 +309,17 @@ export function goHome() {
 
 // Re-select the session when the host's route changes (back/forward).
 export function applyRoute(route: Route) {
-  // A bare surface route is the standalone full-page view; back/forward into or
+  // A bare post route is the standalone full-page view; back/forward into or
   // out of it toggles the mode (leaving it falls through to session handling).
   if (route.surfaceId && !route.sessionId) {
     void enterStandalone(route.surfaceId);
     return;
   }
-  if (standaloneSurface()) setStandaloneInternal(null);
+  if (standalonePost()) setStandaloneInternal(null);
   if (route.sessionId && route.sessionId !== selected()) {
     void select(route.sessionId, {
       fromPopState: true,
-      initialSurfaceId: route.surfaceId ?? undefined,
+      initialPostId: route.surfaceId ?? undefined,
     });
   }
 }
@@ -335,21 +339,22 @@ export async function selectAdjacent(delta: 1 | -1) {
   await select(sessions[next].id);
 }
 
-// Fetch a surface and insert/update it in the open session's stream.
-async function upsertSurface(id: string, { scroll = true } = {}) {
+// Fetch a post and insert/update it in the open session's stream.
+async function upsertPost(id: string, { scroll = true } = {}) {
+  // /api/surfaces/:id is the legacy wire alias for fetching a post.
   const s = await api<Post>(`/api/surfaces/${id}`).catch(() => null);
   if (!s || s.sessionId !== selected()) return;
-  const idx = surfaces.findIndex((x) => x.id === s.id);
+  const idx = posts.findIndex((x) => x.id === s.id);
   if (idx >= 0) {
-    setSurfacesInternal(idx, reconcile(s));
+    setPostsInternal(idx, reconcile(s));
   } else {
-    // Follow new surfaces only when the user is already at the bottom;
+    // Follow new posts only when the user is already at the bottom;
     // never yank them away from whatever they're reading mid-scroll.
     if (scroll) {
       if (nearBottom()) setScrollTarget(s.id);
       else setPillTarget(s.id);
     }
-    setSurfacesInternal(surfaces.length, s);
+    setPostsInternal(posts.length, s);
   }
 }
 
@@ -382,14 +387,14 @@ let localSeq = 0;
 // message must never be silently lost. Returns the error message, or null.
 export async function sendComment(
   body: Record<string, unknown>,
-  surfaceId: string | null,
+  postId: string | null,
   text: string,
 ): Promise<string | null> {
   const local: ViewComment = {
     id: `local-${++localSeq}`,
     seq: 0,
     sessionId: selected() ?? "",
-    postId: surfaceId,
+    postId,
     postTitle: null,
     author: "user",
     text,
@@ -449,11 +454,11 @@ export function connect() {
       await refreshSessions();
     } else if (e.type === "surface-created" || e.type === "surface-updated") {
       if (away && e.sessionId) markUnread(e.sessionId);
-      if (e.sessionId === selected()) await upsertSurface(e.id);
+      if (e.sessionId === selected()) await upsertPost(e.id);
       await refreshSessionsQuiet();
     } else if (e.type === "surface-deleted") {
-      const idx = surfaces.findIndex((s) => s.id === e.id);
-      if (idx >= 0) setSurfacesInternal(produce((arr) => arr.splice(idx, 1)));
+      const idx = posts.findIndex((s) => s.id === e.id);
+      if (idx >= 0) setPostsInternal(produce((arr) => arr.splice(idx, 1)));
       await refreshSessionsQuiet();
     } else if (e.type === "trace-updated") {
       // the agent working is ambient, not an alert — refetch quietly, no badge
@@ -469,23 +474,24 @@ export function connect() {
   };
 }
 
-// Re-fetch the selected session's surfaces and comments after an SSE
-// reconnect; surfaces reconcile by id and comments dedupe by id.
+// Re-fetch the selected session's posts and comments after an SSE
+// reconnect; posts reconcile by id and comments dedupe by id.
 async function resyncSelected() {
   const before = selected();
   await refreshSessions();
   if (!before || selected() !== before) return; // select() rebuilt the stream
   void fetchTrace(before);
+  // /api/sessions/:id/surfaces is the legacy wire alias.
   const metas = await api<{ id: string }[]>(`/api/sessions/${before}/surfaces`).catch(() => []);
   const ids = new Set(metas.map((m) => m.id));
-  setSurfacesInternal(
+  setPostsInternal(
     produce((arr) => {
       for (let i = arr.length - 1; i >= 0; i--) {
         if (!ids.has(arr[i].id)) arr.splice(i, 1);
       }
     }),
   );
-  for (const meta of metas) await upsertSurface(meta.id, { scroll: false });
+  for (const meta of metas) await upsertPost(meta.id, { scroll: false });
   const res = await api<{ comments: Comment[] }>(`/api/comments?session=${before}`).catch(
     () => null,
   );

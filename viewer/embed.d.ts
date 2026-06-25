@@ -18,7 +18,7 @@ export interface SideshowHost {
   basePath: string;
   router: HostRouter;
   /** The caller's own identity, when the host knows it. */
-  identity?: { login: string; accountSlug?: string; role?: string };
+  identity?: { login: string; workspaceSlug?: string; role?: string };
   /**
    * Layout the engine renders. "full" (default) shows the sidebar + stream;
    * "stream" shows only the current session's stream — no sidebar, session list,

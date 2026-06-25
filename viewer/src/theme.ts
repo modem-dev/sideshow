@@ -24,10 +24,10 @@ const [activeThemeState, setActiveTheme] = createSignal(DEFAULT_THEME_ID);
 export const activeTheme = activeThemeState;
 
 // The OS light/dark resolution — the same signal the chrome's injected
-// `@media (prefers-color-scheme: dark)` rules key off. Surface parts render in
+// `@media (prefers-color-scheme: dark)` rules key off. Surfaces render in
 // separate iframes whose own scheme resolution can diverge from the chrome's
 // (an embedder doesn't reliably propagate it across the frame boundary), so
-// each frame is pinned to this mode instead — every part frame carries it as
+// each frame is pinned to this mode instead — every surface frame carries it as
 // the `/s/:id?mode=` query param, so the server bakes the resolved scheme into
 // the rendered doc. It is reactive, so an OS flip reloads the frames in lockstep
 // with the chrome.

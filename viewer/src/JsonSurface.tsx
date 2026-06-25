@@ -1,10 +1,10 @@
 import { createSignal, For, Show } from "solid-js";
-import type { JsonSurface as JsonPartData } from "./api.ts";
+import type { JsonSurface as JsonSurfaceData } from "./api.ts";
 
-export function JsonPart(props: { part: JsonPartData }) {
+export function JsonSurface(props: { surface: JsonSurfaceData }) {
   return (
-    <div class="jsonpart">
-      <JsonNode value={props.part.data} depth={0} />
+    <div class="json-surface">
+      <JsonNode value={props.surface.data} depth={0} />
     </div>
   );
 }

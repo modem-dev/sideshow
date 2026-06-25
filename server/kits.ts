@@ -6,7 +6,7 @@
 // per part, not a frame every surface is locked into.
 //
 // Runtime-agnostic (no node imports): imported by surfacePage (server render),
-// surfaceParts (id allowlist), and surfaced over HTTP/MCP for discovery. Every
+// postSurfaces (id allowlist), and surfaced over HTTP/MCP for discovery. Every
 // class resolves against the theme `--color-*` / `--font-*` / radius tokens, so
 // kit output re-themes with the board like any other html part.
 

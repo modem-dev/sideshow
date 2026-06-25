@@ -66,12 +66,12 @@ test("snippet published over HTTP appears live via SSE, no reload", async ({ pag
   await expect(page.locator(".sess-title")).toContainText("e2e session");
 });
 
-test("a part kind this viewer doesn't know shows a refresh hint, not a broken diff", async ({
+test("a surface kind this viewer doesn't know shows a refresh hint, not a broken diff", async ({
   page,
   server,
 }) => {
-  // Simulate a long-open tab that predates a newly shipped part type: the
-  // server returns a valid surface, but rewrite the part kind to one THIS
+  // Simulate a long-open tab that predates a newly shipped surface type: the
+  // server returns a valid surface, but rewrite the surface kind to one THIS
   // viewer build has no Match for. It must degrade to a neutral hint, never
   // the diff fallback.
   await page.route(/\/api\/surfaces\/[^/?]+(\?|$)/, async (route) => {
@@ -90,7 +90,7 @@ test("a part kind this viewer doesn't know shows a refresh hint, not a broken di
   await publish(server.url, { html: "<p>x</p>", title: "Future part", agent: "e2e" });
 
   const card = page.locator(".card:not(#whatsNew)").first();
-  await expect(card.locator(".part-unsupported")).toBeVisible();
+  await expect(card.locator(".surface-unsupported")).toBeVisible();
   await expect(card.locator(".diff-error")).toHaveCount(0);
 });
 
@@ -160,7 +160,7 @@ test("a comment's copy button puts an agent-ready paste block on the clipboard",
   await expect(page.locator("#toast")).toContainText("Copied");
   if (browserName === "chromium") {
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-      `sideshow comment on “Doc” (surface ${snippet.id}):\n“tighten the spacing”`,
+      `sideshow comment on “Doc” (post ${snippet.id}):\n“tighten the spacing”`,
     );
   }
 });
