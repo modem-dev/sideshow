@@ -75,6 +75,15 @@ const [traceStepsState, setTraceStepsInternal] = createSignal<TraceStep[]>([]);
 export const traceSteps = traceStepsState;
 const [streamLoadingState, setStreamLoadingInternal] = createSignal(false);
 export const streamLoading = streamLoadingState;
+// False until the first session list has been fetched, so the board's
+// onboard/session panes aren't decided — and so rendered — before we know which
+// to show. Flipped once (in App.onMount, after the initial refreshSessions
+// resolves); the empty-board onboarding is gated on it so it never flashes
+// during that first fetch (an embedding host also keys its loading overlay off
+// the matching host.onReady signal).
+const [initialLoadedState, setInitialLoadedInternal] = createSignal(false);
+export const initialLoaded = initialLoadedState;
+export const setInitialLoaded = setInitialLoadedInternal;
 const [liveState, setLiveInternal] = createSignal(false);
 export const live = liveState;
 export const [navOpen, setNavOpen] = createSignal(false);

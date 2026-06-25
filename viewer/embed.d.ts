@@ -38,6 +38,16 @@ export interface SideshowHost {
    * self-hosted host omits it.
    */
   onThemeChange?(tokens: ThemeTokens): void;
+  /**
+   * Called once, after the engine's first session-list fetch resolves and the
+   * initial board (a session, or the empty-board onboarding) is decided — the
+   * moment the engine knows what to show. Hold a loading overlay over the mount
+   * until then to avoid showing the pre-load board flash; the engine's own
+   * onboarding pane is internally gated on the same signal. Fires even if that
+   * fetch failed (board falls back to onboarding), so an overlay can't get
+   * stuck. Optional — the trivial self-hosted host omits it.
+   */
+  onReady?(): void;
 }
 
 export interface ViewerHandle {

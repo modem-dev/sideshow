@@ -45,6 +45,15 @@ export interface SideshowHost {
   // so an embedder can mirror them onto its own chrome without reaching across
   // the shadow boundary. Optional — the trivial self-hosted host omits it.
   onThemeChange?(tokens: ThemeTokens): void;
+  // The engine calls this once, after its first session-list fetch resolves and
+  // the initial board (a session, or the empty-board onboarding) has been
+  // decided — i.e. the moment the engine knows what to show. An embedding host
+  // can hold a loading overlay over the mount until then so its users never see
+  // the pre-load board flash (the engine's own onboarding pane is internally
+  // gated on the same signal). Fires even if that fetch failed (the board falls
+  // back to onboarding), so a host overlay can't get stuck. Optional — the
+  // trivial self-hosted host omits it.
+  onReady?(): void;
 }
 
 // Host-overridable surfaces. A handful of the engine's layout regions carry

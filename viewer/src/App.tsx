@@ -13,6 +13,7 @@ import {
   dismissUpdate,
   goHome,
   groupSessions,
+  initialLoaded,
   live,
   navOpen,
   nearBottom,
@@ -23,6 +24,7 @@ import {
   selectAdjacent,
   selected,
   sessions,
+  setInitialLoaded,
   setNavOpen,
   setPillTarget,
   setUnread,
@@ -71,7 +73,17 @@ export default function App() {
   });
 
   onMount(() => {
-    refreshSessions(host().router.get().surfaceId);
+    // Await the first session fetch, then mark the board decided and tell the
+    // host (onReady). Until then #onboard stays hidden, so neither the empty
+    // board nor a host's loading overlay flips to real content before we know
+    // what to show. .catch keeps it unblocking — a failed fetch still resolves
+    // to the (empty) onboarding board, and the host overlay still clears.
+    void refreshSessions(host().router.get().surfaceId)
+      .catch(() => {})
+      .finally(() => {
+        setInitialLoaded(true);
+        host().onReady?.();
+      });
     connect();
     checkVersion();
     void initTheme();
@@ -533,7 +545,7 @@ const TRY_SNIP =
 
 function Onboard() {
   return (
-    <div id="onboard" hidden={sessions.length > 0}>
+    <div id="onboard" hidden={!initialLoaded() || sessions.length > 0}>
       {/* Host-overridable region (SLOTS.empty): an embedder projects its own
           first-run onboarding here. The fallback below is the self-hosted
           default — setup snippets that assume a local sideshow on port 8228,
