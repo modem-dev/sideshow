@@ -1,4 +1,4 @@
-import { test as base } from "@playwright/test";
+import { expect, test as base, type Locator, type Page } from "@playwright/test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -67,7 +67,7 @@ export const publicReadTest = base.extend<{ publicReadServer: PublicReadServer }
   },
 });
 
-export { expect } from "@playwright/test";
+export { expect };
 
 export async function publish(
   serverUrl: string,
@@ -126,4 +126,46 @@ export async function publishParts(
   });
   if (!res.ok) throw new Error(`publishParts failed: ${res.status}`);
   return res.json() as Promise<{ id: string; sessionId: string; version: number }>;
+}
+
+export async function expectNoHorizontalOverflow(page: Page, selector: string) {
+  await expect.poll(() => page.locator(selector).count()).toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      page
+        .locator(selector)
+        .evaluateAll((elements) =>
+          Math.max(0, ...elements.map((el) => Math.ceil(el.scrollWidth - el.clientWidth))),
+        ),
+    )
+    .toBeLessThanOrEqual(1);
+}
+
+export async function expectIframesNoHorizontalOverflow(page: Page, container: Locator) {
+  const frameUrls = await container
+    .locator("iframe")
+    .evaluateAll((frames) => frames.map((frame) => (frame as HTMLIFrameElement).src));
+  expect(frameUrls.length).toBeGreaterThan(0);
+
+  await expect
+    .poll(async () => {
+      const childFrames = frameUrls
+        .map((url) => page.frames().find((frame) => frame.url() === url))
+        .filter((frame) => frame !== undefined);
+      if (childFrames.length < frameUrls.length) return Number.POSITIVE_INFINITY;
+      const overflows = await Promise.all(
+        childFrames.map((frame) =>
+          frame.evaluate(() => {
+            if (document.readyState === "loading") return Number.POSITIVE_INFINITY;
+            const doc = document.documentElement;
+            const body = document.body;
+            const scrollWidth = Math.max(doc.scrollWidth, body?.scrollWidth ?? 0);
+            const clientWidth = Math.max(doc.clientWidth, body?.clientWidth ?? 0);
+            return Math.ceil(scrollWidth - clientWidth);
+          }),
+        ),
+      );
+      return Math.max(0, ...overflows);
+    })
+    .toBeLessThanOrEqual(1);
 }

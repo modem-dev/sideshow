@@ -39,6 +39,7 @@ const EMBED_BASE_CSS = `
   position: relative;
   background: var(--bg);
   color: var(--text);
+  -webkit-text-size-adjust: 100%;
   font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 .ss-engine-root { position: absolute; inset: 0; }

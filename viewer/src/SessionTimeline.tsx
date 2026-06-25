@@ -107,7 +107,7 @@ function TurnBlock(props: { turn: Turn }) {
     events().filter((_, i) => i !== intentIdx() && i !== outcomeIdx()),
   );
   return (
-    <>
+    <div class="tl-turn">
       <Show when={props.turn.prompt}>{(p) => <TextRow kind="prompt" step={p()} />}</Show>
       <Show when={intentIdx() >= 0}>
         <TextRow kind="response" step={events()[intentIdx()]} />
@@ -118,7 +118,7 @@ function TurnBlock(props: { turn: Turn }) {
       <Show when={outcomeIdx() >= 0}>
         <TextRow kind="response" step={events()[outcomeIdx()]} />
       </Show>
-    </>
+    </div>
   );
 }
 
@@ -128,12 +128,23 @@ function TurnBlock(props: { turn: Turn }) {
 function WorkFold(props: { steps: TraceStep[] }) {
   const [open, setOpen] = createSignal(false);
   const n = () => props.steps.length;
+  const label = () => `${open() ? "Hide" : "Show"} ${n()} work ${n() === 1 ? "step" : "steps"}`;
+  const desktopLabel = () => (open() ? `··· hide ${n()} steps ···` : `··· ${n()} steps ···`);
   return (
     <>
       <div class="tl-row tl-notes-fold">
-        <div class="body tl-clickable" onClick={() => setOpen(!open())}>
-          {open() ? `··· hide ${n()} steps ···` : `··· ${n()} steps ···`}
-        </div>
+        <button
+          type="button"
+          class="body tl-clickable tl-fold-button"
+          aria-expanded={open()}
+          onClick={() => setOpen(!open())}
+        >
+          <span class="tl-fold-label-desktop">{desktopLabel()}</span>
+          <span class="tl-fold-label-mobile">{label()}</span>
+          <span class="tl-fold-caret" aria-hidden="true">
+            {open() ? "-" : "+"}
+          </span>
+        </button>
       </div>
       <Show when={open()}>
         <For each={props.steps}>
@@ -178,7 +189,7 @@ function CommandRow(props: { step: TraceStep }) {
     <div class="tl-row tl-cmd-row">
       <div class="body">
         <div
-          style={{ display: "flex", "align-items": "center", gap: "8px" }}
+          class="tl-cmd-inline"
           classList={{ "tl-clickable": more() }}
           onClick={() => more() && setOpen(!open())}
         >

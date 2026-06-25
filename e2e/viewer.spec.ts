@@ -1,4 +1,11 @@
-import { expect, publish, test, update } from "./fixtures.ts";
+import {
+  expect,
+  expectNoHorizontalOverflow,
+  publish,
+  publishParts,
+  test,
+  update,
+} from "./fixtures.ts";
 
 test("the sidebar groups sessions by recency and sinks empty ones to the bottom", async ({
   page,
@@ -105,7 +112,7 @@ test("comment typed in the composer round-trips to the API", async ({ page, serv
   const snippet = await publish(server.url, { html: "<p>v1</p>", title: "Doc", agent: "e2e" });
 
   await page.goto(server.url);
-  const card = page.locator(".card");
+  const card = page.locator(".card:not(#whatsNew)");
   await card.locator(".act.comment").click();
   const input = card.locator(".composer input");
   await input.fill("ship it");
@@ -138,7 +145,7 @@ test("a comment's copy button puts an agent-ready paste block on the clipboard",
   }
 
   await page.goto(server.url);
-  const card = page.locator(".card");
+  const card = page.locator(".card:not(#whatsNew)");
   await card.locator(".act.comment").click();
   const input = card.locator(".composer input");
   await input.fill("tighten the spacing");
@@ -165,7 +172,7 @@ test("a failed comment send restores the input instead of losing the message", a
   await publish(server.url, { html: "<p>x</p>", title: "Doc", agent: "e2e" });
 
   await page.goto(server.url);
-  const card = page.locator(".card");
+  const card = page.locator(".card:not(#whatsNew)");
   await page.route("**/api/comments", (route) =>
     route.request().method() === "POST" ? route.abort() : route.fallback(),
   );
@@ -192,7 +199,7 @@ test("a comment echoes immediately, before the SSE round-trip confirms it", asyn
   await publish(server.url, { html: "<p>x</p>", title: "Doc", agent: "e2e" });
 
   await page.goto(server.url);
-  const card = page.locator(".card");
+  const card = page.locator(".card:not(#whatsNew)");
   // hold the POST open so only the optimistic echo can render
   await page.route("**/api/comments", async (route) => {
     if (route.request().method() !== "POST") return route.fallback();
@@ -220,7 +227,7 @@ test("a comment containing raw HTML is sandboxed and escaped, never a live node"
   await publish(server.url, { html: "<p>x</p>", title: "Doc", agent: "e2e" });
 
   await page.goto(server.url);
-  const card = page.locator(".card");
+  const card = page.locator(".card:not(#whatsNew)");
   await card.locator(".act.comment").click();
   const input = card.locator(".composer input");
   await input.fill("<img src=x onerror=alert(1)> hi");
@@ -306,12 +313,34 @@ test("at phone width the sidebar collapses into a drawer and actions stay visibl
   server,
 }) => {
   await publish(server.url, { html: "<p>m</p>", title: "Mobile", agent: "e2e" });
+  const longSession = (await (
+    await fetch(`${server.url}/api/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        agent: "e2e",
+        title: "A deliberately long mobile sidebar session title that should not shove controls",
+      }),
+    })
+  ).json()) as { id: string };
+  await publish(server.url, {
+    html: "<p>long session row</p>",
+    title: "Long title mobile",
+    agent: "e2e",
+    session: longSession.id,
+  });
 
-  await page.setViewportSize({ width: 375, height: 667 });
-  await page.goto(server.url);
+  await fetch(`${server.url}/api/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agent: "idle", title: "Empty session still shown in drawer" }),
+  });
+
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.goto(`${server.url}/session/${longSession.id}`);
 
   // the sidebar is off-canvas and the stream gets the full width
-  const card = page.locator(".card");
+  const card = page.locator(".card:not(#whatsNew)");
   await expect(card).toBeVisible();
   await expect(page.locator("aside")).not.toBeInViewport();
   expect((await card.boundingBox())!.width).toBeGreaterThan(300);
@@ -322,8 +351,70 @@ test("at phone width the sidebar collapses into a drawer and actions stay visibl
   // the menu button opens the drawer; picking a session closes it again
   await page.locator("#menuBtn").click();
   await expect(page.locator("aside")).toBeInViewport();
-  await page.locator(".sess").click();
+  await expectNoHorizontalOverflow(page, "main");
+  await expectNoHorizontalOverflow(page, "aside");
+  const longSessionTitle = page.getByText("A deliberately long mobile sidebar", { exact: false });
+  const longSessionRow = page.locator('[role="button"]').filter({ has: longSessionTitle });
+  await expect(longSessionRow).toBeVisible();
+  const deleteLongSession = longSessionRow.getByRole("button", { name: /^Delete session/ });
+  await expect(deleteLongSession).toBeVisible();
+  await deleteLongSession.click({ trial: true });
+  await longSessionRow.click();
   await expect(page.locator("aside")).not.toBeInViewport();
+});
+
+test("timeline traces wrap cleanly at iPhone 14 Pro width", async ({ page, server }) => {
+  const surface = await publishParts(server.url, {
+    title: "Timeline anchor",
+    agent: "e2e",
+    parts: [
+      { kind: "markdown", markdown: "## Timeline card\n\nThe trace wraps around this card." },
+    ],
+  });
+  await fetch(`${server.url}/api/sessions/${surface.sessionId}/trace`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      steps: [
+        {
+          kind: "prompt",
+          label: "prompt-" + "unbrokenprompttoken".repeat(8),
+          detail:
+            "A longer prompt detail that should expand without creating horizontal document scroll.",
+        },
+        {
+          kind: "say",
+          label: "response-" + "unbrokenresponsetoken".repeat(8),
+        },
+        {
+          kind: "shell",
+          label:
+            "npm run trace-check -- --device=iPhone14Pro --case=long-command-label-without-spaces",
+          detail:
+            "command output: " +
+            "unbroken-token-for-overflow-regression-".repeat(8) +
+            "\nsecond line with normal words",
+        },
+        { kind: "say", label: "The timeline remains readable on a phone." },
+      ],
+      reset: true,
+    }),
+  });
+
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.goto(`${server.url}/session/${surface.sessionId}`);
+  await page.locator(".view-toggle button", { hasText: "Timeline" }).click();
+
+  await expect(page.locator(".timeline")).toBeVisible();
+  await expect(page.getByText("prompt-unbrokenprompttoken", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Show 1 work step" }).click();
+  await expect(page.getByRole("button", { name: "Hide 1 work step" })).toBeVisible();
+  await page.getByText("npm run trace-check", { exact: false }).click();
+  await expect(
+    page.getByText("unbroken-token-for-overflow-regression", { exact: false }),
+  ).toBeVisible();
+  await expectNoHorizontalOverflow(page, "main");
+  await expectNoHorizontalOverflow(page, ".timeline");
 });
 
 test("the Connect Claude Code modal shows the plugin install commands", async ({
