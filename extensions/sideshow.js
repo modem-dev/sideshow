@@ -29,7 +29,10 @@ const feedbackGuideline =
 const partSchema = {
   type: "object",
   properties: {
-    kind: { type: "string", enum: ["html", "markdown", "mermaid", "diff", "image", "trace", "terminal"] },
+    kind: {
+      type: "string",
+      enum: ["html", "markdown", "mermaid", "diff", "image", "trace", "terminal"],
+    },
     html: {
       type: "string",
       description: "html part: body fragment only (no doctype/html/head/body)",
@@ -37,7 +40,8 @@ const partSchema = {
     markdown: { type: "string", description: "markdown part: prose rendered by the viewer" },
     mermaid: {
       type: "string",
-      description: "mermaid part: diagram source (flowchart, sequence, ERD, gantt, …), rendered to SVG by the viewer",
+      description:
+        "mermaid part: diagram source (flowchart, sequence, ERD, gantt, …), rendered to SVG by the viewer",
     },
     patch: { type: "string", description: "diff part: unified/git patch string" },
     files: {
