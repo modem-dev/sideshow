@@ -65,6 +65,15 @@ export function groupSessions(list: readonly SessionRow[], now: Date): SessionGr
 }
 const [selectedState, setSelectedInternal] = createSignal<string | null>(null);
 export const selected = selectedState;
+
+// Standalone (direct-link) mode: a bare /s/:id route with no session shows that
+// one surface full-page — no sidebar, no session feed, no comments — instead of
+// resolving it into its session's stream. Holds the fetched surface while in
+// that mode; null is the normal board. The server serves the same SPA shell for
+// /s/:id (with link-preview metadata, see server/app.ts); the viewer decides the
+// layout from the route here.
+const [standaloneState, setStandaloneInternal] = createSignal<Surface | null>(null);
+export const standaloneSurface = standaloneState;
 export const [unread, setUnread] = createSignal<ReadonlySet<string>>(new Set<string>());
 const [surfacesStore, setSurfacesInternal] = createStore<Surface[]>([]);
 export const surfaces = surfacesStore;
@@ -156,6 +165,26 @@ function syntheticSession(id: string): SessionRow {
     agentSeq: 0,
     surfaceCount: 0,
   };
+}
+
+// Entry point on load: a bare surface route (/s/:id, no session) opens the
+// full-page standalone view; anything else falls through to the normal board.
+// If the surface can't be fetched (deleted / bad id) we drop to the board so the
+// user lands somewhere usable rather than a blank page.
+export async function bootstrap() {
+  const route = host().router.get();
+  if (route.surfaceId && !route.sessionId) {
+    await enterStandalone(route.surfaceId);
+    if (standaloneSurface()) return;
+  }
+  await refreshSessions(route.surfaceId);
+}
+
+// Fetch a surface and switch into standalone mode. No-op if already showing it.
+export async function enterStandalone(id: string) {
+  if (standaloneSurface()?.id === id) return;
+  const surface = await api<Surface>(`/api/surfaces/${encodeURIComponent(id)}`).catch(() => null);
+  if (surface) setStandaloneInternal(surface);
 }
 
 export async function refreshSessions(targetSurfaceId?: string | null) {
@@ -276,6 +305,13 @@ export function goHome() {
 
 // Re-select the session when the host's route changes (back/forward).
 export function applyRoute(route: Route) {
+  // A bare surface route is the standalone full-page view; back/forward into or
+  // out of it toggles the mode (leaving it falls through to session handling).
+  if (route.surfaceId && !route.sessionId) {
+    void enterStandalone(route.surfaceId);
+    return;
+  }
+  if (standaloneSurface()) setStandaloneInternal(null);
   if (route.sessionId && route.sessionId !== selected()) {
     void select(route.sessionId, {
       fromPopState: true,

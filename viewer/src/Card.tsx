@@ -135,7 +135,7 @@ function pollScrollIntoView(el: HTMLElement, surfaceId: string): () => void {
   };
 }
 
-export function Card(props: { surface: Surface }) {
+export function Card(props: { surface: Surface; standalone?: boolean }) {
   let card!: HTMLDivElement;
   const iframes = new Set<HTMLIFrameElement>();
   // Absolute part index -> its sandboxed-part iframe. Lets the version dropdown
@@ -159,6 +159,11 @@ export function Card(props: { surface: Surface }) {
   onMount(() => {
     cardEls.set(props.surface.id, { card, iframes });
     onCleanup(() => cardEls.delete(props.surface.id));
+    // Standalone is a single, full-page surface — there is no feed to scroll
+    // through and no session route to track, so skip the deep-link scroll and
+    // the URL-syncing observer. The cardEls registration above still runs so the
+    // resize bridge can size this surface's part iframes.
+    if (props.standalone) return;
     scrollIfTarget();
     // Update the URL as the user scrolls past surfaces (replaceState, no
     // history noise). The first card that crosses the 50% threshold wins.
@@ -185,34 +190,39 @@ export function Card(props: { surface: Surface }) {
     <div class="card" data-id={props.surface.id} ref={(el) => (card = el)}>
       <div class="card-head">
         <span class="card-title">{props.surface.title}</span>
-        <span class="vslot">
-          {/* keyed on version: a new version rebuilds the select, resetting
+        {/* The version dropdown and "updated" meta are board-feed affordances;
+            the standalone page is a clean, single-surface view, so it shows only
+            the title (and the watermark its parent adds below). */}
+        <Show when={!props.standalone}>
+          <span class="vslot">
+            {/* keyed on version: a new version rebuilds the select, resetting
               the selection to the latest like the live iframe src does */}
-          <Show
-            when={props.surface.version > 1 && props.surface.version}
-            keyed
-            fallback={<span class="vbadge">v1</span>}
-          >
-            {(latest) => (
-              <select
-                class="vbadge"
-                onChange={(e) => {
-                  const ver = e.currentTarget.value;
-                  const cb = Date.now();
-                  for (const [part, frame] of partFrames) {
-                    frame.src = appPath(
-                      `/s/${props.surface.id}?part=${part}&ver=${ver}&cb=${cb}&theme=${activeTheme()}&mode=${resolvedMode()}`,
-                    );
-                  }
-                }}
-              >
-                <For each={versionRange(latest)}>{(v) => <option value={v}>v{v}</option>}</For>
-              </select>
-            )}
-          </Show>
-        </span>
-        <span class="sp"></span>
-        <span class="card-meta">{relTime(props.surface.updatedAt)}</span>
+            <Show
+              when={props.surface.version > 1 && props.surface.version}
+              keyed
+              fallback={<span class="vbadge">v1</span>}
+            >
+              {(latest) => (
+                <select
+                  class="vbadge"
+                  onChange={(e) => {
+                    const ver = e.currentTarget.value;
+                    const cb = Date.now();
+                    for (const [part, frame] of partFrames) {
+                      frame.src = appPath(
+                        `/s/${props.surface.id}?part=${part}&ver=${ver}&cb=${cb}&theme=${activeTheme()}&mode=${resolvedMode()}`,
+                      );
+                    }
+                  }}
+                >
+                  <For each={versionRange(latest)}>{(v) => <option value={v}>v{v}</option>}</For>
+                </select>
+              )}
+            </Show>
+          </span>
+          <span class="sp"></span>
+          <span class="card-meta">{relTime(props.surface.updatedAt)}</span>
+        </Show>
       </div>
       {/* Parts render in order, dispatched by kind. Each kind is an explicit
           Match; the fallback is reserved for a kind this viewer build doesn't
@@ -270,69 +280,71 @@ export function Card(props: { surface: Surface }) {
           </Switch>
         )}
       </Index>
-      <Thread
-        surfaceId={props.surface.id}
-        placeholder="Leave a comment…"
-        collapsible
-        readonly={isReadonly()}
-        actions={(startReply) => (
-          <>
-            <Show when={!isReadonly()}>
+      <Show when={!props.standalone}>
+        <Thread
+          surfaceId={props.surface.id}
+          placeholder="Leave a comment…"
+          collapsible
+          readonly={isReadonly()}
+          actions={(startReply) => (
+            <>
+              <Show when={!isReadonly()}>
+                <button
+                  class="act icon comment"
+                  title="Comment"
+                  aria-label="Comment"
+                  onClick={startReply}
+                >
+                  <CommentIcon />
+                </button>
+              </Show>
+              <span class="sp"></span>
               <button
-                class="act icon comment"
-                title="Comment"
-                aria-label="Comment"
-                onClick={startReply}
-              >
-                <CommentIcon />
-              </button>
-            </Show>
-            <span class="sp"></span>
-            <button
-              class="act icon copy"
-              title="Copy link to this surface"
-              aria-label="Copy link to this surface"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(surfaceLink(props.surface.id));
-                  toast("Link copied");
-                } catch {
-                  toast("Couldn't copy the link");
-                }
-              }}
-            >
-              <LinkIcon />
-            </button>
-            <a
-              class="act icon open"
-              target="_blank"
-              href={surfaceLink(props.surface.id)}
-              title="Open in a new tab"
-              aria-label="Open in a new tab"
-            >
-              <OpenIcon />
-            </a>
-            <Show when={!isReadonly()}>
-              <span class="divider"></span>
-              <button
-                class="act icon del"
-                title="Delete surface"
-                aria-label={`Delete "${props.surface.title}"`}
+                class="act icon copy"
+                title="Copy link to this surface"
+                aria-label="Copy link to this surface"
                 onClick={async () => {
-                  if (confirm(`Delete "${props.surface.title}"?`)) {
-                    await api(`/api/surfaces/${props.surface.id}`, { method: "DELETE" });
+                  try {
+                    await navigator.clipboard.writeText(surfaceLink(props.surface.id));
+                    toast("Link copied");
+                  } catch {
+                    toast("Couldn't copy the link");
                   }
                 }}
               >
-                <TrashIcon />
+                <LinkIcon />
               </button>
-            </Show>
-          </>
-        )}
-        send={(text) =>
-          sendComment({ surface: props.surface.id, text, author: "user" }, props.surface.id, text)
-        }
-      />
+              <a
+                class="act icon open"
+                target="_blank"
+                href={surfaceLink(props.surface.id)}
+                title="Open in a new tab"
+                aria-label="Open in a new tab"
+              >
+                <OpenIcon />
+              </a>
+              <Show when={!isReadonly()}>
+                <span class="divider"></span>
+                <button
+                  class="act icon del"
+                  title="Delete surface"
+                  aria-label={`Delete "${props.surface.title}"`}
+                  onClick={async () => {
+                    if (confirm(`Delete "${props.surface.title}"?`)) {
+                      await api(`/api/surfaces/${props.surface.id}`, { method: "DELETE" });
+                    }
+                  }}
+                >
+                  <TrashIcon />
+                </button>
+              </Show>
+            </>
+          )}
+          send={(text) =>
+            sendComment({ surface: props.surface.id, text, author: "user" }, props.surface.id, text)
+          }
+        />
+      </Show>
     </div>
   );
 }

@@ -1,6 +1,14 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { AgentMark } from "./agentMarks.tsx";
-import { api, isReadonly, layoutMode, relTime, sessionLabel, type SessionRow } from "./api.ts";
+import {
+  api,
+  isReadonly,
+  layoutMode,
+  relTime,
+  sessionLabel,
+  type SessionRow,
+  type Surface,
+} from "./api.ts";
 import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
 import { applyFrameHeight, Card, cardEls, frameForSource } from "./Card.tsx";
 import { renderNotes } from "./notes.ts";
@@ -8,6 +16,7 @@ import { SessionTimeline } from "./SessionTimeline.tsx";
 import { activeTheme, initTheme, setTheme, themeOptions } from "./theme.ts";
 import {
   applyRoute,
+  bootstrap,
   checkVersion,
   connect,
   dismissUpdate,
@@ -18,7 +27,6 @@ import {
   navOpen,
   nearBottom,
   pillTarget,
-  refreshSessions,
   refreshSessionsQuiet,
   select,
   selectAdjacent,
@@ -29,6 +37,7 @@ import {
   setPillTarget,
   setUnread,
   setViewMode,
+  standaloneSurface,
   streamLoading,
   surfaces,
   toast,
@@ -73,12 +82,13 @@ export default function App() {
   });
 
   onMount(() => {
-    // Await the first session fetch, then mark the board decided and tell the
-    // host (onReady). Until then #onboard stays hidden, so neither the empty
-    // board nor a host's loading overlay flips to real content before we know
-    // what to show. .catch keeps it unblocking — a failed fetch still resolves
-    // to the (empty) onboarding board, and the host overlay still clears.
-    void refreshSessions(host().router.get().surfaceId)
+    // Await the initial route resolution (the standalone surface fetch, or the
+    // first session fetch), then mark the board decided and tell the host
+    // (onReady). Until then #onboard stays hidden, so neither the empty board
+    // nor a host's loading overlay flips to real content before we know what to
+    // show. .catch keeps it unblocking — a failed fetch still resolves to the
+    // (empty) onboarding board, and the host overlay still clears.
+    void bootstrap()
       .catch(() => {})
       .finally(() => {
         setInitialLoaded(true);
@@ -126,9 +136,13 @@ export default function App() {
   });
 
   // unseen activity badges the tab title — self-hosted only; an embedding host
-  // owns its own document title.
+  // owns its own document title. The standalone page titles itself after the
+  // surface instead (set below), so don't fight it here.
   createEffect(() => {
-    if (!isShadow()) document.title = unread().size ? `(${unread().size}) sideshow` : "sideshow";
+    if (isShadow()) return;
+    const solo = standaloneSurface();
+    if (solo) document.title = solo.title ? `${solo.title} · sideshow` : "sideshow";
+    else document.title = unread().size ? `(${unread().size}) sideshow` : "sideshow";
   });
   // the mobile drawer slides in via a class on the host element (see styles.css
   // `body.nav-open`; self-hosted that element is <body>)
@@ -140,108 +154,136 @@ export default function App() {
   const sessionGroups = createMemo(() => groupSessions(sessions, new Date()));
 
   return (
-    <>
-      <div id="app">
-        <header class="topbar">
-          <Show when={!streamMode()}>
-            <button
-              class="menu"
-              id="menuBtn"
-              aria-label="Show sessions"
-              onClick={() => setNavOpen(!navOpen())}
-            >
-              ☰<span class="dot" id="menuDot" classList={{ show: unread().size > 0 }}></span>
-            </button>
-          </Show>
-          <Brand />
-        </header>
-        <Show when={!streamMode()}>
-          <aside>
-            <Brand />
-            <UpdateBanner />
-            <div id="sessionList">
-              <For each={sessionGroups()}>
-                {(group) => (
-                  <>
-                    <div class="sess-group">{group.label}</div>
-                    <For each={group.sessions}>{(s) => <SessionItem session={s} />}</For>
-                  </>
-                )}
-              </For>
-            </div>
-            <div class="aside-foot">
-              {/* ThemePicker is a generic feature, not deployment-specific
-                  guidance — it stays engine-owned and works under any host. */}
-              <Show when={!isReadonly()}>
-                <ThemePicker />
+    <Show
+      when={standaloneSurface()}
+      keyed
+      fallback={
+        <>
+          <div id="app">
+            <header class="topbar">
+              <Show when={!streamMode()}>
+                <button
+                  class="menu"
+                  id="menuBtn"
+                  aria-label="Show sessions"
+                  onClick={() => setNavOpen(!navOpen())}
+                >
+                  ☰<span class="dot" id="menuDot" classList={{ show: unread().size > 0 }}></span>
+                </button>
               </Show>
-              {/* Host-overridable region (SLOTS.asideFoot): the footer's
+              <Brand />
+            </header>
+            <Show when={!streamMode()}>
+              <aside>
+                <Brand />
+                <UpdateBanner />
+                <div id="sessionList">
+                  <For each={sessionGroups()}>
+                    {(group) => (
+                      <>
+                        <div class="sess-group">{group.label}</div>
+                        <For each={group.sessions}>{(s) => <SessionItem session={s} />}</For>
+                      </>
+                    )}
+                  </For>
+                </div>
+                <div class="aside-foot">
+                  {/* ThemePicker is a generic feature, not deployment-specific
+                  guidance — it stays engine-owned and works under any host. */}
+                  <Show when={!isReadonly()}>
+                    <ThemePicker />
+                  </Show>
+                  {/* Host-overridable region (SLOTS.asideFoot): the footer's
                   instructional links/actions. An embedder projects
                   deployment-appropriate ones here; the children below are the
                   self-hosted fallback — shown verbatim when nothing is projected
                   (and outside a shadow root, where <slot> just renders them). */}
-              <slot name={SLOTS.asideFoot}>
-                <a href="/guide" target="_blank">
-                  design guide
-                </a>{" "}
-                &nbsp;·&nbsp;{" "}
-                <a href="/setup" target="_blank">
-                  agent setup
-                </a>{" "}
-                <Show when={!isReadonly()}>
-                  &nbsp;·&nbsp;{" "}
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setConnectOpen(true);
-                    }}
-                  >
-                    connect Claude Code
-                  </a>
-                </Show>
-              </slot>
-            </div>
-          </aside>
-        </Show>
-        <main
-          onScroll={() => {
-            if (nearBottom()) setPillTarget(null);
-          }}
-        >
-          {/* Host-overridable main pane (SLOTS.main). Fallback is the normal
+                  <slot name={SLOTS.asideFoot}>
+                    <a href="/guide" target="_blank">
+                      design guide
+                    </a>{" "}
+                    &nbsp;·&nbsp;{" "}
+                    <a href="/setup" target="_blank">
+                      agent setup
+                    </a>{" "}
+                    <Show when={!isReadonly()}>
+                      &nbsp;·&nbsp;{" "}
+                      <a
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setConnectOpen(true);
+                        }}
+                      >
+                        connect Claude Code
+                      </a>
+                    </Show>
+                  </slot>
+                </div>
+              </aside>
+            </Show>
+            <main
+              onScroll={() => {
+                if (nearBottom()) setPillTarget(null);
+              }}
+            >
+              {/* Host-overridable main pane (SLOTS.main). Fallback is the normal
               board; an embedder projects a `slot="ss:main"` child to take over the
               pane (e.g. a cloud Settings page) while the sidebar stays. */}
-          <slot name={SLOTS.main}>
-            <Show when={!streamMode()}>
-              <Onboard />
-            </Show>
-            <SessionView />
-          </slot>
-        </main>
-      </div>
-      <Show when={!streamMode()}>
-        <div id="scrim" onClick={() => setNavOpen(false)}></div>
-      </Show>
-      <Show when={connectOpen()}>
-        <ConnectModal onClose={() => setConnectOpen(false)} />
-      </Show>
-      <div id="toast" role="status" aria-live="polite" classList={{ show: toastShow() }}>
-        {toastText()}
-      </div>
-      <button
-        id="newPill"
-        hidden={pillTarget() === null}
-        onClick={() => {
-          const target = pillTarget();
-          if (target)
-            cardEls.get(target)?.card.scrollIntoView({ behavior: "smooth", block: "start" });
-          setPillTarget(null);
-        }}
-      >
-        new surface ↓
-      </button>
-    </>
+              <slot name={SLOTS.main}>
+                <Show when={!streamMode()}>
+                  <Onboard />
+                </Show>
+                <SessionView />
+              </slot>
+            </main>
+          </div>
+          <Show when={!streamMode()}>
+            <div id="scrim" onClick={() => setNavOpen(false)}></div>
+          </Show>
+          <Show when={connectOpen()}>
+            <ConnectModal onClose={() => setConnectOpen(false)} />
+          </Show>
+          <div id="toast" role="status" aria-live="polite" classList={{ show: toastShow() }}>
+            {toastText()}
+          </div>
+          <button
+            id="newPill"
+            hidden={pillTarget() === null}
+            onClick={() => {
+              const target = pillTarget();
+              if (target)
+                cardEls.get(target)?.card.scrollIntoView({ behavior: "smooth", block: "start" });
+              setPillTarget(null);
+            }}
+          >
+            new surface ↓
+          </button>
+        </>
+      }
+    >
+      {(surface) => <StandaloneView surface={surface} />}
+    </Show>
+  );
+}
+
+// The full-page view a bare /s/:id direct link lands on: just the one surface,
+// no sidebar/session chrome/comments, with a small sideshow watermark beneath
+// it. The Card renders in `standalone` mode (title + parts only); its part
+// iframes are sized by the same postMessage bridge the board uses (it resolves
+// any registered card, so a standalone card sizes identically).
+function StandaloneView(props: { surface: Surface }) {
+  return (
+    <div id="standalone">
+      <main class="standalone-main">
+        <Card surface={props.surface} standalone />
+        <footer class="standalone-foot">
+          <a href="https://sideshow.sh" target="_blank" rel="noopener">
+            made with <strong>sideshow</strong>
+          </a>
+        </footer>
+      </main>
+    </div>
   );
 }
 

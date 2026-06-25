@@ -161,24 +161,26 @@ test("scrolling through surfaces updates the URL", async ({ page, server }) => {
   await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}/s/${s1.id}$`));
 });
 
-test("/s/:id bare surface route opens the viewer focused on that surface", async ({
+test("/s/:id bare surface route shows the standalone full-page surface", async ({
   page,
   server,
 }) => {
   const s = await publish(server.url, { html: "<h2>Standalone</h2>", title: "Solo" });
   await page.goto(`${server.url}/s/${s.id}`);
 
-  // Bare share links are now trusted viewer pages (with link-preview metadata),
-  // not top-level sandboxed surface documents.
-  await expect(page.locator("#sessionList")).toHaveCount(1);
-  await expect(page.locator(`#sessionList .sess[data-id="${s.sessionId}"]`)).toHaveClass(/sel/);
+  // A bare direct link is the full-page standalone view: just that one surface,
+  // no sidebar / session feed / comments, with a sideshow watermark beneath.
+  await expect(page.locator("#standalone")).toHaveCount(1);
+  await expect(page.locator("#sessionList")).toHaveCount(0);
+  await expect(page.locator("#standalone .card[data-id]")).toHaveCount(1);
   await expect(page.locator(`.card[data-id="${s.id}"] .card-title`)).toHaveText("Solo");
-  await expect(page.locator("body > h2")).toHaveCount(0);
+  // No comment thread chrome in standalone mode.
+  await expect(page.locator(".card .thread")).toHaveCount(0);
+  await expect(page.locator(".standalone-foot a")).toHaveAttribute("href", "https://sideshow.sh");
 
-  // The viewer may replace the canonical share URL with the session-scoped deep
-  // link once it resolves the owning session, but the target surface remains in
-  // the route and focused in the stream.
-  await expect(page).toHaveURL(new RegExp(`/(?:s/${s.id}|session/${s.sessionId}/s/${s.id})$`));
+  // It stays on the canonical share URL — it does not rewrite into a
+  // session-scoped deep link the way the in-feed deep link does.
+  await expect(page).toHaveURL(new RegExp(`/s/${s.id}$`));
 
   // The authored HTML is still rendered only inside the sandboxed part iframe.
   await expect(page.frameLocator(`.card[data-id="${s.id}"] iframe`).locator("h2")).toHaveText(

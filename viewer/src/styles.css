@@ -373,6 +373,41 @@ main {
   padding: 22px 28px 120px;
 }
 
+/* Standalone direct-link view (/s/:id with no session): one surface, full page,
+   no sidebar or session chrome. Mirrors the #stream column so a surface reads
+   the same as it does in the feed, with a small sideshow watermark beneath. */
+#standalone {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.standalone-main {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 40px 28px 80px;
+}
+.standalone-main .card {
+  margin-bottom: 0;
+}
+.standalone-foot {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--faint);
+}
+.standalone-foot a {
+  color: var(--faint);
+  text-decoration: none;
+}
+.standalone-foot a:hover {
+  color: var(--muted);
+  text-decoration: underline;
+}
+.standalone-foot strong {
+  font-weight: 600;
+  color: var(--muted);
+}
+
 .card {
   background: var(--surface);
   border: 0.5px solid var(--border);
