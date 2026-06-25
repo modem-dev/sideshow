@@ -201,6 +201,13 @@ test.ts` covers the JSON→SQLite import.
 
 ## Conventions
 
+- **Naming (rename in progress).** A published artifact is a **post** (an ordered
+  list of **surfaces**); a surface is one block (html/markdown/diff/image/…). In
+  new code use these names — never `part`, never `surface` for the artifact. The
+  data layer (`server/types.ts`, the stores) already uses them. HTTP route paths
+  (`/api/surfaces`, `/s/:id`), MCP tool names, and `guide/*.md` keep the old
+  spellings for now (deferred). The tenant DB is a **workspace** (`board` is being
+  retired). Canonical glossary: sideshow-cloud `docs/glossary.md`.
 - Conventional Commits: `type(scope): description`.
 - Changesets drive release notes. For user-visible changes run
   `npm run changeset` and select `patch`/`minor`/`major`; for maintenance-only
