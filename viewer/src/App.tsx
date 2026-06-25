@@ -196,7 +196,15 @@ export default function App() {
                   neither renders once a session exists. */}
                   <Show when={initialLoaded() && sessions.length === 0}>
                     <slot name={SLOTS.asideEmpty}>
-                      <AsideEmptyRow />
+                      {/* The native fallback is a connect affordance, so it only
+                      makes sense when the board is writable — readonly boards
+                      show "Nothing here yet" in the empty pane, not connect
+                      instructions, so the row would point at a contradiction.
+                      The slot itself stays mounted so an embedder can still
+                      project its own (possibly readonly-appropriate) nudge. */}
+                      <Show when={!isReadonly()}>
+                        <AsideEmptyRow />
+                      </Show>
                     </slot>
                   </Show>
                 </div>
@@ -498,6 +506,9 @@ function SessionItem(props: { session: SessionRow }) {
 function AsideEmptyRow() {
   const activate = () => {
     setNavOpen(false);
+    // #onboard is the empty-board pane wrapped by ss:empty. When an embedder
+    // projects ss:main (taking over the main pane), #onboard isn't in the DOM
+    // and this is a silent no-op — acceptable: there's nothing to scroll to.
     root().querySelector("#onboard")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   return (

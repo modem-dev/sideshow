@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, publish, test } from "./fixtures.ts";
+import type { Page } from "@playwright/test";
 
 const embedDir = fileURLToPath(new URL("../viewer/dist-embed", import.meta.url));
 
@@ -51,7 +52,7 @@ const embedHtmlWithSession = (sessionId: string) => `<!doctype html>
   });
 </script></body></html>`;
 
-function serveEmbed(page, html: string) {
+function serveEmbed(page: Page, html: string) {
   page.on("pageerror", (e) => console.error("[pageerror]", e.message));
   page.on("console", (m) => m.type() === "error" && console.error("[console]", m.text()));
   return Promise.all([
@@ -102,7 +103,7 @@ test.describe("embedded engine: ss:aside-empty slot", () => {
 
     // The engine's fallback row is present in the DOM (native <slot> default
     // content) but not rendered — the projection is what the user sees.
-    await expect(page.locator(".aside-empty")).not.toBeVisible();
+    await expect(page.locator(".aside-empty")).toBeHidden();
   });
 
   test("neither fallback nor projection renders once a session exists", async ({
