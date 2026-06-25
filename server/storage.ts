@@ -47,8 +47,8 @@ interface FileShape {
   settings: Record<string, string>;
 }
 
-// Pre-0.5.0 boards stored `snippets` (a single `html` field) and comments
-// keyed by `snippetId`. Read those shapes and lift them into the parts model.
+// Pre-0.5.0 workspaces stored `snippets` (a single `html` field) and comments
+// keyed by `snippetId`. Read those shapes and lift them into the surfaces model.
 interface LegacySnippetVersion {
   version: number;
   title: string;
@@ -91,7 +91,7 @@ function liftSnippet(s: LegacySnippet): Post {
 type LegacyComment = Comment & {
   snippetId?: string | null;
   snippetTitle?: string | null;
-  // 0.5.x boards keyed comments by `surfaceId`/`surfaceTitle`.
+  // 0.5.x workspaces keyed comments by `surfaceId`/`surfaceTitle`.
   surfaceId?: string | null;
   surfaceTitle?: string | null;
 };
@@ -109,7 +109,7 @@ function liftComment(c: LegacyComment): Comment {
   };
 }
 
-// 0.5.x boards stored each post's blocks under a `parts` field (and
+// 0.5.x workspaces stored each post's blocks under a `parts` field (and
 // `history[].parts`). Map those to the `surfaces` field so old files still load.
 type LegacyPostVersion = PostVersion & { parts?: Surface[] };
 type LegacyPost = Omit<Post, "surfaces" | "history"> & {
@@ -219,7 +219,7 @@ export class JsonFileStore implements Store {
     return this.writeQueue;
   }
 
-  // Snapshot the whole board for a one-time backend migration (→ SqlStore.
+  // Snapshot the whole workspace for a one-time backend migration (→ SqlStore.
   // importBoard). Returns live references — fine for a read-once-then-import
   // migration, which never mutates the store afterward.
   async exportBoard(): Promise<WorkspaceSnapshot> {

@@ -18,16 +18,16 @@ const HELP = `sideshow — a live visual surface for terminal coding agents
 
 usage:
   sideshow serve [--port N] [--open]      start the surface (API + viewer)
-  sideshow publish <file|-> [options]     publish an HTML surface (one html part)
-      --title <t>       surface title
-      --md <file|->     add a markdown part (prose) — combine with html
-      --mermaid <file|-> add a mermaid part (diagram source → SVG) — combine with html
-      --diff <file|->   add a diff part from a unified/git patch (combine with html)
-      --terminal <file|->  add a terminal part from monospace/ANSI output
-      --json <file|->    add a json part from a JSON file (collapsible tree)
-      --code <file|->    add a code part from a file (shiki-highlighted)
-      --kit <id>        opt the html part into a kit (repeatable; see "sideshow kits")
-      --image <file>    upload an image and append it as an image part
+  sideshow publish <file|-> [options]     publish an HTML post (one html surface)
+      --title <t>       post title
+      --md <file|->     add a markdown surface (prose) — combine with html
+      --mermaid <file|-> add a mermaid surface (diagram source → SVG) — combine with html
+      --diff <file|->   add a diff surface from a unified/git patch (combine with html)
+      --terminal <file|->  add a terminal surface from monospace/ANSI output
+      --json <file|->    add a json surface from a JSON file (collapsible tree)
+      --code <file|->    add a code surface from a file (shiki-highlighted)
+      --kit <id>        opt the html surface into a kit (repeatable; see "sideshow kits")
+      --image <file>    upload an image and append it as an image surface
       --session <id>    target session (default: auto per agent session)
       --session-title <t>  name for a newly created session — name the task,
                         e.g. "Auth refactor" (ignored if the session exists)
@@ -37,32 +37,32 @@ usage:
       --kind <k>        image|trace|file (default: inferred from the file type)
       --session <id>    session to attach to (default: auto)
   sideshow asset-url <file>               print the URL a file will have (content hash; no upload)
-  sideshow image <file> [options]         upload an image and publish it as a surface
-      --title <t>       surface title
+  sideshow image <file> [options]         upload an image and publish it as a post
+      --title <t>       post title
       --caption <c>     caption shown under the image
       (also: --session, --session-title, --agent, --new-session)
-  sideshow trace <file> [options]         upload a trace file and publish it as a surface
-      --title <t>       surface title
+  sideshow trace <file> [options]         upload a trace file and publish it as a post
+      --title <t>       post title
       (also: --session, --session-title, --agent, --new-session)
-  sideshow diff <file|-> [options]        publish a diff surface from a patch
-      --title <t>       surface title
+  sideshow diff <file|-> [options]        publish a diff post from a patch
+      --title <t>       post title
       --layout <mode>   "unified" (default) or "split"
       (also: --session, --session-title, --agent, --new-session)
-  sideshow markdown <file|-> [options]    publish a markdown surface (prose)
-      --title <t>       surface title
+  sideshow markdown <file|-> [options]    publish a markdown post (prose)
+      --title <t>       post title
   sideshow terminal <file|-> [options]    publish terminal output (monospace + ANSI)
-      --title <t>       surface title
+      --title <t>       post title
       --term-title <t>  label shown in the terminal window chrome
       --cols <n>        render width hint, in columns
       (also: --session, --session-title, --agent, --new-session)
-  sideshow mermaid <file|-> [options]     publish a mermaid surface (diagram → SVG)
-      --title <t>       surface title
+  sideshow mermaid <file|-> [options]     publish a mermaid post (diagram → SVG)
+      --title <t>       post title
       (also: --session, --session-title, --agent, --new-session)
-  sideshow json <file|-> [options]        publish a JSON surface (collapsible tree)
-      --title <t>       surface title
+  sideshow json <file|-> [options]        publish a JSON post (collapsible tree)
+      --title <t>       post title
       (also: --session, --session-title, --agent, --new-session)
-  sideshow code <file|-> [options]        publish a code surface (shiki-highlighted)
-      --title <t>       surface (card) title
+  sideshow code <file|-> [options]        publish a code post (shiki-highlighted)
+      --title <t>       post (card) title
       --filename <f>    filename shown in the code header bar (defaults to the
                         file argument's basename)
       --language <lang>  shiki language id (ts, js, python, ...); inferred from
@@ -70,10 +70,10 @@ usage:
       --line-start <n>  1-based line number the excerpt starts at (shows
                         original line numbers instead of 1-based)
       (also: --session, --session-title, --agent, --new-session)
-  sideshow kits                           list the opt-in html kits this board offers
-  sideshow update <id> <file|->           revise a surface (new version, same card)
+  sideshow kits                           list the opt-in html kits this workspace offers
+  sideshow update <id> <file|->           revise a post (new version, same card)
       --title <t>       replace title
-      --kit <id>        opt the html part into a kit (repeatable)
+      --kit <id>        opt the html surface into a kit (repeatable)
   sideshow wait [options]                 block until the user comments (long-poll)
       --session <id>    session to watch (default: auto)
       --timeout <sec>   max seconds to wait (default 120)
@@ -99,19 +99,20 @@ usage:
                                           (run after publishing)
       --session <id>    target session (default: auto)
       --transcript <f>  transcript file (default: newest Claude Code log for cwd)
-      --pad <n>         prompts of context to keep around the session's surfaces
+      --pad <n>         prompts of context to keep around the session's posts
                         (default 5; the trace is windowed so it explains how
                         THESE visuals were made, not the whole session)
       --all             sync the whole transcript, not just the windowed slice
       --reset           replace the session's trace (full re-sync, not just the tail)
       --quiet           print nothing on success
-  sideshow comment <text> [options]       reply to the user on a surface
-      --surface <id>    surface to attach the comment to (required)
+  sideshow comment <text> [options]       reply to the user on a post
+      --post <id>       post to attach the comment to (required;
+                        --surface is a deprecated alias)
       --author <name>   defaults to agent name
-  sideshow list [--session <id>|--all]    list surfaces
+  sideshow list [--session <id>|--all]    list posts
   sideshow sessions                       list sessions
   sideshow demo                           seed two example sessions to explore the viewer
-  sideshow guide                          print the design contract for surfaces
+  sideshow guide                          print the design contract for posts
   sideshow setup                          print the AGENTS.md integration block
   sideshow agent-howto             print current agent how-to
   sideshow mcp                            run the stdio MCP server (for agent configs)
@@ -476,9 +477,7 @@ function watchLine(c) {
   const text = String(c.text ?? "")
     .replace(/\s+/g, " ")
     .trim();
-  const where = c.postId
-    ? `on “${c.postTitle ?? "a surface"}” (surface ${c.postId})`
-    : "on the session";
+  const where = c.postId ? `on “${c.postTitle ?? "a post"}” (post ${c.postId})` : "on the session";
   return `sideshow comment ${where}: “${text}”`;
 }
 
@@ -656,7 +655,7 @@ function buildTraceSteps(text) {
 }
 
 // Restrict a transcript's steps to a window of prompts around this session's
-// surfaces, so each session's trace shows how ITS visuals were made — the
+// posts, so each session's trace shows how ITS visuals were made — the
 // prompts/thinking/tools near when they were published — not the whole
 // transcript. `pad` is how many prompts of context to keep on each side.
 function scopeToSurfaces(steps, surfaceTimes, pad) {
@@ -681,7 +680,7 @@ function scopeToSurfaces(steps, surfaceTimes, pad) {
 }
 
 // Core trace sync, shared by the `trace-sync` command and the `hook`. Reads the
-// transcript, windows it around the session's surfaces (unless `all`), and POSTs
+// transcript, windows it around the session's posts (unless `all`), and POSTs
 // the slice. Uses fetchJson (throws, never exits) so the hook can swallow
 // failures. A windowed sync always replaces — the span shifts as the session
 // grows, so the per-session cursor only matters for un-windowed (`all`) syncs.
@@ -813,7 +812,7 @@ const commands = {
       if (codeFile !== "-") part.title = codeFile.split("/").pop() || codeFile;
       parts.push(part);
     }
-    // Resolve the session first so the image upload and the surface share it.
+    // Resolve the session first so the image upload and the post share it.
     const session = await resolveSession(flags, { create: true });
     if (flags.image !== undefined) {
       const asset = await uploadFile(flags.image, { session, kind: "image" });
@@ -1017,9 +1016,9 @@ const commands = {
     if (lang) part.language = lang;
     const ls = Number(flags["line-start"]);
     if (Number.isFinite(ls) && ls >= 1) part.lineStart = Math.floor(ls);
-    // The part's title (filename) shows inside the code surface's header bar.
+    // The surface's title (filename) shows inside the code surface's header bar.
     // Default to the basename of the file argument; --filename overrides; use
-    // --title for the surface (card) title instead.
+    // --title for the post (card) title instead.
     const filename =
       flags.filename ??
       (positionals[0] !== "-" ? positionals[0].split("/").pop() || positionals[0] : undefined);
@@ -1134,7 +1133,7 @@ const commands = {
   // Derive this session's step trace from the agent's transcript and post the
   // steps appended since last run (one batched call). The agent runs it at a
   // checkpoint — e.g. right after publishing — so the timeline shows the work
-  // behind each surface. Idempotent: a per-session cursor sends only the tail,
+  // behind each post. Idempotent: a per-session cursor sends only the tail,
   // and the first sync of a session replaces (reset) so re-runs never dupe.
   async "trace-sync"() {
     const { values: flags, positionals } = parse({
@@ -1246,22 +1245,25 @@ const commands = {
     const { values: flags, positionals } = parse({
       allowPositionals: true,
       options: {
-        surface: { type: "string" },
+        post: { type: "string" },
+        surface: { type: "string" }, // deprecated alias
         snippet: { type: "string" }, // legacy alias
         author: { type: "string" },
         agent: { type: "string" },
       },
     });
     const text = positionals.join(" ").trim();
-    if (!text) fail("usage: sideshow comment <text> --surface <id>");
-    const surface = flags.surface ?? flags.snippet;
-    if (!surface) fail("a comment must target a surface — pass --surface <id>");
+    if (!text) fail("usage: sideshow comment <text> --post <id>");
+    // --surface / --snippet stay as back-compat aliases for --post; the request
+    // body key is the wire field `surface`, kept as-is.
+    const post = flags.post ?? flags.surface ?? flags.snippet;
+    if (!post) fail("a comment must target a post — pass --post <id>");
     out(
       await api("/api/comments", {
         method: "POST",
         body: JSON.stringify({
           text,
-          surface,
+          surface: post,
           author: flags.author ?? agentName(flags),
         }),
       }),
@@ -1290,8 +1292,8 @@ const commands = {
     out(await api("/api/sessions"));
   },
 
-  // List the opt-in html kits this board offers (id, label, summary, classes).
-  // Pair with `publish --kit <id>` to inject a kit's CSS/JS into an html part.
+  // List the opt-in html kits this workspace offers (id, label, summary, classes).
+  // Pair with `publish --kit <id>` to inject a kit's CSS/JS into an html surface.
   async kits() {
     parse();
     out(await api("/api/kits"));

@@ -12,11 +12,11 @@ export interface Session {
   agentSeq: number;
 }
 
-// A surface is an ordered list of parts. Each part declares its own kind;
-// the surface itself is kind-agnostic. An `html` part is arbitrary agent
+// A post is an ordered list of surfaces. Each surface declares its own kind;
+// the post itself is kind-agnostic. An `html` surface is arbitrary agent
 // markup (rendered sandboxed in an iframe); `diff`, `image`, `trace`,
-// `markdown`, `terminal`, and `mermaid` parts are structured data rendered by
-// the trusted viewer. A snippet is just a surface with one html part; a
+// `markdown`, `terminal`, and `mermaid` surfaces are structured data rendered by
+// the trusted viewer. A snippet is just a post with one html surface; a
 // diagram-with-its-diff is `[html, diff]`.
 // The canonical, ordered list of every surface kind — the single source of
 // truth. `SurfaceKind` derives from it, and the MCP tool schemas (mcpSpec.ts)
@@ -47,21 +47,21 @@ export interface HtmlSurface {
   kits?: string[];
 }
 
-// A markdown part is prose the trusted viewer renders — explanations, plans,
-// tradeoff write-ups. Unlike an html part it is NOT sandboxed: the viewer
+// A markdown surface is prose the trusted viewer renders — explanations, plans,
+// tradeoff write-ups. Unlike an html surface it is NOT sandboxed: the viewer
 // renders it to HTML in its own origin, so raw HTML embedded in the source is
 // escaped, not executed (see MarkdownPart.tsx). Agents wanting live markup use
-// an html part instead.
+// an html surface instead.
 export interface MarkdownSurface {
   kind: "markdown";
   markdown: string;
 }
 
-// A mermaid part is diagram source (flowchart, sequence, ERD, gantt, …) the
+// A mermaid surface is diagram source (flowchart, sequence, ERD, gantt, …) the
 // trusted viewer renders to SVG with the mermaid library. Like markdown it is
 // NOT sandboxed: mermaid renders in the viewer's own origin with
 // securityLevel 'strict', sanitizing the SVG and disabling scripts/HTML labels
-// (see MermaidPart.tsx). Agents wanting hand-drawn vector art use an html part
+// (see MermaidPart.tsx). Agents wanting hand-drawn vector art use an html surface
 // with inline <svg> instead.
 export interface MermaidSurface {
   kind: "mermaid";
@@ -85,9 +85,9 @@ export interface DiffSurface {
   layout?: "unified" | "split";
 }
 
-// An image part references an uploaded asset by id; the trusted viewer renders
+// An image surface references an uploaded asset by id; the trusted viewer renders
 // it as a plain <img> in its own chrome (no iframe). Agents can also embed the
-// asset's URL inside an html part instead — both paths resolve to /a/:id.
+// asset's URL inside an html surface instead — both paths resolve to /a/:id.
 export interface ImageSurface {
   kind: "image";
   assetId: string;
@@ -104,7 +104,7 @@ export interface TraceStep {
   ts?: string;
 }
 
-// A trace part renders a step timeline the viewer shows beside the surface.
+// A trace surface renders a step timeline the viewer shows beside the post.
 // `steps` travel inline (small, structured); `assetId` points at a larger
 // uploaded trace file (JSON/JSONL), offered for download and rendered when it
 // parses. At least one of the two is present.
@@ -115,7 +115,7 @@ export interface TraceSurface {
   title?: string;
 }
 
-// A terminal part renders monospace terminal output the viewer styles as a
+// A terminal surface renders monospace terminal output the viewer styles as a
 // terminal window. `text` travels inline (like html) — raw output that may
 // carry ANSI SGR escapes (colors/bold/italic); the viewer converts those to
 // styled spans and HTML-escapes everything else. `cols` is an optional render
@@ -129,7 +129,7 @@ export interface TerminalSurface {
   title?: string;
 }
 
-// A json part is a pre-parsed JSON value the trusted viewer renders as a
+// A json surface is a pre-parsed JSON value the trusted viewer renders as a
 // collapsible tree (objects/arrays expand and collapse; primitives show inline).
 // Like image/trace it is DATA, not markup: the viewer renders it with Solid
 // text nodes, which escape by construction — so agent-authored JSON can never
@@ -141,7 +141,7 @@ export interface JsonSurface {
   data: unknown;
 }
 
-// A code part is source code the trusted viewer highlights with shiki (the
+// A code surface is source code the trusted viewer highlights with shiki (the
 // same highlighter MarkdownPart uses for fenced code blocks) and renders in a
 // sandboxed iframe. Like markdown/mermaid it is DATA, not markup: the viewer
 // produces the HTML string via shiki, then SandboxedPart parses it inside an
@@ -200,8 +200,8 @@ export interface Comment {
 }
 
 // An uploaded blob (image, trace file, arbitrary file) the agent pushes once and
-// references by id. Stored apart from surfaces so binary never bloats the parts
-// JSON or the 2 MB surface limit. `data` is raw bytes — base64 is an edge-only
+// references by id. Stored apart from surfaces so binary never bloats the surfaces
+// JSON or the 2 MB post limit. `data` is raw bytes — base64 is an edge-only
 // encoding (HTTP/MCP request bodies, JsonFileStore's on-disk JSON).
 export type AssetKind = "image" | "trace" | "file";
 
@@ -267,7 +267,7 @@ export interface Store {
   // Advance the delivered-to-agent comment cursor (never moves backwards).
   markAgentSeen(sessionId: string, seq: number): Promise<void>;
 
-  // Board-level key/value settings (e.g. the selected theme id). Returns null
+  // Workspace-level key/value settings (e.g. the selected theme id). Returns null
   // for an unset key.
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
@@ -315,7 +315,7 @@ export interface SqlStorage {
   exec(query: string, ...bindings: SqlStorageValue[]): SqlStorageCursor;
 }
 
-// A whole board's contents, used to migrate one backend's data into another
+// A whole workspace's contents, used to migrate one backend's data into another
 // (JSON file → SQLite). Carries every field verbatim — ids, versions, history,
 // comment `seq`, `agentSeq`, asset bytes — so identity and the feedback cursor
 // survive the copy.
@@ -353,8 +353,8 @@ export function stripNulStep(s: TraceStep): TraceStep {
   return out;
 }
 
-// Per-asset upload cap (enforced at the HTTP/MCP edge → 413) and the board-wide
-// budget the store evicts down to. One Durable Object holds the whole board, so
+// Per-asset upload cap (enforced at the HTTP/MCP edge → 413) and the workspace-wide
+// budget the store evicts down to. One Durable Object holds the whole workspace, so
 // the budget sits well under its ~10 GB SQLite ceiling.
 export const MAX_ASSET_BYTES = 5 * 1024 * 1024;
 export const MAX_WORKSPACE_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
@@ -362,7 +362,7 @@ export const MAX_WORKSPACE_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
 // Short, unguessable id: 8 random bytes (64 bits) as 11 url-safe base64 chars —
 // YouTube-video-id sized. These double as bearer capabilities: in publicRead
 // mode `/s/:id` and `/api/{sessions,surfaces}/:id` are reachable without the
-// board token, so the id IS the share secret and must resist enumeration. 64
+// workspace token, so the id IS the share secret and must resist enumeration. 64
 // bits (~1.8e19) is far past sweepable; the old `randomUUID().split("-")[0]`
 // kept only the first 32-bit segment (~4e9), brute-forceable in about an hour.
 // (Assets use a separate content-hash id, not this.) btoa is a global in both
@@ -385,9 +385,9 @@ export async function hashAssetId(data: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// A snippet is sugar for a single html part; this bridges the legacy
-// `{ html }` shape (CLI `publish`, `POST /api/snippets`) to the parts model.
-// An optional `kits` list opts the part into style/behavior bundles (kits.ts).
+// A snippet is sugar for a single html surface; this bridges the legacy
+// `{ html }` shape (CLI `publish`, `POST /api/snippets`) to the surfaces model.
+// An optional `kits` list opts the surface into style/behavior bundles (kits.ts).
 export const htmlSurface = (html: string, kits?: unknown): HtmlSurface => ({
   kind: "html",
   html,
@@ -396,9 +396,9 @@ export const htmlSurface = (html: string, kits?: unknown): HtmlSurface => ({
     : {}),
 });
 
-// The combined byte weight of a surface's parts, for size limits. image/trace
-// parts are tiny (refs + inline steps) — the asset bytes they point at are
-// bounded separately by MAX_ASSET_BYTES, not this surface cap.
+// The combined byte weight of a post's surfaces, for size limits. image/trace
+// surfaces are tiny (refs + inline steps) — the asset bytes they point at are
+// bounded separately by MAX_ASSET_BYTES, not this post cap.
 export function surfacesByteLength(surfaces: Surface[]): number {
   let n = 0;
   for (const p of surfaces) {
@@ -429,7 +429,7 @@ export function surfacesByteLength(surfaces: Surface[]): number {
   return n;
 }
 
-// Collect the asset ids an ordered parts list references (image/trace parts).
+// Collect the asset ids an ordered surfaces list references (image/trace surfaces).
 // Used to keep referenced assets out of eviction's first wave. Note: assets
 // embedded by raw URL inside html markup are invisible here — touch-on-serve
 // keeps those warm instead.

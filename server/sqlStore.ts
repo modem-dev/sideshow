@@ -29,7 +29,7 @@ import {
 
 // Store implementation on SQLite — a Durable Object's `ctx.storage.sql` in the
 // Worker, or node:sqlite via an adapter on Node (see server/sqliteStorage.ts).
-// One board = one database, so plain SQL with no tenant columns.
+// One workspace = one database, so plain SQL with no tenant columns.
 export class SqlStore implements Store {
   private sql: SqlStorage;
 
@@ -65,7 +65,7 @@ export class SqlStore implements Store {
         PRIMARY KEY (sessionId, seq)
       );
     `);
-    // Boards created before agentSeq existed need the column added; SQLite
+    // Workspaces created before agentSeq existed need the column added; SQLite
     // has no ADD COLUMN IF NOT EXISTS, so probe and patch.
     const sessionCols = this.sql.exec("SELECT name FROM pragma_table_info('sessions')").toArray();
     if (!sessionCols.some((c) => c.name === "agentSeq")) {
@@ -75,7 +75,7 @@ export class SqlStore implements Store {
     this.migrateToPosts();
   }
 
-  // Pre-0.5.0 boards stored a `snippets` table and `comments.snippetId`. Lift
+  // Pre-0.5.0 workspaces stored a `snippets` table and `comments.snippetId`. Lift
   // them into the posts model in place — deployed DOs can never be reset.
   private migrateToSurfaces() {
     const commentCols = this.sql
@@ -122,7 +122,7 @@ export class SqlStore implements Store {
     this.sql.exec("DROP TABLE snippets");
   }
 
-  // 0.5.x boards stored a `surfaces` table with a `parts` column and
+  // 0.5.x workspaces stored a `surfaces` table with a `parts` column and
   // `comments.surfaceId/surfaceTitle`. Lift them into the posts model in place.
   private migrateToPosts() {
     const commentCols = this.sql
@@ -611,7 +611,7 @@ export class SqlStore implements Store {
   // verbatim — ids, versions, history, the comment `seq` and `agentSeq` the
   // feedback cursor keys on, asset bytes — so identity survives the copy.
   // Wrapped in a transaction so a crash mid-copy rolls back to an empty db
-  // rather than a half-migrated board. Intended for an empty database; the
+  // rather than a half-migrated workspace. Intended for an empty database; the
   // caller gates on that. Only ever runs through the node:sqlite adapter.
   importBoard(snapshot: WorkspaceSnapshot): void {
     this.sql.exec("BEGIN");

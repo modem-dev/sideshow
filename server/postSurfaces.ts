@@ -76,9 +76,9 @@ const filteredArray = <T>(schema: z.ZodType<T, z.ZodTypeDef, any>) =>
     });
   }, z.array(schema));
 
-// `kits` opts an html part into style/behavior bundles (kits.ts). Strict mode
+// `kits` opts an html surface into style/behavior bundles (kits.ts). Strict mode
 // rejects an unknown id with the valid set, so a CLI/REST typo is a clean 400;
-// loose mode filters unknown ids out rather than dropping the whole part.
+// loose mode filters unknown ids out rather than dropping the whole surface.
 const strictKitId = z.string().refine(isKnownKit, (id) => ({
   message: `unknown kit "${id}" — known: ${KIT_IDS.join(", ")}`,
 }));
@@ -104,22 +104,22 @@ const strictMarkdownPart = z.object({
   kind: z.literal("markdown"),
   markdown: requiredString("markdown"),
 });
-// Loose mode drops a blank markdown part rather than publishing an empty card.
+// Loose mode drops a blank markdown surface rather than publishing an empty card.
 const looseMarkdownPart = z
   .object({ kind: z.literal("markdown"), markdown: z.string() })
   .refine((p) => p.markdown.trim().length > 0, {
-    message: 'markdown part requires non-empty "markdown"',
+    message: 'markdown surface requires non-empty "markdown"',
   });
 
 const strictMermaidPart = z.object({
   kind: z.literal("mermaid"),
   mermaid: requiredString("mermaid"),
 });
-// Loose mode drops a blank mermaid part rather than publishing an empty card.
+// Loose mode drops a blank mermaid surface rather than publishing an empty card.
 const looseMermaidPart = z
   .object({ kind: z.literal("mermaid"), mermaid: z.string() })
   .refine((p) => p.mermaid.trim().length > 0, {
-    message: 'mermaid part requires non-empty "mermaid"',
+    message: 'mermaid surface requires non-empty "mermaid"',
   });
 
 const strictDiffPart = z
@@ -130,7 +130,7 @@ const strictDiffPart = z
     layout: z.enum(["unified", "split"]).optional(),
   })
   .refine((p) => !!p.patch || (p.files?.length ?? 0) > 0, {
-    message: 'diff part requires string "patch" or non-empty "files"',
+    message: 'diff surface requires string "patch" or non-empty "files"',
   });
 const looseDiffPart = z
   .object({
@@ -140,7 +140,7 @@ const looseDiffPart = z
     layout: looseLayout,
   })
   .refine((p) => !!p.patch || (p.files?.length ?? 0) > 0, {
-    message: 'diff part requires string "patch" or non-empty "files"',
+    message: 'diff surface requires string "patch" or non-empty "files"',
   });
 
 const strictImagePart = z.object({
@@ -164,7 +164,7 @@ const strictTracePart = z
     title: z.string().optional(),
   })
   .refine((p) => !!p.assetId || (p.steps?.length ?? 0) > 0, {
-    message: 'trace part requires "assetId" or non-empty "steps"',
+    message: 'trace surface requires "assetId" or non-empty "steps"',
   });
 const looseTracePart = z
   .object({
@@ -174,7 +174,7 @@ const looseTracePart = z
     title: optionalLooseString,
   })
   .refine((p) => !!p.assetId || (p.steps?.length ?? 0) > 0, {
-    message: 'trace part requires "assetId" or non-empty "steps"',
+    message: 'trace surface requires "assetId" or non-empty "steps"',
   });
 
 const strictTerminalPart = z.object({
@@ -190,9 +190,9 @@ const looseTerminalPart = z.object({
   title: optionalLooseString,
 });
 
-// A json part carries a pre-parsed JSON value (`data: unknown`). Strict mode
+// A json surface carries a pre-parsed JSON value (`data: unknown`). Strict mode
 // rejects a missing `data` key (null is valid — it's a JSON value); loose mode
-// drops the part if `data` is absent. The transform fixes zod's inference:
+// drops the surface if `data` is absent. The transform fixes zod's inference:
 // z.unknown() marks the key optional, but data is always present after the
 // refine, so the output type must be { kind: "json"; data: unknown }.
 const strictJsonPart = z
@@ -201,7 +201,7 @@ const strictJsonPart = z
     data: z.unknown(),
   })
   .refine((p) => p.data !== undefined, {
-    message: 'json part requires "data"',
+    message: 'json surface requires "data"',
   })
   .transform((p) => ({ kind: "json" as const, data: p.data }));
 const looseJsonPart = z
@@ -210,7 +210,7 @@ const looseJsonPart = z
     data: z.unknown(),
   })
   .refine((p) => p.data !== undefined, {
-    message: 'json part requires "data"',
+    message: 'json surface requires "data"',
   })
   .transform((p) => ({ kind: "json" as const, data: p.data }));
 
@@ -282,7 +282,7 @@ export async function validateSurfaces(
 }
 
 // Renderability checks that run after the structural zod parse succeeds. Strict
-// mode reports these as 400s; loose mode (MCP) drops the part. Runtime-agnostic:
+// mode reports these as 400s; loose mode (MCP) drops the surface. Runtime-agnostic:
 // the parsers used here are the same ones richRender.ts runs server-side (JS
 // regex engine, no DOM/WASM), so this is safe on the Worker DO too. The mermaid
 // parser (@mermaid-js/parser, the official extraction) covers the 15
@@ -315,10 +315,12 @@ async function validateSemantics(part: Surface): Promise<string[]> {
     try {
       if (!diffPatchHasContent(part.patch))
         return [
-          'diff part "patch" did not parse to any file — expected a unified/git patch with --- /+++ headers and @@ hunks',
+          'diff surface "patch" did not parse to any file — expected a unified/git patch with --- /+++ headers and @@ hunks',
         ];
     } catch (e) {
-      return ['diff part "patch" failed to parse: ' + (e instanceof Error ? e.message : "error")];
+      return [
+        'diff surface "patch" failed to parse: ' + (e instanceof Error ? e.message : "error"),
+      ];
     }
   }
   if (part.kind === "mermaid") {

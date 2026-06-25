@@ -1,6 +1,6 @@
-// Server-side rich-part rendering, runtime-agnostic. Renders markdown/terminal/
-// code/diff parts to an HTML body + CSS so they can be served from /s/:id (real
-// URL + sandbox CSP header) exactly like html parts — no POST round-trip, no
+// Server-side rich-surface rendering, runtime-agnostic. Renders markdown/terminal/
+// code/diff surfaces to an HTML body + CSS so they can be served from /s/:id (real
+// URL + sandbox CSP header) exactly like html surfaces — no POST round-trip, no
 // in-memory frame store. No `node:` imports, no DOM globals: passes
 // tsconfig.workers.json and runs on the Worker DO (verified on workerd; shiki
 // uses the JS regex engine and @pierre/diffs the shiki-js SSR path, so neither
@@ -8,7 +8,7 @@
 //
 // Each renderer returns { body, css }; renderSandboxedPart (surfacePage.ts)
 // wraps body+css in the themed opaque-origin document, injecting the chrome
-// theme vars (viewerThemeCss) — so this file only owns the part-specific markup
+// theme vars (viewerThemeCss) — so this file only owns the surface-specific markup
 // and stylesheet, never the surrounding doc/CSP/bridge. (mermaid can't render
 // without a DOM, so it stays a self-rendering CDN doc — see renderMermaidPage in
 // surfacePage.ts — not a function here.)
@@ -53,7 +53,7 @@ function shikiSchemeCss(mode?: Mode): string {
 }
 
 // Every shiki theme any registry theme might select — preloaded once when the
-// shared highlighter is created, so switching the board theme is just a
+// shared highlighter is created, so switching the workspace theme is just a
 // re-highlight against an already-loaded theme (the highlighter is a singleton,
 // so loading only the first-requested pair would leave every other theme
 // unloaded and codeToHtml would throw on it). Mirrors the viewer's highlight.ts.

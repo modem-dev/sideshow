@@ -1,12 +1,12 @@
 # sideshow — design guide for agents
 
 You are drawing to a persistent visual surface the user keeps open in a browser.
-Your surfaces appear instantly as cards, grouped into a session for this
+Your posts appear instantly as cards, grouped into a session for this
 conversation. Read this once before your first publish.
 
-## Surfaces and parts
+## Posts and surfaces
 
-A **surface** is a card built from an ordered list of **parts**. Each part has
+A **post** is a card built from an ordered list of **surfaces**. Each surface has
 a `kind`:
 
 - **`html`** — arbitrary markup you write, rendered in a sandboxed iframe (the
@@ -17,15 +17,15 @@ a `kind`:
   fenced code blocks — tag the fence with a language, e.g. ` ```ts `). Reach for
   it for explanations, plans, and tradeoff write-ups — anything you'd otherwise
   hand-format in html. Markdown image syntax works too: `![caption](/a/<id>)`
-  embeds an uploaded image (see Uploads below) inline, so one markdown part can
+  embeds an uploaded image (see Uploads below) inline, so one markdown surface can
   interleave prose, tables, code, and pictures. Only raw _HTML_ in the source is
-  escaped, not rendered — reach for an `html` part when you need live markup
+  escaped, not rendered — reach for an `html` surface when you need live markup
   (interactivity, vector graphics, custom layout), not just to show a picture.
 - **`mermaid`** — diagram source you hand over as _text_; the viewer renders it
   to an SVG (flowcharts, sequence diagrams, ERDs, gantt, state, …). Reach for it
   when the _shape_ of a system is the point and you'd rather describe it than
   draw SVG by hand. Renders as data, not sandboxed markup (securityLevel
-  `strict`); for bespoke vector art hand-write inline `<svg>` in an `html` part
+  `strict`); for bespoke vector art hand-write inline `<svg>` in an `html` surface
   instead. The viewer themes the diagram (light and dark) automatically — **don't
   set your own colors**. Highlight flowchart nodes with `:::accent` (or
   `class A,B accent`) and edges with `accentLine` (pair with `linkStyle`);
@@ -36,7 +36,7 @@ a `kind`:
 - **`image`** — an uploaded image, referenced by `assetId` (see Uploads below),
   rendered natively by the viewer. Reach for it to show a screenshot or a
   generated picture.
-- **`trace`** — an agent trace rendered as a step timeline beside the surface.
+- **`trace`** — an agent trace rendered as a step timeline beside the post.
   Steps can travel inline, or live in an uploaded file you reference and offer
   for download.
 - **`terminal`** — monospace terminal output, rendered natively as a terminal
@@ -58,19 +58,19 @@ a `kind`:
   optional 1-based line number the excerpt starts at — the viewer shows original
   line numbers instead of 1-based, so you can say "lines 80-150 of x.ts".
   Reach for it when a whole file or snippet is the point — cleaner than a
-  markdown part with one fenced block, and the kind shows up as `code` in the
+  markdown surface with one fenced block, and the kind shows up as `code` in the
   card metadata.
 
 For an issue/PR/CI tree, status board, or stepped deck, reach for an `html`
-part with a kit (see Kits below) rather than a dedicated part kind.
+surface with a kit (see Kits below) rather than a dedicated surface kind.
 
-A surface can combine parts, e.g. `[html, diff]` is a diagram with its code
+A post can combine surfaces, e.g. `[html, diff]` is a diagram with its code
 review in one card, and `[markdown, diff]` is a written rationale above its
-changeset. Trust differs: html parts are sandboxed because you author the
-markup; markdown/mermaid/diff/image/trace/terminal parts are rendered
+changeset. Trust differs: html surfaces are sandboxed because you author the
+markup; markdown/mermaid/diff/image/trace/terminal surfaces are rendered
 by the viewer from data — send data, never markup.
 
-A **`SurfacePart`** is one of:
+A **`Surface`** is one of:
 
 ```
 { "kind": "html", "html": "<p>...</p>" }
@@ -90,7 +90,7 @@ A **`SurfacePart`** is one of:
 
 For a diff, send a `patch` — it carries only the changed lines, so it is the
 compact, preferred form. Use `files` (full before/after contents) only when you
-don't have a patch. A diff part takes an optional `"layout": "unified" | "split"`.
+don't have a patch. A diff surface takes an optional `"layout": "unified" | "split"`.
 
 ## Uploads (images, traces, files)
 
@@ -104,17 +104,17 @@ CLI  sideshow upload shot.png         # prints { id, url }
 ```
 
 The response carries `{ id, url }`. Then reference the asset three ways: as an
-`image` part (`{ "kind": "image", "assetId": "<id>" }`) when the picture is the
-surface; inline in a `markdown` part (`![caption](/a/<id>)`) to sit it beside
-prose; or inside an html part (`<img src="<url>">`) when you're drawing. Per-asset
+`image` surface (`{ "kind": "image", "assetId": "<id>" }`) when the picture is the
+post; inline in a `markdown` surface (`![caption](/a/<id>)`) to sit it beside
+prose; or inside an html surface (`<img src="<url>">`) when you're drawing. Per-asset
 limit is 5 MB.
 
 An asset's **id is the SHA-256 of its bytes**, so the URL is content-addressed:
 derive it locally (`sideshow asset-url shot.png`, or `shasum -a 256`) and write
-the `<img src="/a/<hash>">` or `assetId` into your surface _before_ uploading —
+the `<img src="/a/<hash>">` or `assetId` into your post _before_ uploading —
 bytes can follow in any order and the viewer briefly waits for an in-flight asset
 rather than showing a broken image. Identical bytes dedupe to one blob, and an
-asset survives as long as any surface references it (even across sessions).
+asset survives as long as any post references it (even across sessions).
 
 CLI shortcuts: `sideshow image shot.png --title "…"` (upload + publish in one
 shot), `sideshow trace run.json --title "…"`, `sideshow publish sketch.html
@@ -123,29 +123,30 @@ uploading).
 
 ## Publishing
 
-Via MCP tools (preferred): `publish_surface`, `update_surface`,
-`wait_for_feedback`, `reply_to_user`, `list_surfaces`. (`publish_snippet` /
+Via MCP tools (preferred): `publish_post`, `update_post`,
+`wait_for_feedback`, `reply_to_user`, `list_posts`. (`publish_surface` /
+`update_surface` remain as deprecated aliases; `publish_snippet` /
 `update_snippet` remain as html-only sugar aliases.) Via CLI:
 `sideshow publish file.html --title "..."`, `sideshow diff change.patch
 --title "..."`, `sideshow wait`. Via raw HTTP:
 
 ```
-POST /api/surfaces        { "title": "...", "parts": [...], "session": "<id>", "agent": "your-name" }
-PUT  /api/surfaces/:id     { "parts": [...] }    # revise — same card, new version
-GET  /api/sessions/:id/surfaces                  # list a session's surfaces
+POST /api/posts          { "title": "...", "surfaces": [...], "session": "<id>", "agent": "your-name" }
+PUT  /api/posts/:id        { "surfaces": [...] }   # revise — same card, new version
+GET  /api/sessions/:id/posts                       # list a session's posts
 GET  /api/comments?session=<id>&author=user&wait=60   # user feedback (long-poll, resumes where you left off)
 ```
 
-The legacy `POST /api/snippets { "html": "..." }` endpoints still work as
-html-only back-compat aliases.
+The legacy `POST /api/surfaces` (body key `parts`) and `POST /api/snippets
+{ "html": "..." }` endpoints still work as back-compat aliases.
 
 ### Examples
 
-A combined `[html, diff]` surface — a diagram above its code review. Drop a
-part for the single-part cases:
+A combined `[html, diff]` post — a diagram above its code review. Drop a
+surface for the single-surface cases:
 
 ```
-POST /api/surfaces  { "title": "Retry flow", "parts": [
+POST /api/posts  { "title": "Retry flow", "surfaces": [
   { "kind": "html", "html": "<svg ...>" },
   { "kind": "diff", "patch": "--- a/x.ts\n+++ b/x.ts\n@@ ..." }
 ]}
@@ -166,16 +167,16 @@ sideshow publish sketch.html --diff change.patch --title "Retry flow"   # [html,
 ```
 
 Omit `session` on your first publish; the response's `sessionId` is yours —
-reuse it to keep surfaces grouped. On that first publish also set a session
+reuse it to keep posts grouped. On that first publish also set a session
 title naming the _task_ ("Auth refactor"), not your tool — `sessionTitle` (MCP
 and HTTP) or `--session-title` (CLI); it applies only at creation, so never
-retitle later. To refine a surface, UPDATE it rather than republishing a
+retitle later. To refine a post, UPDATE it rather than republishing a
 near-duplicate — versions are kept and the user can flip between them.
 
 ## The feedback loop
 
-The user can type comments under any surface. Comments attach to a surface
-(`surfaceId`). Feedback reaches you three ways:
+The user can type comments under any post. Comments attach to a post
+(`postId`). Feedback reaches you three ways:
 
 - **Piggyback (automatic).** Every publish/update/reply response may include a
   `userFeedback` array — comments the user left since your last call. Treat
@@ -190,16 +191,16 @@ The user can type comments under any surface. Comments attach to a surface
   it on the session you actually published to.
 
 You can answer in the thread with `reply_to_user` / `sideshow comment` — keep
-replies short; do substantial revisions as surface updates instead.
+replies short; do substantial revisions as post updates instead.
 
 ## HTML contract
 
-An `html` part is a blank canvas — invent the visualization the idea deserves.
+An `html` surface is a blank canvas — invent the visualization the idea deserves.
 Custom SVG, bespoke layouts, small interactions, animation, an unusual way to
 show a relationship: all fair game, and more useful than a safe diagram. The
 contract below is a short list of hard constraints (sandboxing, sizing) plus
 helpers — the kit and theme tokens — that exist to remove busywork and
-guarantee legibility in both themes, **not** to push every surface toward one
+guarantee legibility in both themes, **not** to push every post toward one
 look. Reach for them when they fit; hand-roll freely when your idea is better
 served another way. The constraints keep it readable; what you draw inside them
 is yours.
@@ -221,7 +222,7 @@ are pre-styled to match the viewer, hover/focus included — write the plain
 element, don't restyle it.
 Checkboxes, radios, ranges, and progress bars are themed via `accent-color`.
 
-SVG utility classes, available in every html part:
+SVG utility classes, available in every html surface:
 
 | class                                                            | effect                                                                                                               |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -232,7 +233,7 @@ SVG utility classes, available in every html part:
 | `node`                                                           | pointer cursor + hover dim, for clickable shapes                                                                     |
 | `c-blue` `c-teal` `c-amber` `c-coral` `c-green` `c-red` `c-gray` | color ramp: fill+stroke on shapes (or a whole `<g>`); child `<text>` auto-switches to readable ink in light and dark |
 
-A `<marker id="arrow">` is injected into every html part — end any line with
+A `<marker id="arrow">` is injected into every html surface — end any line with
 `marker-end="url(#arrow)"` and the arrowhead inherits the line's stroke color.
 
 ```html
@@ -252,13 +253,13 @@ then `<i class="ti ti-check"></i>`.
 
 ## Kits — opt-in component bundles
 
-A **kit** is a richer vocabulary an html part opts into. List kit ids in the
-part's `kits` and the sandbox doc gets that kit's CSS (and, for behavior kits,
+A **kit** is a richer vocabulary an html surface opts into. List kit ids in the
+surface's `kits` and the sandbox doc gets that kit's CSS (and, for behavior kits,
 JS) on top of the base — so you write compact class-based markup instead of
-hand-rolling styles. A plain html part (no `kits`) is untouched: the vocabulary
+hand-rolling styles. A plain html surface (no `kits`) is untouched: the vocabulary
 ships only when you ask, so default html stays fully freeform. Discover them
 with `sideshow kits` (or `GET /api/kits`). Every class resolves against the
-theme tokens, so kit output re-themes with the board.
+theme tokens, so kit output re-themes with the workspace.
 
 - **`issues`** — `.card` · nesting `.tree` rail · `.badge` (`.ok`/`.info`/`.warn`/`.danger`)
   · `.dot` · mono `.chip` · `.bar > i` rollup, plus layout (`.row`/`.stack`/`.between`/`.grow`)
@@ -274,7 +275,7 @@ sideshow publish board.html --kit issues       # CLI (repeatable: --kit a --kit 
 ```
 
 ```js
-publish_surface({ parts: [{ kind: "html", html, kits: ["issues"] }] }); // MCP
+publish_post({ surfaces: [{ kind: "html", html, kits: ["issues"] }] }); // MCP
 ```
 
 ```json
@@ -282,7 +283,7 @@ publish_surface({ parts: [{ kind: "html", html, kits: ["issues"] }] }); // MCP
 ```
 
 A kit only adds vocabulary — you can hand-roll custom markup right beside the
-kit classes in the same part.
+kit classes in the same surface.
 
 ## Theming — dark mode is mandatory
 
@@ -309,9 +310,9 @@ a `data:` URI, or an asset you uploaded to this server (`<img src="/a/<id>">`).
 
 ## Interactivity
 
-Two globals are injected into every html part:
+Two globals are injected into every html surface:
 
-- `sendPrompt(text)` — posts `text` to this surface's thread as a `surface`
+- `sendPrompt(text)` — posts `text` to this post's thread as a `surface`
   message (not a user comment): the user sees it, but it does NOT reach you
   through the feedback loop on its own, and it can never impersonate the user.
   Use it for "explore X" affordances the user can then relay to you deliberately.
@@ -320,7 +321,7 @@ Two globals are injected into every html part:
 
 ## Style
 
-A few guardrails that keep surfaces feeling native to the viewer — they shape
+A few guardrails that keep posts feeling native to the viewer — they shape
 the finish, not the idea. Be as inventive as you like with structure, layout,
 and how you show a relationship; just land it in this register:
 
@@ -329,5 +330,5 @@ and how you show a relationship; just land it in this register:
 - Two font weights only: 400 and 500.
 - SVG works great — for diagrams use `<svg width="100%" viewBox="0 0 680 H">`
   with the kit classes above.
-- Keep it focused: one concept per surface. Publish a series of small surfaces
+- Keep it focused: one concept per post. Publish a series of small posts
   with distinct titles rather than one giant page.

@@ -122,6 +122,7 @@ test("a non-numeric --after fails fast instead of being silently dropped", async
 
 test("watch streams each new user comment as one line and re-arms", async () => {
   const server = await serveApp();
+  let child;
   try {
     const session = await post(`${server.url}/api/sessions`, { agent: "e2e", title: "Watch" });
     const snippet = await post(`${server.url}/api/snippets`, {
@@ -130,20 +131,20 @@ test("watch streams each new user comment as one line and re-arms", async () => 
       session: session.id,
     });
 
-    const child = spawn(process.execPath, [CLI, "watch"], {
+    child = spawn(process.execPath, [CLI, "watch"], {
       env: { ...process.env, SIDESHOW_URL: server.url, SIDESHOW_SESSION: session.id },
     });
     let stdout = "";
     child.stdout.on("data", (d) => (stdout += d));
 
-    // first comment, on a surface — should surface with its title and id
+    // first comment, on a post — should surface with its title and id
     await post(`${server.url}/api/comments`, {
       surface: snippet.id,
       text: "tighten\nthe spacing",
       author: "user",
     });
     await waitFor(() => stdout.includes("tighten the spacing"));
-    assert.match(stdout, /sideshow comment on “Doc” \(surface .+\): “tighten the spacing”/);
+    assert.match(stdout, /sideshow comment on “Doc” \(post .+\): “tighten the spacing”/);
 
     // a second comment proves the loop re-armed (not a one-shot)
     await post(`${server.url}/api/comments`, {
@@ -152,13 +153,14 @@ test("watch streams each new user comment as one line and re-arms", async () => 
       author: "user",
     });
     await waitFor(() => stdout.includes("and ship it"));
-    assert.match(stdout, /sideshow comment on “Doc” \(surface .+\): “and ship it”/);
+    assert.match(stdout, /sideshow comment on “Doc” \(post .+\): “and ship it”/);
 
     // exactly-once: neither comment is repeated across the re-arming polls
     assert.equal(stdout.match(/tighten the spacing/g)?.length, 1);
-
-    child.kill();
   } finally {
+    // Kill in finally so a failed assertion can't leave the streaming child
+    // alive — an open SSE connection would otherwise block server.close().
+    child?.kill();
     await server.close();
   }
 });

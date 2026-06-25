@@ -138,7 +138,7 @@ aside > .brand {
   cursor: pointer;
   margin-bottom: 2px;
 }
-/* Sessions with no surfaces yet: present but visually receded. */
+/* Sessions with no posts yet: present but visually receded. */
 .sess.vacant:not(.sel) .sess-title {
   font-weight: 400;
   color: var(--muted);
@@ -165,7 +165,7 @@ aside > .brand {
   text-overflow: ellipsis;
   padding-right: 18px;
 }
-/* Surface count as a quiet parenthetical on the title. */
+/* Post count as a quiet parenthetical on the title. */
 .sess-count {
   font-weight: 400;
   color: var(--faint);
@@ -1266,7 +1266,7 @@ iframe {
   }
 }
 
-/* phone native parts: prevent each built-in renderer from forcing page overflow */
+/* phone native surfaces: prevent each built-in renderer from forcing page overflow */
 @media (max-width: 700px) {
   .imagepart,
   .tracepart,

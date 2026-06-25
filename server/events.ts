@@ -9,7 +9,7 @@ export type FeedEvent =
       surfaceId: string | null;
       seq: number;
     }
-  // Board theme changed; `id` is the new theme id. Other open tabs re-theme.
+  // Workspace theme changed; `id` is the new theme id. Other open tabs re-theme.
   | { type: "theme-changed"; id: string }
   // Session-scoped agent trace gained steps (synced in a batch). Carries only
   // the new total so the viewer refetches once per batch, not once per step.
@@ -17,9 +17,9 @@ export type FeedEvent =
 
 type Listener = (event: FeedEvent) => void;
 
-// One bus per app instance. On Cloudflare, each board is a single Durable
+// One bus per app instance. On Cloudflare, each workspace is a single Durable
 // Object running one app, so in-memory listeners are correct there too —
-// a module-level singleton would leak events across boards sharing an isolate.
+// a module-level singleton would leak events across workspaces sharing an isolate.
 export class EventBus {
   private listeners = new Set<Listener>();
 

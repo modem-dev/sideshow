@@ -6,8 +6,8 @@ _use_ a running sideshow lives in `guide/AGENT_SETUP.md`, served at `/setup`.)
 
 ## What this is and why
 
-A live visual surface for terminal coding agents: agents publish surfaces
-(multi-part cards — html, markdown, diff, terminal, image, mermaid, json, code) over
+A live visual surface for terminal coding agents: agents publish posts
+(multi-surface cards — html, markdown, diff, terminal, image, mermaid, json, code) over
 CLI/MCP/HTTP; the user watches them render in a browser and comments back. The
 two-way loop — publish → live render → comment → revise/reply — is the product.
 When in doubt, optimize for the loop.
@@ -15,7 +15,7 @@ When in doubt, optimize for the loop.
 Current product stances (deliberate choices, not accidents — revisit
 consciously, not as a side effect):
 
-- One board per person; one session per agent conversation. Accounts and
+- One workspace per person; one session per agent conversation. Accounts and
   multi-user are out of scope; auth is a single deploy token.
 - Three integration tiers, most universal first: zero-dependency CLI, MCP
   (stdio and streamable HTTP at `/mcp`), raw HTTP. Features should work on
@@ -32,10 +32,10 @@ consciously, not as a side effect):
   long-poll `/api/comments`, renderer `/s/:id`, asset upload/serve
   (`/api/assets`, `/a/:id`), and the shared flow functions both REST and MCP call.
 - `server/types.ts` — data model + `Store` interface; no runtime imports. A
-  surface is an ordered list of parts (`html` | `markdown` | `diff` | `terminal`
-  | `image` | `mermaid` | `json` | `code`); a snippet is sugar for a single html part.
+  post is an ordered list of surfaces (`html` | `markdown` | `diff` | `terminal`
+  | `image` | `mermaid` | `json` | `code`); a snippet is sugar for a single html surface.
   `htmlPart` bridges the legacy snippet shape. Assets (uploaded blobs)
-  are a separate entity, referenced by `image` parts; `selectEvictions`
+  are a separate entity, referenced by `image` surfaces; `selectEvictions`
   is the reference-aware LRU policy.
 - `server/public.ts` — the `sideshow/server` package export (`createApp`,
   `JsonFileStore`, types) for embedding the app in a Node process.
@@ -47,35 +47,35 @@ consciously, not as a side effect):
   `JsonFileStore`, the legacy single-file store, still selectable with
   `SIDESHOW_STORE=json`. All must pass `test/storeContract.ts`, and all migrate
   legacy `snippets`/`snippetId` data to surfaces on load. On first SQLite boot
-  `migrateJsonToSqlite` copies an existing JSON board in once (identity, history,
+  `migrateJsonToSqlite` copies an existing JSON workspace in once (identity, history,
   and comment `seq` preserved via `JsonFileStore.exportBoard` →
   `SqlStore.importBoard`); it's idempotent and never imports into a non-empty db.
-- `server/kits.ts` — opt-in style/behavior bundles for html parts (`issues`,
-  `slides`). An html part lists kit ids in `kits`; `renderHtmlPage` injects each
+- `server/kits.ts` — opt-in style/behavior bundles for html surfaces (`issues`,
+  `slides`). An html surface lists kit ids in `kits`; `renderHtmlPage` injects each
   kit's CSS/JS into the sandbox after the base. Runtime-agnostic; allowlisted in
   `surfaceParts` and listed at `/api/kits`. Adding a kit is a registry entry +
-  a guide bullet — no new part kind, no native-render surface.
+  a guide bullet — no new surface kind, no native renderer.
 - `server/richRender.ts` — server-side renderers for the rich kinds
   (`renderMarkdown`/`renderCode`/`renderDiff`/`renderTerminal` → `{body, css}`),
   runtime-agnostic so they run on the Worker DO too (shiki on the JS regex
   engine, @pierre/diffs SSR via `shiki-js`, markdown-it, ansi_up — no WASM/DOM).
   `/s/:id` calls these and wraps the result in `renderSandboxedPart`.
 - `server/surfacePage.ts` — sandboxed documents for surface markup. `renderHtmlPage`
-  wraps an html part (CDN-allowlist CSP + the postMessage bridge: resize,
+  wraps an html surface (CDN-allowlist CSP + the postMessage bridge: resize,
   sendPrompt, openLink) and injects any opted-in kits (`kits.ts`).
   `renderSandboxedPart` wraps a server-rendered rich body (markdown/code/diff/
   terminal — see `richRender.ts`) under a tighter CSP (no `connect-src`, no CDN).
   `renderMermaidPage` is the one exception: mermaid needs a DOM, so it can't be
   server-rendered — instead it emits a self-rendering doc that loads mermaid from
-  the CDN allowlist (so it uses the html-part CSP, which permits the CDN). Image
-  and trace parts stay native because they have no HTML sink (the viewer renders
+  the CDN allowlist (so it uses the html-surface CSP, which permits the CDN). Image
+  and trace surfaces stay native because they have no HTML sink (the viewer renders
   them with text nodes / `<img>` / JSX), and comments render as escaped Solid
   text nodes. No agent markup is ever set as `innerHTML` in the trusted viewer
   origin.
 - `server/themes.ts` — theme registry (github/gruvbox/one), runtime-agnostic so
   both server and viewer import it. One `Palette` per light/dark per theme; the
-  viewer-chrome vars and the html-part `--color-*` tokens are both _derived_
-  from it, so they can't drift. Persisted per board (`Store.getSetting`),
+  viewer-chrome vars and the html-surface `--color-*` tokens are both _derived_
+  from it, so they can't drift. Persisted per workspace (`Store.getSetting`),
   switched at `/api/theme`.
 - `server/mcpHttp.ts` — stateless MCP at `/mcp`. `mcp/server.ts` — stdio MCP,
   a thin client over the HTTP API (passes response fields through untouched).
@@ -102,30 +102,30 @@ consciously, not as a side effect):
 - **Agent-authored content that becomes HTML MUST render inside a sandboxed
   iframe — never as `innerHTML` (or any HTML sink) in the trusted viewer
   origin.** This is the core isolation rule, and it's load-bearing: the viewer
-  shares an origin with the board's authenticated API and the comment→agent
-  channel, so any markup that executes there can read every surface, act as the
-  user, and inject prompts back to the agent. The rule applies to every part
+  shares an origin with the workspace's authenticated API and the comment→agent
+  channel, so any markup that executes there can read every post, act as the
+  user, and inject prompts back to the agent. The rule applies to every surface
   kind, comments, and anything else agent-authored. The two safe ways to render
   it: (a) **build a STRING and serve it from `/s/:id` under a `sandbox` CSP
-  header** — `renderHtmlPage` for html parts, `renderSandboxedPart` for the
+  header** — `renderHtmlPage` for html surfaces, `renderSandboxedPart` for the
   server-rendered rich kinds (markdown/code/diff/terminal), and
   `renderMermaidPage` for the mermaid CDN doc; or (b) **keep it as data and
   render with Solid text nodes / element attributes**, which escape by
   construction (image, trace, and comments — plain escaped text). String-building
   on the server is fine — a string is not a DOM sink; danger only starts when it
-  reaches the DOM, which must happen at an opaque origin. When you add a part
+  reaches the DOM, which must happen at an opaque origin. When you add a surface
   kind, pick (a) or (b); never a third way. The iframes are sandboxed without
-  `allow-same-origin` (opaque origin) and `connect-src`-free for rich parts (no
+  `allow-same-origin` (opaque origin) and `connect-src`-free for rich surfaces (no
   exfil even if contained script runs); never weaken this. Treat anything agent-
   or user-produced as untrusted, whatever its kind or route. Content served from
-  a board-origin URL must be sandboxed by the response itself (a `sandbox` CSP
+  a workspace-origin URL must be sandboxed by the response itself (a `sandbox` CSP
   **header**), not just the embedding iframe — a top-level load bypasses the
   attribute (as `/s/:id` does).
 - Untrusted content can reach the host only through narrow channels (the
   postMessage bridge, the write API). Gate each so contained content can't
   impersonate the user, exfiltrate, or exhaust the server; add any new channel
   the same way.
-- Every part that becomes HTML (html + the rich kinds) is rendered server-side
+- Every surface that becomes HTML (html + the rich kinds) is rendered server-side
   and served from `/s/:id?part=N` by real URL under a `sandbox` CSP header —
   opaque origin, not srcdoc/blob (which a Chrome 149 field trial fails to lay
   out). There is no viewer→server render round-trip and no transient frame store;
@@ -150,7 +150,7 @@ consciously, not as a side effect):
   Objects can't be reset. Follow the `pragma_table_info` probe pattern in its
   constructor.
 - A theme switch must re-theme every layer or it looks broken — the chrome, the
-  server-rendered html parts (reloaded), and each sandboxed-iframe part (whose
+  server-rendered html surfaces (reloaded), and each sandboxed-iframe surface (whose
   colors are baked into its string, so it must re-render, not just restyle). The
   terminal is intentionally theme-independent. Add presets to the registry, not
   per-component.
@@ -196,7 +196,7 @@ Testing notes:
 test.ts` covers the JSON→SQLite import.
 - `JsonFileStore` returns live objects that later mutate — capture fields
   before update calls when asserting against them.
-- The update-notes card is also a `.card`: scope snippet-card e2e selectors
+- The update-notes card is also a `.card`: scope post-card e2e selectors
   with `.card:not(#whatsNew)`.
 
 ## Conventions
@@ -204,10 +204,15 @@ test.ts` covers the JSON→SQLite import.
 - **Naming (rename in progress).** A published artifact is a **post** (an ordered
   list of **surfaces**); a surface is one block (html/markdown/diff/image/…). In
   new code use these names — never `part`, never `surface` for the artifact. The
-  data layer (`server/types.ts`, the stores) already uses them. HTTP route paths
-  (`/api/surfaces`, `/s/:id`), MCP tool names, and `guide/*.md` keep the old
-  spellings for now (deferred). The tenant DB is a **workspace** (`board` is being
-  retired). Canonical glossary: sideshow-cloud `docs/glossary.md`.
+  data layer (`server/types.ts`, the stores), the wire (canonical `/api/posts`),
+  MCP tools (canonical `publish_post`/`update_post`/`list_posts`), the viewer
+  engine, the CLI help, and `guide/*.md` all use them now. Retired spellings stay
+  as back-compat ONLY at the boundary: the legacy HTTP routes (`/api/surfaces`,
+  `/api/snippets`), the `parts` request-body key, the `?part=` query key, the
+  `surface-created/updated/deleted` SSE events, and the deprecated MCP tool
+  aliases (`publish_surface`, etc.) — keep these byte-identical. The tenant DB is
+  a **workspace** (`board` is being retired). Canonical glossary: sideshow-cloud
+  `docs/glossary.md`.
 - Conventional Commits: `type(scope): description`.
 - Changesets drive release notes. For user-visible changes run
   `npm run changeset` and select `patch`/`minor`/`major`; for maintenance-only

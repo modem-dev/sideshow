@@ -48,8 +48,8 @@ export interface McpDeps {
   guide: string;
 }
 
-// Coerce loosely-typed tool args into validated SurfacePart[]. Unknown kinds
-// and empty parts are dropped rather than rejected, so a slightly-off call
+// Coerce loosely-typed tool args into a validated Surface[]. Unknown kinds
+// and empty surfaces are dropped rather than rejected, so a slightly-off call
 // still publishes what it can.
 export const coerceParts = coerceSurfaces;
 

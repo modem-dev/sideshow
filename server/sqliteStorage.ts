@@ -78,7 +78,7 @@ export function createSqliteStorage(path = ":memory:"): SqlStorage {
 }
 
 // One-time migration: if `sqlite` is empty and a legacy JSON store exists at
-// `jsonPath`, copy the whole board in. Idempotent — a sentinel setting records
+// `jsonPath`, copy the whole workspace in. Idempotent — a sentinel setting records
 // that we've run, and we never import into a non-empty db — so it's safe to
 // call on every boot. The JSON file is read-only here and left in place as a
 // backup.

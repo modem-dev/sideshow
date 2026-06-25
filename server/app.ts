@@ -186,9 +186,9 @@ async function fetchLatestFromRegistry(): Promise<LatestRelease | null> {
 
 const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 
-// html parts carry arbitrary markup the viewer renders via a sandboxed iframe,
+// html surfaces carry arbitrary markup the viewer renders via a sandboxed iframe,
 // so the card list never needs their bodies — strip them to a kind marker.
-// diff parts are structured data the viewer renders inline, so keep them whole.
+// diff surfaces are structured data the viewer renders inline, so keep them whole.
 const stripParts = (parts: Surface[]): Surface[] =>
   parts.map((p) => (p.kind === "html" ? { kind: "html", html: "" } : p));
 
@@ -220,9 +220,9 @@ function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
   return false;
 }
 
-// Response to an agent's own write: it already holds the parts it just sent,
+// Response to an agent's own write: it already holds the surfaces it just sent,
 // so echo only the identifiers (a diff patch can be large — never send it
-// back). Reads (the surface list and GET /api/surfaces/:id) carry the blocks.
+// back). Reads (the post list and GET /api/surfaces/:id) carry the surfaces.
 const writeResult = (s: Post) => ({
   id: s.id,
   sessionId: s.sessionId,
@@ -274,14 +274,14 @@ export function createApp({
   const app = new Hono();
   const bus = new EventBus();
 
-  // Rendered-document cache for /s/:id rich parts. Rendering a markdown/code/
-  // diff part runs shiki / @pierre-diffs SSR, which is non-trivial (a big diff
+  // Rendered-document cache for /s/:id rich surfaces. Rendering a markdown/code/
+  // diff surface runs shiki / @pierre-diffs SSR, which is non-trivial (a big diff
   // is tens of ms + tens of KB), so memoize the finished document string. The
-  // key pins everything the output depends on — surface id, part index, the
+  // key pins everything the output depends on — post id, part index, the
   // RESOLVED version number, theme, mode — and a version's content is immutable,
-  // so a hit is always correct (a surface edit bumps the version → a new key).
+  // so a hit is always correct (a post edit bumps the version → a new key).
   // Bounded + FIFO-evicted: a dropped entry costs a re-render, never
-  // correctness. The DurableObject is single-instance per board, so this
+  // correctness. The DurableObject is single-instance per workspace, so this
   // in-memory cache is authoritative; a multi-instance deploy could back it with
   // KV/Cache API behind the same key without changing callers.
   const MAX_RENDER_CACHE = 512;
@@ -360,7 +360,7 @@ export function createApp({
     { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
   > {
     if (input.parts.length === 0) {
-      return { error: "a surface needs at least one part", status: 400 };
+      return { error: "a post needs at least one surface", status: 400 };
     }
     if (surfacesByteLength(input.parts) > MAX_SURFACE_BYTES) {
       return { error: `surface exceeds ${MAX_SURFACE_BYTES} bytes`, status: 413 };
@@ -434,7 +434,7 @@ export function createApp({
   > {
     if (patch.parts) {
       if (patch.parts.length === 0) {
-        return { error: "a surface needs at least one part", status: 400 };
+        return { error: "a post needs at least one surface", status: 400 };
       }
       if (surfacesByteLength(patch.parts) > MAX_SURFACE_BYTES) {
         return { error: `surface exceeds ${MAX_SURFACE_BYTES} bytes`, status: 413 };
@@ -583,8 +583,8 @@ export function createApp({
   });
 
   // Cap every request body. Runs after auth, so an unauthenticated request on a
-  // token-protected board is rejected (401) before its body is ever read; on a
-  // no-token board it still bounds the body. bodyLimit short-circuits on an
+  // token-protected workspace is rejected (401) before its body is ever read; on a
+  // no-token workspace it still bounds the body. bodyLimit short-circuits on an
   // oversize Content-Length and otherwise streams-and-aborts at the cap, so a
   // chunked body (no Content-Length) can't slip past either. /api/assets is
   // exempt here because it applies its own, stricter cap (limitAssetBody below).
@@ -681,11 +681,11 @@ export function createApp({
   app.get("/setup", (c) => c.text(withOrigin(setupText, c)));
   app.get("/agent-howto", (c) => c.text(withOrigin(agentHowtoText, c)));
 
-  // Opt-in html kits available on this board (id, label, summary, classes) —
+  // Opt-in html kits available on this workspace (id, label, summary, classes) —
   // for discovery (`sideshow kits`); the CSS/JS payloads are server-only.
   app.get("/api/kits", (c) => c.json(kitSummaries()));
 
-  // --- theme (one board-level setting) ---
+  // --- theme (one workspace-level setting) ---
 
   app.get("/api/theme", async (c) => {
     const id = (await store.getSetting("theme")) ?? DEFAULT_THEME_ID;
@@ -815,9 +815,9 @@ export function createApp({
   app.post("/api/posts", publishPost); // canonical
   app.post("/api/surfaces", publishPost);
 
-  // Legacy html-only entry — sugar for a single html part. An optional `kits`
-  // array opts the part into style/behavior bundles; it's validated (strict)
-  // like any html part so an unknown kit id is a clean 400.
+  // Legacy html-only entry — sugar for a single html surface. An optional `kits`
+  // array opts the surface into style/behavior bundles; it's validated (strict)
+  // like any html surface so an unknown kit id is a clean 400.
   app.post("/api/snippets", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body.html !== "string" || !body.html.trim()) {
@@ -956,15 +956,15 @@ export function createApp({
 
   // --- rendering ---
 
-  // Serves one part of a surface as a themed, sandboxed document. The viewer
-  // points an iframe here for every part kind that becomes HTML — html parts
+  // Serves one surface of a post as a themed, sandboxed document. The viewer
+  // points an iframe here for every surface kind that becomes HTML — html surfaces
   // (author markup) and the rich kinds (markdown/code/diff/terminal rendered
-  // server-side; mermaid as a self-rendering CDN doc). Image/trace/json parts
+  // server-side; mermaid as a self-rendering CDN doc). Image/trace/json surfaces
   // are data the viewer renders natively (text nodes / <img> / JSX), so they
   // never reach here.
   const renderSurfacePage = async (c: any) => {
     const surface = await store.getPost(c.req.param("id"));
-    if (!surface) return c.text("Surface not found", 404);
+    if (!surface) return c.text("Post not found", 404);
     const partParam = c.req.query("surface") ?? c.req.query("part");
     if (partParam == null) return c.html(configuredViewerHtml(c, surface));
 
@@ -985,22 +985,22 @@ export function createApp({
     // natively in the viewer and must not be reachable as a document.
     const SANDBOXED = ["html", "markdown", "code", "diff", "terminal", "mermaid"];
     if (!part || !SANDBOXED.includes(part.kind)) {
-      return c.text("No renderable part at that index", 404);
+      return c.text("No renderable surface at that index", 404);
     }
     c.header("X-Content-Type-Options", "nosniff");
     // Sandbox the document however it is loaded. The viewer embeds this in an
     // iframe whose `sandbox="allow-scripts"` attribute gives it an opaque origin,
-    // but the document is served from the board's own origin — so a TOP-LEVEL
+    // but the document is served from the workspace's own origin — so a TOP-LEVEL
     // load (a user opening /s/:id in a new tab, an agent-shared link) would
-    // otherwise run the agent's script in the board origin, where it could reach
+    // otherwise run the agent's script in the workspace origin, where it could reach
     // same-origin storage or window.open('/') the real viewer. A `sandbox` CSP
     // can only be set as a response header (not the meta tag the page carries),
     // and it forces the same opaque-origin sandbox on a direct navigation:
     // allow-scripts so the bridge still runs, but no allow-same-origin, so agent
-    // code can never touch the board origin. Mirrors the iframe's sandbox flags.
+    // code can never touch the workspace origin. Mirrors the iframe's sandbox flags.
     c.header("Content-Security-Policy", "sandbox allow-scripts");
     // Theme: an explicit ?theme= (the viewer keys iframe srcs by it so a switch
-    // reloads the frame) wins; otherwise the persisted board theme; else default.
+    // reloads the frame) wins; otherwise the persisted workspace theme; else default.
     const themeId = c.req.query("theme") ?? (await store.getSetting("theme")) ?? DEFAULT_THEME_ID;
     const theme = themeById(themeId);
     // Scheme: the viewer passes the light/dark mode it resolved so the iframe is

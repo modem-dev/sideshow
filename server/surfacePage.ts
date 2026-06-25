@@ -38,7 +38,7 @@ const kitAccentCss = (mode?: Mode): string => schemeCss(KIT_ACCENTS_LIGHT, KIT_A
 // scheme is left to the OS, preserving the media-query behavior unchanged.
 const colorSchemeCss = (mode?: Mode): string => (mode ? `:root{color-scheme:${mode}}` : "");
 
-// Origins html parts may load external resources from. Mirrors the allowlist
+// Origins html surfaces may load external resources from. Mirrors the allowlist
 // agents already know from Claude's inline widget surface.
 const CDN_ALLOWLIST = [
   "https://cdnjs.cloudflare.com",
@@ -67,7 +67,7 @@ function buildCsp(origin: string): string {
   ].join("; ");
 }
 
-// Static design tokens exposed to snippets — fonts and radii. The COLOR tokens
+// Static design tokens exposed to html surfaces — fonts and radii. The COLOR tokens
 // (--color-*) are theme-dependent and injected separately by renderHtmlPage via
 // tokenThemeCss(theme); names match Claude's widget surface either way so agents
 // reuse the same muscle memory.
@@ -92,11 +92,11 @@ body {
 }
 `;
 
-// Snippet kit: element defaults and SVG utility classes baked into every
-// snippet doc so agents publish compact markup instead of hand-writing inline
+// Surface kit: element defaults and SVG utility classes baked into every
+// html-surface doc so agents publish compact markup instead of hand-writing inline
 // CSS. Documented as a reference table in guide/DESIGN_GUIDE.md — keep the
 // two in sync. Note: CSS rules override SVG presentation attributes, so bare
-// element selectors here must never set properties snippets commonly set via
+// element selectors here must never set properties surfaces commonly set via
 // attributes (fill/font-size on text, etc.) — that's why text styling is
 // opt-in via classes.
 const KIT_CSS = `
@@ -151,7 +151,7 @@ svg { font-family: var(--font-sans); fill: var(--color-text-primary); }
 .c-gray text, text.c-gray { fill: var(--color-text-secondary); stroke: none; }
 `;
 
-// Shared SVG defs injected into every snippet doc. Inline SVGs anywhere in
+// Shared SVG defs injected into every html-surface doc. Inline SVGs anywhere in
 // the document can reference these by id; the arrowhead inherits the
 // referencing line's stroke color via context-stroke.
 const SVG_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg>`;
@@ -178,7 +178,7 @@ document.addEventListener('click', function (e) {
   if (a && /^https?:/.test(a.href)) { e.preventDefault(); window.openLink(a.href); }
 });
 // Cmd+Option+Up/Down switches sessions in the sidebar, but keydowns fire in
-// whichever document holds focus — once the user clicks into a snippet, this
+// whichever document holds focus — once the user clicks into a surface, this
 // sandboxed iframe swallows them. Forward just that combo to the host.
 document.addEventListener('keydown', function (e) {
   if (!e.metaKey || !e.altKey || e.ctrlKey || e.shiftKey) return;
@@ -236,12 +236,12 @@ if (window.ResizeObserver) {
 export const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-// Wrap one html part in the themed, sandboxed document the iframe loads. The
-// board's color tokens (theme-dependent) are injected first so the static base
+// Wrap one html surface in the themed, sandboxed document the iframe loads. The
+// workspace's color tokens (theme-dependent) are injected first so the static base
 // + kit resolve against them; `theme` defaults to the github preset.
-// CSP for a rich part (markdown/mermaid/diff). These render markup our own
+// CSP for a rich surface (markdown/mermaid/diff). These render markup our own
 // libraries produced — they never load CDN scripts and never need the network,
-// so the policy is *tighter* than an html part's: only the inline bridge runs,
+// so the policy is *tighter* than an html surface's: only the inline bridge runs,
 // and there is no `connect-src`, so even if a sanitizer regression let agent
 // markup execute, the script is boxed into an opaque origin with no way to
 // phone home. `img-src origin` lets inline markdown images at <origin>/a/:id
@@ -258,15 +258,15 @@ function buildRichCsp(origin: string): string {
 }
 
 // Wrap pre-rendered, *untrusted* markup (markdown HTML, a mermaid SVG, a diff's
-// SSR output) in the same opaque-origin sandbox html parts get. The markup was
+// SSR output) in the same opaque-origin sandbox html surfaces get. The markup was
 // built as a STRING in the trusted viewer (string building is not a DOM sink),
 // and only becomes live DOM here, inside the iframe — so a markdown-it / shiki /
 // mermaid / DOMPurify / @pierre-diffs sanitizer bypass can no longer reach the
-// board. `css` is the part-specific stylesheet (prose/diff/mermaid rules);
-// chrome theme vars come from viewerThemeCss so the part matches the viewer.
+// workspace. `css` is the surface-specific stylesheet (prose/diff/mermaid rules);
+// chrome theme vars come from viewerThemeCss so the surface matches the viewer.
 // `mode` PINS those vars (and any shiki dark-flip the css carries) to the
 // scheme the chrome resolved, so this frame can't diverge from it. Unlike an
-// html part, it deliberately does NOT force `color-scheme`: these frames are
+// html surface, it deliberately does NOT force `color-scheme`: these frames are
 // transparent so the themed card surface shows through, and a forced
 // `color-scheme` would paint an opaque UA canvas behind them. They carry no
 // native scrollbars/controls that need it, so the var pinning alone suffices.
@@ -287,7 +287,7 @@ export function renderSandboxedPart(doc: {
 <meta http-equiv="Content-Security-Policy" content="${buildRichCsp(doc.origin)}">
 <!-- srcdoc's base URL is about:srcdoc, so relative URLs (e.g. a markdown
      image at /a/:id) would not resolve; pin the base to the server origin.
-     img-src in buildRichCsp allows that origin. (html parts don't need this —
+     img-src in buildRichCsp allows that origin. (html surfaces don't need this —
      they load via /s/:id, whose URL is already the base.) -->
 <base href="${doc.origin}/">
 <style>${viewerThemeCss(theme, doc.mode)}${doc.css}</style>
@@ -300,10 +300,10 @@ ${doc.body}
 }
 
 // Mermaid can't run without a DOM, so it can't be server-rendered like the
-// other rich parts; instead the server emits a self-rendering doc that loads
+// other rich surfaces; instead the server emits a self-rendering doc that loads
 // mermaid from the CDN allowlist and renders inside the sandboxed iframe (the
-// "(B)" path). Unlike the other rich parts it needs CDN script/connect access,
-// so it uses the html-part CSP (buildCsp), NOT the tight rich CSP. mermaid's
+// "(B)" path). Unlike the other rich surfaces it needs CDN script/connect access,
+// so it uses the html-surface CSP (buildCsp), NOT the tight rich CSP. mermaid's
 // own DOMPurify (securityLevel 'strict') runs first; the opaque origin is the
 // second boundary. Theme colors are baked into the diagram at render time, so —
 // like shiki's flip — they're PINNED to the chrome-resolved mode the viewer
@@ -481,7 +481,7 @@ export function renderHtmlPage(doc: {
   mode?: Mode;
   // Opt-in kits (kits.ts): their CSS/JS is injected after the base kit. The JS
   // is plain inline script — same trust level as the bridge, already covered by
-  // the html-part CSP's `script-src 'unsafe-inline'`. Unknown ids are ignored.
+  // the html-surface CSP's `script-src 'unsafe-inline'`. Unknown ids are ignored.
   kits?: string[];
 }): string {
   const theme =

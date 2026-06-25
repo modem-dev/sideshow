@@ -1,5 +1,5 @@
-// Theme registry — the single source of truth for the board's palette, shared
-// by the server (html-part token injection in surfacePage) and the viewer
+// Theme registry — the single source of truth for the workspace's palette, shared
+// by the server (html-surface token injection in surfacePage) and the viewer
 // (chrome palette + shiki theme for markdown/diff). Runtime-agnostic: no node
 // imports, so it bundles into the viewer (vite) and typechecks against workers.
 //

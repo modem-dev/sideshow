@@ -2,9 +2,9 @@
 //   1. the chrome palette — a <style> of viewerThemeCss injected into <head>,
 //      overriding the static defaults in styles.css (later rule wins);
 //   2. the shiki theme for markdown/diff — read reactively via activeTheme();
-//   3. html surface parts — Card keys each iframe src on activeTheme(), so a
+//   3. html surfaces — Card keys each iframe src on activeTheme(), so a
 //      switch reloads the frame and the server re-injects matching tokens.
-// The selection persists per-board server-side (PUT /api/theme); other open
+// The selection persists per-workspace server-side (PUT /api/theme); other open
 // tabs re-theme via the theme-changed SSE event (see state.ts).
 import { createSignal } from "solid-js";
 import { api } from "./api.ts";
@@ -82,7 +82,7 @@ export function applyTheme(id: string) {
   emitThemeTokens();
 }
 
-// Fetch the persisted board theme on startup.
+// Fetch the persisted workspace theme on startup.
 export async function initTheme() {
   const res = await api<{ id: string }>("/api/theme").catch(() => null);
   applyTheme(res?.id ?? DEFAULT_THEME_ID);
