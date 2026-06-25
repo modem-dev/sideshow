@@ -1,5 +1,134 @@
 # Changelog
 
+## 0.8.0
+
+### Minor Changes
+
+- f8fb7b3: Viewer: the sidebar wordmark is now a home link. Clicking "sideshow" (in the aside, or the mobile topbar) clears the current session and returns to the session-less base route — a guaranteed way back to the board from anywhere. It's a real `<button>`, so it's keyboard- and screen-reader-reachable. The new `goHome()` always asks the host to navigate (it never short-circuits on the engine's own selection), so an embedding host that layers its own view over the board — e.g. sideshow cloud's full-page Settings, which has no session rows to click out of on an empty board — gets a reliable exit through the same click; the host dedupes a no-op move. Self-hosted behaviour is otherwise unchanged.
+- 4822f77: Embeddable engine: add `onReady?()` to the `SideshowHost` contract and stop flashing the empty-board onboarding before sessions load. On mount the board has no sessions yet, so it rendered `#onboard` (the "setup" pane) until `/api/sessions` resolved, then swapped to a session — a visible flash. The onboarding pane is now gated behind a first-load signal so neither pane is decided before that fetch returns, and the engine calls `host.onReady()` once it resolves and the board is decided. An embedder (e.g. sideshow cloud) holds its loading overlay until then so its users never see the pre-load flash; it fires even if the fetch failed (the board falls back to onboarding), so an overlay can't get stuck. Optional: the trivial self-hosted host omits it — self-hosted simply no longer flashes onboard.
+- 760320f: Embeddable engine: add `onThemeChange?(tokens)` to the Host contract. The engine now PUSHES its fully-resolved palette to the host on initial mount, on every live theme switch, and on an OS light/dark flip — symmetric with `router.navigate`. An embedder (e.g. sideshow cloud) mirrors those tokens onto its own chrome instead of scraping computed styles across the shadow boundary. Optional: the trivial self-hosted host omits it, so self-hosted behaviour is unchanged.
+- 38992d7: Embeddable engine: expose `layout` and `readonly` on the `SideshowHost` contract. A host can now request the stream-only layout (`layout: "stream"` — no sidebar/session list, just the current session's stream) and hide write affordances (`readonly: true`) without relying on the self-hosted `window.__SIDESHOW_*` globals. Self-hosted public-read "session" links keep mapping to the stream layout, so that flow is unchanged.
+- 23be3a1: Link unfurl / inline preview support. Bare `/s/:id` URLs now serve the viewer shell with Open Graph and Twitter Card metadata, so pasting a surface link into Slack, Twitter/X, Discord, or iMessage renders an inline preview card. The `og:image` points to `/s/:id.png?card=1`, which captures a fixed 1200×630 social-card screenshot. Metadata uses only the surface title and a static description — no tokens or session context are leaked.
+- 12bb6b4: Embeddable engine: add a `ss:main` host-overridable slot (`SLOTS.main`) wrapping the whole main content pane (onboarding + session stream). Its fallback is the engine's normal board, so a plain embed and self-hosted sideshow are unchanged. Unlike the always-on footer/empty/session-action overrides, this one is meant to be projected conditionally: an embedder (e.g. sideshow cloud) projects a `slot="ss:main"` child only while its own full-pane view is active — taking over the main area while the sidebar (session list, account footer) stays — and the engine falls back to the board when the child is gone.
+- bd8df08: Screenshot surfaces as PNG by appending `.png` to any surface URL (e.g. `/s/:id.png`). Uses Cloudflare Browser Rendering to capture the rendered page. Supports `?mode=dark|light`, `?theme=`, `?w=` (width), and `?nocache` params. The viewer persists the user's OS color-scheme in a cookie so screenshots automatically match their light/dark preference.
+- e924954: Rename the data model: the published artifact `Surface` → `Post`, and its blocks (`SurfacePart` and the `*Part` variants) → `Surface`. The block field `parts` → `surfaces`, and comment links `surfaceId`/`surfaceTitle` → `postId`/`postTitle`. Exported types, `Store` methods (`listSurfaces`→`listPosts`, …), and helpers (`htmlPart`→`htmlSurface`, `MAX_BOARD_ASSET_BYTES`→`MAX_WORKSPACE_ASSET_BYTES`, `BoardSnapshot`→`WorkspaceSnapshot`) are renamed to match — **a breaking change for library consumers importing these names.**
+
+  SQLite boards migrate in place via a new idempotent `migrateToPosts()` (table `surfaces`→`posts`, column `parts`→`surfaces`, comment columns renamed, history blob re-keyed), mirroring the JSON store's read-time shims. Existing data is preserved.
+
+  Wire: full-object reads `GET /api/surfaces/:id` and `GET`/`POST` `/api/comments` now emit the renamed fields (`surfaces`, `postId`/`postTitle`). Route paths and MCP tool names are unchanged in this release.
+
+- eb2001d: Embeddable engine: add a `ss:session-actions` host-overridable slot (`SLOTS.sessionActions`) in the session header, beside the stream/timeline toggle. It is empty by default — self-hosted renders nothing there — so an embedder (e.g. sideshow cloud) can project session-scoped controls such as a "Share" button into the engine's own chrome without forking the viewer.
+- 9da948d: The local Node server now stores data in SQLite (via the built-in `node:sqlite`)
+  by default — the same `SqlStore` the Cloudflare Durable Object deploy runs, so
+  local development mirrors production over one storage code path instead of a
+  separate JSON file. On first SQLite boot an existing `sideshow.json` board is
+  migrated in once automatically (sessions, surfaces, version history, comment
+  ordering, and assets preserved); the JSON file is left untouched as a backup,
+  and the import never runs again or overwrites a non-empty database.
+
+  This also fixes the JSON store's scaling cliff — it rewrote the entire file
+  (assets base64-inlined) on every write — since assets are now per-row BLOBs.
+
+  Both stores now strip embedded NUL bytes from stored text (titles, comments,
+  trace labels, settings) so they behave identically — SQLite would otherwise
+  truncate a value at the first NUL while the JSON file preserved it.
+
+  Configuration: `SIDESHOW_STORE=json` keeps the legacy single-file JSON store;
+  `SIDESHOW_DB` sets the SQLite file path (default `data/sideshow.db`);
+  `SIDESHOW_DATA` still names the JSON file and doubles as the migration source.
+  The `sideshow/server` package now also exports `SqlStore` and
+  `createSqliteStorage` alongside `JsonFileStore`.
+
+- f5e89d7: Direct links to a surface open a full-page standalone view again. Visiting a bare `/s/:id` URL now shows just that one surface — its title and parts, no sidebar, session feed, or comment thread — with a small "made with sideshow" watermark beneath it, instead of resolving the link into its session's stream. The parts still render in the same sandboxed iframes the board uses (sized by the same resize bridge), and the link keeps its canonical `/s/:id` URL. Link-preview metadata from the bare route is unchanged.
+- 5436598: Embeddable engine: publish the theme-token contract as data via a new lightweight `sideshow/theme-tokens` entry (also re-exported from `sideshow/viewer-embed`). It exports `THEME_TOKEN_NAMES` (the coarse subset of palette vars a host mirrors), the `ThemeTokens` type, and `THEME_DEFAULTS` (the default theme's built-in light/dark values, derived from the theme registry — never hand-copied). A host (e.g. sideshow cloud) can now consume the token names and no-flash fallback colors as typed data instead of copying hex by hand, so the two design systems can't silently drift. The `/theme-tokens` entry is engine-free and Node-safe, so build scripts can read it without pulling in the viewer runtime.
+
+### Patch Changes
+
+- b60c9a2: Cap the asset-upload body while streaming so a chunked request can't OOM the
+  server. `POST /api/assets` rejected oversize uploads by their `Content-Length`
+  header, then read the rest with `arrayBuffer()` — but a chunked upload sends no
+  `Content-Length`, so the header check was skipped and the entire body was
+  buffered into memory before any size check. On a board reachable beyond
+  localhost (and the local default has no auth token), that's an unauthenticated
+  out-of-memory vector. The body is now read through a capped reader that stops at
+  the same limit, so an over-cap stream is refused with a 413 without being
+  buffered first. The post-decode cap in `uploadAsset` is unchanged.
+- eb269b5: Cap every request body so an oversize JSON or MCP payload can't OOM the server.
+  The previous fix bounded `/api/assets`, but every other write endpoint
+  (`/api/surfaces`, `/api/comments`, `/api/sessions`, the trace ingest, `/api/theme`)
+  and `/mcp` still read their body with an unbounded `c.req.json()` — so the same
+  unauthenticated out-of-memory vector was reachable by POSTing a giant JSON body
+  instead (the local default has no auth token). A global `bodyLimit` now rejects
+  any request body over a generous ceiling with a 413, short-circuiting on an
+  oversize `Content-Length` and otherwise aborting the stream at the cap so a
+  chunked body can't slip past. It runs after auth (unauthenticated requests on a
+  token board are refused before their body is read) and exempts `/api/assets`,
+  which streams its own stricter cap.
+- ff217bf: The pi extension's tool schema now accepts the `mermaid` surface part kind. It was omitted from the extension's `kind` enum when mermaid landed, so a pi agent publishing `{kind:"mermaid", mermaid:"..."}` hit a validation error (`parts.0.kind: must be equal to one of the allowed values`) even though the server, MCP spec, and CLI already accepted it. The extension schema now mirrors `mcpSpec.ts`.
+- c8f7c68: Tighten input validation at the edges:
+  - Malformed base64 in an asset upload (REST `/api/assets` and the `upload_asset`
+    MCP tool) now returns a clean 400 instead of surfacing a raw decode error as a 500.
+  - Comment text and surface/session titles are capped (8 KB / 500 chars) before
+    they ride the feedback channel back to the agent, so one oversize value can't
+    bloat the agent's context on every poll.
+  - The CLI's `--after` flag (`wait`, `watch`) now fails fast on a non-numeric
+    value instead of silently ignoring it.
+
+- c04a9ac: Mermaid diagrams now fully re-theme on a light/dark flip. The renderer drove mermaid's `base` theme from the design tokens but left mermaid to derive the rest, so colors it computes itself stayed stuck in light mode — most visibly arrowheads (derived from a hardcoded light canvas) kept their dark fill while the edges they cap flipped. The renderer now passes `darkMode` and `background` and pins the previously-derived arrow/text colors to the viewer's tokens, so every element tracks the active scheme.
+- 58c515f: Validate the `openLink` scheme host-side so a surface can't ask the viewer to
+  open a non-http(s) URL. The in-frame click handler only forwards `http(s)`
+  hrefs, but a surface script can call `openLink()` directly — or post the bridge
+  message raw — with any scheme (`javascript:`, `data:`, `file:`), and the host
+  opened it after a confirm without re-checking. `noopener` already kept those
+  from reaching the board, but the host now refuses anything that isn't
+  `http(s)://` outright, matching the documented "external link" contract.
+- 6e3c1b6: Refresh two README surface-gallery examples so each shows off what its part is for: the `html` example is now a shadcn/ui-style ecommerce products data table (filters, status badges, row selection, pagination) instead of a node-flow diagram, and the `image` example is a designed SaaS billboard ad instead of a before/after bar chart. Updates `scripts/surface-examples/*` and regenerates `docs/surfaces/{01-html,06-image}.png`; no runtime or API changes.
+- 134a926: Reserve the `user` comment author so surface content can't impersonate the user
+  to the agent. `author:"user"` was a forgeable label trusted as a security
+  signal: a surface's script could call `sendPrompt()` (or post the raw bridge
+  message) with no user interaction, and the result became an `author:"user"`
+  comment indistinguishable from one the user typed — laundering untrusted content
+  rendered in a surface into instructions delivered to the agent through the
+  feedback loop. Now `user` is minted only by the viewer's composer (genuine
+  keystrokes in the trusted origin): surface `sendPrompt` posts an `author:"surface"`
+  thread message that is never delivered through the feedback channel, and the
+  HTTP MCP `reply_to_user` tool coerces `author:"user"` to `"agent"` so the agent
+  can't claim it either. The impersonation is now structurally impossible rather
+  than gated.
+- bd3ea88: Fix rich parts (markdown/code/diff/terminal) that intermittently rendered blank
+  or clipped on reload under a Chrome 149 field trial, by rendering them
+  server-side and serving each from `/s/:id?part=N` by real URL — the same
+  opaque-origin, real-navigation load path html parts already use, which the field
+  trial doesn't break (it defers layout only for in-memory `srcdoc`/`blob:`
+  documents). Rich documents render with shiki, @pierre/diffs, markdown-it, and
+  ansi_up on the server (no DOM/WASM, so they run on the Worker too) under a tight
+  `sandbox` CSP response header with no `connect-src` and no CDN script source.
+  Mermaid, which needs a DOM, instead emits a self-rendering document that loads
+  mermaid from the CDN inside the sandbox. Versioned, themed `/s/:id` responses
+  are immutable, so they now carry a long-lived `Cache-Control` and an in-memory
+  render cache. Removes the viewer→server `POST /api/frames` → `/f/:id` round-trip
+  and transient frame store the previous workaround added, and drops mermaid and
+  shiki from the viewer bundle.
+- 3752061: Sandbox the `/s/:id` surface document with a CSP response header, so agent
+  script can never run in the board origin even on a top-level load. The viewer
+  embeds surfaces in a `sandbox="allow-scripts"` iframe (opaque origin), but the
+  document is served from the board's own origin — so opening `/s/:id` directly (a
+  user choosing "open frame in new tab", an agent-shared link) ran the agent's
+  script _in the board origin_, where it could reach same-origin storage or
+  `window.open()` the real viewer. A `sandbox` directive can only be set as a
+  response header (not the page's meta-tag CSP), and now forces the same
+  opaque-origin sandbox however the document is loaded: `allow-scripts` so the
+  bridge still runs, never `allow-same-origin`. Mirrors the iframe's own flags.
+- 57829c0: Fix an auto-resize feedback loop that could pin a CPU core. A sandboxed surface reports its content height to the host, which sizes the iframe to match; when the content's height inverts with the frame height (a scrollbar that toggles at a threshold, a 100vh/percentage layout), sizing the frame changes the content height back, so reports alternate A, B, A, B… once per frame. The old `h !== lastH` guard couldn't catch a 2-cycle, and on a heavy syntax-highlighted surface each relayout was expensive enough to sit at 100% CPU until the surface unmounted. The height reporter now remembers the previous height and drops a rapid return to it (< 250ms), breaking the loop while still honoring genuine changes (a `<details>` toggle, a textarea drag) that recur on a human timescale.
+- 7f86b13: Harden share-link secrecy: session and surface ids are now 11 url-safe base64
+  characters — 8 random bytes, ~64 bits, YouTube-video-id sized — instead of a
+  UUID's first 32-bit segment. In `publicRead` mode these ids double as bearer
+  capabilities (`/s/:id` and `/api/{sessions,surfaces}/:id` are reachable without
+  the board token), so a 32-bit id (~4e9) was enumerable; 64 bits (~1.8e19) is
+  far past sweepable. Existing ids keep working — nothing validates id shape — so
+  only newly minted ones change. (Asset ids are a separate content hash and were
+  already unguessable.)
+
 ## 0.7.0
 
 ### Minor Changes
