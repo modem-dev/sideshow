@@ -84,7 +84,13 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           name === "publish_snippet"
             ? await coerceParts([htmlSurface(String(args.html ?? ""), args.kits)])
             : await coerceParts(blocks);
-        if (parts.length === 0) throw new Error("a post needs at least one surface");
+        if (parts.length === 0) {
+          throw new Error(
+            name === "publish_post"
+              ? "a post needs at least one surface"
+              : "a surface needs at least one part",
+          );
+        }
         const result = await deps.publishSurface({
           parts,
           title: typeof args.title === "string" ? args.title : undefined,

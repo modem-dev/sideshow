@@ -1823,6 +1823,47 @@ test("GET /p/:id and /p/:id?surface=N mirror /s/:id", async () => {
   const viaPartQ = await app.request(`/s/${created.id}?part=1`);
   assert.equal(viaPartQ.status, 200);
   assert.ok((await viaPartQ.text()).includes("second"));
+
+  // cross matrix: new param on the old route, old param on the new route
+  const oldRouteNewParam = await app.request(`/s/${created.id}?surface=1`);
+  assert.equal(oldRouteNewParam.status, 200);
+  assert.ok((await oldRouteNewParam.text()).includes("second"));
+  const newRouteOldParam = await app.request(`/p/${created.id}?part=1`);
+  assert.equal(newRouteOldParam.status, 200);
+  assert.ok((await newRouteOldParam.text()).includes("second"));
+});
+
+test("PUT /api/posts/:id with surfaces:null is a 400, not a silent title-only update", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Orig", surfaces: [{ kind: "html", html: "<p>keep</p>" }] }),
+    )
+  ).json()) as any;
+
+  // explicit null surfaces must be rejected (like POST), not ignored
+  const bad = await app.request(`/api/posts/${created.id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ surfaces: null, title: "New" }),
+  });
+  assert.equal(bad.status, 400);
+  // and the post is unchanged
+  const after = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(after.title, "Orig");
+
+  // a title-only update (no surfaces/parts field at all) still works
+  const ok = await app.request(`/api/posts/${created.id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Renamed" }),
+  });
+  assert.equal(ok.status, 200);
+  assert.equal(
+    ((await (await app.request(`/api/posts/${created.id}`)).json()) as any).title,
+    "Renamed",
+  );
 });
 
 test("GET /api/sessions/:id/posts mirrors /surfaces", async () => {
@@ -1955,6 +1996,18 @@ test("reply_to_user MCP tool accepts postId (and legacy surfaceId)", async () =>
   ).json()) as any;
   assert.ok(!legacy.result.isError, legacy.result.content?.[0]?.text);
   assert.equal(JSON.parse(legacy.result.content[0].text).postId, id);
+
+  // neither postId nor surfaceId → a clean error, not a crash
+  const missing = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(4, "tools/call", {
+        name: "reply_to_user",
+        arguments: { message: "orphan" },
+      }),
+    )
+  ).json()) as any;
+  assert.ok(missing.result.isError);
 });
 
 test("publish_surface MCP tool still accepts legacy parts", async () => {

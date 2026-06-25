@@ -25,7 +25,7 @@ const d = {
     'Session name shown in the sidebar — name the task, e.g. "Auth refactor". Honored only when this publish creates the session.',
   stdioSessionTitle: 'Session name (first publish only), e.g. "Auth refactor"',
   agent: "Your agent name for the session label (first publish only)",
-  surfaceId: "Post id returned by publish_post",
+  surfaceId: "Post id returned by a publish call",
   replacementTitle: "Replacement title",
   replacementParts: "Replacement surfaces array",
   timeout: "How long to wait, 0-300",

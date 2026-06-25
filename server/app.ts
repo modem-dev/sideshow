@@ -851,9 +851,12 @@ export function createApp({
     const body = await c.req.json().catch(() => null);
     if (!body) return c.json({ error: "invalid JSON body" }, 400);
     // posts: a `surfaces` array (legacy `parts`); snippets: an `html` string.
+    // Presence — not nullishness — gates validation, so an explicit
+    // `surfaces: null` is a 400 (like POST) rather than a silent title-only update.
+    const hasBlocks = body.surfaces !== undefined || body.parts !== undefined;
     const blocks = body.surfaces ?? body.parts;
     let parts: Surface[] | undefined;
-    if (blocks !== undefined) {
+    if (hasBlocks) {
       if (!Array.isArray(blocks)) {
         return c.json({ error: '"surfaces" (or legacy "parts") must be an array' }, 400);
       }
