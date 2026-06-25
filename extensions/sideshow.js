@@ -29,12 +29,16 @@ const feedbackGuideline =
 const partSchema = {
   type: "object",
   properties: {
-    kind: { type: "string", enum: ["html", "markdown", "diff", "image", "trace", "terminal"] },
+    kind: { type: "string", enum: ["html", "markdown", "mermaid", "diff", "image", "trace", "terminal"] },
     html: {
       type: "string",
       description: "html part: body fragment only (no doctype/html/head/body)",
     },
     markdown: { type: "string", description: "markdown part: prose rendered by the viewer" },
+    mermaid: {
+      type: "string",
+      description: "mermaid part: diagram source (flowchart, sequence, ERD, gantt, …), rendered to SVG by the viewer",
+    },
     patch: { type: "string", description: "diff part: unified/git patch string" },
     files: {
       type: "array",
@@ -84,7 +88,7 @@ const partSchema = {
 const partsSchema = {
   type: "array",
   description:
-    "Ordered sideshow surface parts. Combine html, markdown, diff, image, trace, and terminal parts in one card.",
+    "Ordered sideshow surface parts. Combine html, markdown, mermaid, diff, image, trace, and terminal parts in one card.",
   items: partSchema,
 };
 
