@@ -206,9 +206,11 @@ function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
   if (mode === "full") return true;
   if (path.startsWith("/session/")) return true;
   if (path.startsWith("/s/")) return true;
+  if (path.startsWith("/p/")) return true;
   if (path.startsWith("/a/")) return true;
   if (path.startsWith("/api/sessions/")) return true;
   if (path.startsWith("/api/surfaces/")) return true;
+  if (path.startsWith("/api/posts/")) return true;
   if (path.startsWith("/api/snippets/")) return true;
   if (path === "/api/comments") return true;
   if (path === "/api/events") return true;
@@ -662,16 +664,19 @@ export function createApp({
     }
     return c.html(configuredViewerHtml(c));
   });
-  app.get("/session/:id/s/:surfaceId", async (c) => {
+  const sessionSurfacePage = async (c: any) => {
     if (isUnauthenticatedSessionRead(c)) {
       const session = await store.getSession(c.req.param("id"));
-      const surface = await store.getPost(c.req.param("surfaceId"));
+      const surfaceId = c.req.param("surfaceId") ?? c.req.param("postId");
+      const surface = await store.getPost(surfaceId ?? "");
       if (!session || !surface || surface.sessionId !== session.id) {
         return c.text("Session or surface not found", 404);
       }
     }
     return c.html(configuredViewerHtml(c));
-  });
+  };
+  app.get("/session/:id/s/:surfaceId", sessionSurfacePage);
+  app.get("/session/:id/p/:postId", sessionSurfacePage); // canonical alias
   app.get("/guide", (c) => c.text(withOrigin(guideMarkdown, c)));
   app.get("/setup", (c) => c.text(withOrigin(setupText, c)));
   app.get("/agent-howto", (c) => c.text(withOrigin(agentHowtoText, c)));
@@ -743,6 +748,7 @@ export function createApp({
     return c.json(surfaces.map(surfaceMeta));
   };
   app.get("/api/sessions/:id/surfaces", listSessionSurfaces);
+  app.get("/api/sessions/:id/posts", listSessionSurfaces); // canonical alias
   app.get("/api/sessions/:id/snippets", listSessionSurfaces); // legacy alias
 
   // --- session trace ---
@@ -790,19 +796,24 @@ export function createApp({
     return c.json(surface);
   };
   app.get("/api/surfaces/:id", getSurface);
+  app.get("/api/posts/:id", getSurface); // canonical alias
   app.get("/api/snippets/:id", getSurface); // legacy alias
 
   // Accepts either an existing session id, or agent/cwd fields to
   // auto-create a session — so a bare `curl` one-liner works with no ceremony.
-  app.post("/api/surfaces", async (c) => {
+  // New clients send `surfaces`; legacy clients send `parts`. Either works.
+  const publishPost = async (c: any) => {
     const body = await c.req.json().catch(() => null);
-    if (!body || !Array.isArray(body.parts)) {
-      return c.json({ error: 'body must include a "parts" array' }, 400);
+    const blocks = body?.surfaces ?? body?.parts;
+    if (!body || !Array.isArray(blocks)) {
+      return c.json({ error: 'body must include a "surfaces" (or legacy "parts") array' }, 400);
     }
-    const parsed = await validateSurfaceParts(body.parts);
+    const parsed = await validateSurfaceParts(blocks);
     if (!parsed.ok) return c.json({ error: parsed.error }, 400);
     return publish(c, body, parsed.parts);
-  });
+  };
+  app.post("/api/posts", publishPost); // canonical
+  app.post("/api/surfaces", publishPost);
 
   // Legacy html-only entry — sugar for a single html part. An optional `kits`
   // array opts the part into style/behavior bundles; it's validated (strict)
@@ -839,11 +850,14 @@ export function createApp({
   const revise = async (c: any) => {
     const body = await c.req.json().catch(() => null);
     if (!body) return c.json({ error: "invalid JSON body" }, 400);
-    // surfaces: a `parts` array; snippets: an `html` string (single html part).
+    // posts: a `surfaces` array (legacy `parts`); snippets: an `html` string.
+    const blocks = body.surfaces ?? body.parts;
     let parts: Surface[] | undefined;
-    if (body.parts !== undefined) {
-      if (!Array.isArray(body.parts)) return c.json({ error: '"parts" must be an array' }, 400);
-      const parsed = await validateSurfaceParts(body.parts);
+    if (blocks !== undefined) {
+      if (!Array.isArray(blocks)) {
+        return c.json({ error: '"surfaces" (or legacy "parts") must be an array' }, 400);
+      }
+      const parsed = await validateSurfaceParts(blocks);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
       parts = parsed.parts;
     } else if (typeof body.html === "string") {
@@ -862,6 +876,7 @@ export function createApp({
     });
   };
   app.put("/api/surfaces/:id", revise);
+  app.put("/api/posts/:id", revise); // canonical alias
   app.put("/api/snippets/:id", revise); // legacy alias
 
   const remove = async (c: any) => {
@@ -872,6 +887,7 @@ export function createApp({
     return c.json({ ok: true });
   };
   app.delete("/api/surfaces/:id", remove);
+  app.delete("/api/posts/:id", remove); // canonical alias
   app.delete("/api/snippets/:id", remove); // legacy alias
 
   // --- comments ---
@@ -943,10 +959,10 @@ export function createApp({
   // server-side; mermaid as a self-rendering CDN doc). Image/trace/json parts
   // are data the viewer renders natively (text nodes / <img> / JSX), so they
   // never reach here.
-  app.get("/s/:id", async (c) => {
+  const renderSurfacePage = async (c: any) => {
     const surface = await store.getPost(c.req.param("id"));
     if (!surface) return c.text("Surface not found", 404);
-    const partParam = c.req.query("part");
+    const partParam = c.req.query("surface") ?? c.req.query("part");
     if (partParam == null) return c.html(configuredViewerHtml(c, surface));
 
     const ver = c.req.query("ver");
@@ -1023,7 +1039,9 @@ export function createApp({
       return renderSandboxedPart({ body: rendered.body, css: rendered.css, origin, theme, mode });
     });
     return c.html(doc);
-  });
+  };
+  app.get("/s/:id", renderSurfacePage);
+  app.get("/p/:id", renderSurfacePage); // canonical alias
 
   // --- assets (agent-uploaded images, traces, files) ---
 

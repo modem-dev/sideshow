@@ -1716,3 +1716,260 @@ test("GET /api/comments?surface= filters to that surface, not the whole session"
   ).json()) as any;
   assert.equal(allInSession.comments.length, 2);
 });
+
+// --- post/surface wire vocabulary (additive, backward-compatible) ---
+
+test("POST /api/posts accepts a surfaces body and aliases /api/surfaces reads", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/posts",
+    json({ title: "Via posts", surfaces: [{ kind: "html", html: "<p>post</p>" }] }),
+  );
+  assert.equal(res.status, 201);
+  const created = (await res.json()) as any;
+  assert.ok(created.id && created.sessionId);
+  assert.deepEqual(created.kinds, ["html"]);
+
+  // GET /api/posts/:id is identical to GET /api/surfaces/:id
+  const viaPosts = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  const viaSurfaces = (await (await app.request(`/api/surfaces/${created.id}`)).json()) as any;
+  assert.deepEqual(viaPosts, viaSurfaces);
+  assert.equal(viaPosts.surfaces[0].html, "<p>post</p>");
+});
+
+test("POST /api/surfaces still accepts a legacy parts body", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/surfaces",
+    json({ title: "Legacy", parts: [{ kind: "html", html: "<p>legacy</p>" }] }),
+  );
+  assert.equal(res.status, 201);
+  const created = (await res.json()) as any;
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].html, "<p>legacy</p>");
+});
+
+test("POST /api/posts also accepts a legacy parts body (fallback)", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/posts",
+    json({ title: "Fallback", parts: [{ kind: "html", html: "<p>fb</p>" }] }),
+  );
+  assert.equal(res.status, 201);
+  const created = (await res.json()) as any;
+  const full = (await (await app.request(`/api/surfaces/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].html, "<p>fb</p>");
+});
+
+test("missing blocks 400 mentions surfaces", async () => {
+  const app = makeApp();
+  const res = await app.request("/api/posts", json({ title: "Empty" }));
+  assert.equal(res.status, 400);
+  const body = (await res.json()) as any;
+  assert.match(body.error, /surfaces/);
+});
+
+test("PUT /api/posts/:id revises with a surfaces body; DELETE /api/posts/:id removes", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Rev", surfaces: [{ kind: "html", html: "<p>v1</p>" }] }),
+    )
+  ).json()) as any;
+
+  const put = await app.request(`/api/posts/${created.id}`, {
+    ...json({ surfaces: [{ kind: "html", html: "<p>v2</p>" }] }),
+    method: "PUT",
+  });
+  assert.equal(put.status, 200);
+  const revised = (await put.json()) as any;
+  assert.equal(revised.version, 2);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].html, "<p>v2</p>");
+
+  const del = await app.request(`/api/posts/${created.id}`, { method: "DELETE" });
+  assert.equal(del.status, 200);
+  assert.equal((await app.request(`/api/posts/${created.id}`)).status, 404);
+});
+
+test("GET /p/:id and /p/:id?surface=N mirror /s/:id", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Pages",
+        surfaces: [
+          { kind: "html", html: "<p>first</p>" },
+          { kind: "markdown", markdown: "## second" },
+        ],
+      }),
+    )
+  ).json()) as any;
+
+  // shell page
+  const shell = await app.request(`/p/${created.id}`);
+  assert.equal(shell.status, 200);
+  assert.match(shell.headers.get("content-type") ?? "", /text\/html/);
+
+  // ?surface=N selects a block (sandboxed document), same as ?part=N
+  const viaSurfaceQ = await app.request(`/p/${created.id}?surface=1`);
+  assert.equal(viaSurfaceQ.status, 200);
+  const bodyNew = await viaSurfaceQ.text();
+  assert.ok(bodyNew.includes("second"));
+
+  // legacy ?part still works on /s/:id
+  const viaPartQ = await app.request(`/s/${created.id}?part=1`);
+  assert.equal(viaPartQ.status, 200);
+  assert.ok((await viaPartQ.text()).includes("second"));
+});
+
+test("GET /api/sessions/:id/posts mirrors /surfaces", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Listed", surfaces: [{ kind: "html", html: "<p>x</p>" }] }),
+    )
+  ).json()) as any;
+  const viaPosts = (await (
+    await app.request(`/api/sessions/${created.sessionId}/posts`)
+  ).json()) as any;
+  const viaSurfaces = (await (
+    await app.request(`/api/sessions/${created.sessionId}/surfaces`)
+  ).json()) as any;
+  assert.deepEqual(viaPosts, viaSurfaces);
+  assert.equal(viaPosts.length, 1);
+});
+
+test("GET /session/:id/p/:postId serves the viewer shell", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Nested", surfaces: [{ kind: "html", html: "<p>x</p>" }] }),
+    )
+  ).json()) as any;
+  const page = await app.request(`/session/${created.sessionId}/p/${created.id}`);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get("content-type") ?? "", /text\/html/);
+});
+
+test("publish_post / update_post / list_posts MCP tools accept surfaces", async () => {
+  const app = makeApp();
+  const list = (await (await app.request("/mcp", mcpCall(1, "tools/list"))).json()) as any;
+  const names = list.result.tools.map((t: any) => t.name);
+  assert.ok(names.includes("publish_post"));
+  assert.ok(names.includes("update_post"));
+  assert.ok(names.includes("list_posts"));
+  // old tools still advertised
+  assert.ok(names.includes("publish_surface"));
+  assert.ok(names.includes("list_surfaces"));
+
+  const published = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "publish_post",
+        arguments: {
+          title: "Post",
+          surfaces: [{ kind: "diff", patch: "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-x\n+y" }],
+        },
+      }),
+    )
+  ).json()) as any;
+  const payload = JSON.parse(published.result.content[0].text);
+  assert.ok(payload.id && payload.sessionId);
+  // new tools emit the canonical /p/ path
+  assert.ok(payload.url.includes(`/p/${payload.id}`));
+  const full = (await (await app.request(`/api/posts/${payload.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].kind, "diff");
+
+  // update_post with surfaces
+  const updated = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(3, "tools/call", {
+        name: "update_post",
+        arguments: { id: payload.id, surfaces: [{ kind: "html", html: "<p>updated</p>" }] },
+      }),
+    )
+  ).json()) as any;
+  const upPayload = JSON.parse(updated.result.content[0].text);
+  assert.equal(upPayload.version, 2);
+  assert.ok(upPayload.url.includes(`/p/${payload.id}`));
+
+  // list_posts scoped to the session
+  const listed = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(4, "tools/call", {
+        name: "list_posts",
+        arguments: { session: payload.sessionId },
+      }),
+    )
+  ).json()) as any;
+  const rows = JSON.parse(listed.result.content[0].text);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, payload.id);
+});
+
+test("reply_to_user MCP tool accepts postId (and legacy surfaceId)", async () => {
+  const app = makeApp();
+  const published = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "publish_post",
+        arguments: { title: "P", surfaces: [{ kind: "html", html: "<p>x</p>" }] },
+      }),
+    )
+  ).json()) as any;
+  const { id } = JSON.parse(published.result.content[0].text);
+
+  // canonical postId arg
+  const replied = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "reply_to_user",
+        arguments: { postId: id, message: "ack", author: "test-agent" },
+      }),
+    )
+  ).json()) as any;
+  assert.ok(!replied.result.isError, replied.result.content?.[0]?.text);
+  const comment = JSON.parse(replied.result.content[0].text);
+  assert.equal(comment.text, "ack");
+  assert.equal(comment.postId, id); // postId routed the reply to the right post's thread
+
+  // legacy surfaceId arg still works
+  const legacy = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(3, "tools/call", {
+        name: "reply_to_user",
+        arguments: { surfaceId: id, message: "ack2" },
+      }),
+    )
+  ).json()) as any;
+  assert.ok(!legacy.result.isError, legacy.result.content?.[0]?.text);
+  assert.equal(JSON.parse(legacy.result.content[0].text).postId, id);
+});
+
+test("publish_surface MCP tool still accepts legacy parts", async () => {
+  const app = makeApp();
+  const published = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "publish_surface",
+        arguments: { title: "Legacy", parts: [{ kind: "html", html: "<p>old</p>" }] },
+      }),
+    )
+  ).json()) as any;
+  const payload = JSON.parse(published.result.content[0].text);
+  assert.ok(payload.url.includes(`/s/${payload.id}`));
+  const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].html, "<p>old</p>");
+});

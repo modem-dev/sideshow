@@ -59,6 +59,47 @@ async function ensureSession(title?: string): Promise<string> {
 const server = new McpServer(MCP_SERVER_INFO, { instructions: MCP_INSTRUCTIONS });
 
 server.registerTool(
+  "publish_post",
+  {
+    description: MCP_TOOL_DESCRIPTIONS.publishPostStdio,
+    inputSchema: STDIO_MCP_INPUT_SCHEMAS.publishPost,
+  },
+  async ({ title, surfaces, sessionTitle }) => {
+    const session = await ensureSession(sessionTitle);
+    const created = JSON.parse(
+      await api("/api/posts", {
+        method: "POST",
+        body: JSON.stringify({ title, surfaces, session }),
+      }),
+    );
+    return text({ ...created, url: `${API}/p/${created.id}` });
+  },
+);
+
+server.registerTool(
+  "update_post",
+  {
+    description: MCP_TOOL_DESCRIPTIONS.updatePost,
+    inputSchema: STDIO_MCP_INPUT_SCHEMAS.updatePost,
+  },
+  async ({ id, surfaces, title }) => {
+    const updated = JSON.parse(
+      await api(`/api/posts/${id}`, { method: "PUT", body: JSON.stringify({ surfaces, title }) }),
+    );
+    return text({ ...updated, url: `${API}/p/${updated.id}` });
+  },
+);
+
+server.registerTool(
+  "list_posts",
+  { description: MCP_TOOL_DESCRIPTIONS.listPostsStdio, inputSchema: {} },
+  async () => {
+    if (!sessionId) return text([]);
+    return text(JSON.parse(await api(`/api/sessions/${sessionId}/posts`)));
+  },
+);
+
+server.registerTool(
   "publish_surface",
   {
     description: MCP_TOOL_DESCRIPTIONS.publishSurfaceStdio,
@@ -157,11 +198,11 @@ server.registerTool(
     description: MCP_TOOL_DESCRIPTIONS.replyToUser,
     inputSchema: STDIO_MCP_INPUT_SCHEMAS.replyToUser,
   },
-  async ({ surfaceId, message }) => {
+  async ({ postId, surfaceId, message }) => {
     const created = JSON.parse(
       await api("/api/comments", {
         method: "POST",
-        body: JSON.stringify({ surface: surfaceId, text: message, author: AGENT }),
+        body: JSON.stringify({ surface: postId ?? surfaceId, text: message, author: AGENT }),
       }),
     );
     return text(created);

@@ -54,13 +54,19 @@ export interface McpDeps {
 export const coerceParts = coerceSurfaceParts;
 
 export function registerMcp(app: Hono, deps: McpDeps) {
-  const surfaceResult = (result: { surface: Post; userFeedback?: Feedback[] }, origin: string) =>
+  // The view URL's path segment: legacy tools emit /s/<id>; the new post tools
+  // emit the canonical /p/<id>. Both resolve to the same surface page.
+  const surfaceResult = (
+    result: { surface: Post; userFeedback?: Feedback[] },
+    origin: string,
+    seg: "s" | "p" = "s",
+  ) =>
     JSON.stringify(
       {
         id: result.surface.id,
         sessionId: result.surface.sessionId,
         version: result.surface.version,
-        url: `${origin}/s/${result.surface.id}`,
+        url: `${origin}/${seg}/${result.surface.id}`,
         ...(result.userFeedback && { userFeedback: result.userFeedback }),
       },
       null,
@@ -69,13 +75,16 @@ export function registerMcp(app: Hono, deps: McpDeps) {
 
   async function callTool(name: string, args: any, origin: string): Promise<string> {
     switch (name) {
+      case "publish_post":
       case "publish_surface":
       case "publish_snippet": {
+        // New tools advertise `surfaces`; legacy tools still send `parts`.
+        const blocks = name === "publish_post" ? (args.surfaces ?? args.parts) : args.parts;
         const parts =
           name === "publish_snippet"
             ? await coerceParts([htmlSurface(String(args.html ?? ""), args.kits)])
-            : await coerceParts(args.parts);
-        if (parts.length === 0) throw new Error("a surface needs at least one part");
+            : await coerceParts(blocks);
+        if (parts.length === 0) throw new Error("a post needs at least one surface");
         const result = await deps.publishSurface({
           parts,
           title: typeof args.title === "string" ? args.title : undefined,
@@ -84,8 +93,9 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           agent: typeof args.agent === "string" ? args.agent : undefined,
         });
         if ("error" in result) throw new Error(result.error);
-        return surfaceResult(result, origin);
+        return surfaceResult(result, origin, name === "publish_post" ? "p" : "s");
       }
+      case "update_post":
       case "update_surface":
       case "update_snippet": {
         const patch: { parts?: Surface[]; title?: string } = {
@@ -94,12 +104,13 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         if (name === "update_snippet") {
           if (typeof args.html === "string")
             patch.parts = await coerceParts([htmlSurface(args.html, args.kits)]);
-        } else if (args.parts !== undefined) {
-          patch.parts = await coerceParts(args.parts);
+        } else {
+          const blocks = name === "update_post" ? (args.surfaces ?? args.parts) : args.parts;
+          if (blocks !== undefined) patch.parts = await coerceParts(blocks);
         }
         const result = await deps.reviseSurface(String(args.id ?? ""), patch);
         if ("error" in result) throw new Error(result.error);
-        return surfaceResult(result, origin);
+        return surfaceResult(result, origin, name === "update_post" ? "p" : "s");
       }
       case "wait_for_feedback": {
         const result = await deps.waitForComments({
@@ -137,7 +148,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         const author = named && named !== "user" ? named : "agent";
         const result = await deps.createComment({
           text: String(args.message ?? ""),
-          surface: String(args.surfaceId ?? ""),
+          surface: String(args.postId ?? args.surfaceId ?? ""),
           author,
         });
         if ("error" in result) throw new Error(result.error);
@@ -147,6 +158,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           2,
         );
       }
+      case "list_posts":
       case "list_surfaces":
       case "list_snippets": {
         const surfaces = await deps.store.listPosts(
