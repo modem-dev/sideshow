@@ -39,6 +39,14 @@ export interface SideshowHost {
   // connect action). Orthogonal to `layout` — a host can have either without the
   // other. Self-hosted drives the same flag via window.__SIDESHOW_READONLY__.
   readonly?: boolean;
+  // Whether this deployment can render a surface as a PNG (the /s/:id.png route).
+  // That route is served only by a Cloudflare Worker with the Browser Rendering
+  // binding; a plain Node server (local dev, `npm start`) has no way to drive a
+  // headless browser, so it is absent there. The engine always shows a
+  // screenshot action on each surface, but disables it with an explanatory
+  // tooltip when this is false. Self-hosted drives the same flag via
+  // window.__SIDESHOW_SCREENSHOTS__. Optional — defaults to off.
+  screenshots?: boolean;
   // The engine calls this with the fully-resolved palette on initial mount, on
   // every live theme switch, and on an OS light/dark flip. Symmetric with
   // router.navigate: the engine owns the themes and TELLS the host its colors,

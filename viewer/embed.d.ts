@@ -31,6 +31,14 @@ export interface SideshowHost {
    */
   readonly?: boolean;
   /**
+   * Whether this deployment can render a surface as a PNG (the /s/:id.png route).
+   * That route needs Cloudflare Browser Rendering, so it exists only on a Workers
+   * deployment; elsewhere the engine shows the per-surface screenshot action but
+   * disables it with an explanatory tooltip. An embedder on Cloudflare sets this
+   * true; self-hosted drives the same flag via a window global. Defaults to off.
+   */
+  screenshots?: boolean;
+  /**
    * The engine calls this with the fully-resolved palette on initial mount, on
    * every live theme switch, and on an OS light/dark flip — symmetric with
    * `router.navigate`. A host mirrors the tokens onto its own chrome instead of

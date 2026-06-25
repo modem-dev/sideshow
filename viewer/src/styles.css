@@ -827,6 +827,17 @@ iframe {
 .card-actions .act.del:hover {
   color: var(--danger);
 }
+/* A disabled action (e.g. screenshots on a server without Browser Rendering)
+   stays visible so the affordance is discoverable, but reads as inert and keeps
+   its tooltip. */
+.card-actions .act:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.card-actions .act:disabled:hover {
+  color: var(--faint);
+  background: none;
+}
 /* The composer takes over the bar when replying; the input claims an accent
    edge on focus — the one moment the zone announces "this is you". */
 .card-actions .composer {

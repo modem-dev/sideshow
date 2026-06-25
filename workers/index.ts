@@ -33,6 +33,9 @@ export class SideshowBoard extends DurableObject<Env> {
       agentHowtoText,
       authToken: env.SIDESHOW_TOKEN,
       publicRead,
+      // This Worker deploys with the Browser Rendering binding (wrangler.jsonc),
+      // so /s/:id.png is live — tell the viewer to enable the screenshot action.
+      screenshots: true,
       version: pkg.version,
       upgradeCommand: "git pull && npm run deploy",
     });

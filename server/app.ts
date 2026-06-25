@@ -128,6 +128,12 @@ export interface AppOptions {
   // write token. "session" exposes only session-scoped reads; "full" exposes
   // every GET route.
   publicRead?: PublicReadMode;
+  // Whether this deployment can render a surface as a PNG (the /s/:id.png route).
+  // That route lives in the Cloudflare Worker entry and needs the Browser
+  // Rendering binding; the plain Node server can't drive a headless browser, so
+  // it leaves this false. Surfaced to the viewer (window.__SIDESHOW_SCREENSHOTS__)
+  // so the per-surface screenshot action knows whether to enable itself.
+  screenshots?: boolean;
   // Update notice: the running version and the upgrade hint that fits this
   // deployment (npm install vs redeploy). Without `version`, /api/version
   // reports nothing and the viewer shows no notice.
@@ -258,6 +264,7 @@ export function createApp({
   authToken,
   basePath,
   publicRead,
+  screenshots,
   version,
   upgradeCommand,
   fetchLatestRelease,
@@ -612,6 +619,7 @@ export function createApp({
       isReadonly && publicRead
         ? `window.__SIDESHOW_PUBLIC_READ__=${JSON.stringify(publicRead)};`
         : "",
+      screenshots ? "window.__SIDESHOW_SCREENSHOTS__=true;" : "",
     ].join("");
     return injectHead(text, `<script>${config}</script>`);
   };

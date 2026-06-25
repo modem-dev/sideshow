@@ -13,6 +13,7 @@ import {
 import {
   api,
   appPath,
+  canScreenshot,
   isReadonly,
   relTime,
   sessionLabel,
@@ -21,8 +22,9 @@ import {
   type Post,
   type TraceSurface as TracePartData,
   surfaceLink,
+  surfaceImageLink,
 } from "./api.ts";
-import { CommentIcon, LinkIcon, OpenIcon, TrashIcon } from "./icons.tsx";
+import { CommentIcon, ImageIcon, LinkIcon, OpenIcon, TrashIcon } from "./icons.tsx";
 import { ImagePart } from "./ImagePart.tsx";
 import { JsonPart } from "./JsonPart.tsx";
 import { activeTheme, resolvedMode } from "./theme.ts";
@@ -323,6 +325,33 @@ export function Card(props: { surface: Post; standalone?: boolean }) {
               >
                 <OpenIcon />
               </a>
+              {/* Open the surface as a PNG. The image is rendered server-side by
+                  the Browser Rendering Worker, so the action is only live where
+                  that exists; on a plain Node server it's disabled with a tooltip
+                  that points at the README. */}
+              <Show
+                when={canScreenshot()}
+                fallback={
+                  <button
+                    class="act icon shot"
+                    disabled
+                    title="Saving a surface as an image needs Cloudflare Browser Rendering, which this server doesn't have. See the README."
+                    aria-label="Screenshots aren't available on this server"
+                  >
+                    <ImageIcon />
+                  </button>
+                }
+              >
+                <a
+                  class="act icon shot"
+                  target="_blank"
+                  href={surfaceImageLink(props.surface.id)}
+                  title="Open as an image (PNG)"
+                  aria-label="Open as an image (PNG)"
+                >
+                  <ImageIcon />
+                </a>
+              </Show>
               <Show when={!isReadonly()}>
                 <span class="divider"></span>
                 <button

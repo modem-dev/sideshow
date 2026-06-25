@@ -44,6 +44,25 @@ claude mcp add --transport http sideshow https://sideshow.<account>.workers.dev/
   --header "Authorization: Bearer $SIDESHOW_TOKEN"
 ```
 
+## Surface screenshots
+
+Every surface can be rendered to a PNG at `/s/:surfaceId.png` (the viewer's
+per-surface "open as image" action links here; `?card=1` produces the 1200×630
+Open Graph/Twitter preview image embedded in `/s/:surfaceId` link unfurls). The
+image is captured by a real headless browser through Cloudflare's [Browser
+Rendering](https://developers.cloudflare.com/browser-rendering/) binding, declared
+in `wrangler.jsonc`:
+
+```jsonc
+"browser": { "binding": "BROWSER" }
+```
+
+Because there is no headless browser on the plain Node server, `/s/:id.png` is a
+Workers-only route. The local viewer still shows the screenshot action, but
+disabled with a tooltip — there is nothing to render the image. Auth is unchanged:
+the Worker first forwards the request to the surface's read route, so a private
+board's screenshots stay as protected as the board itself.
+
 The whole app runs inside a single Durable Object with SQLite storage. One
 instance per board keeps the in-memory event bus authoritative, so SSE and
 long-polling behave the same as the local server.

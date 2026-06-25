@@ -8,7 +8,12 @@ import { JsonFileStore } from "../server/storage.ts";
 
 function makeApp(
   authToken?: string,
-  opts?: { publicRead?: "session" | "full"; basePath?: string; viewerHtml?: string },
+  opts?: {
+    publicRead?: "session" | "full";
+    basePath?: string;
+    viewerHtml?: string;
+    screenshots?: boolean;
+  },
 ) {
   const dir = mkdtempSync(join(tmpdir(), "sideshow-test-"));
   const store = new JsonFileStore(join(dir, "data.json"));
@@ -1027,6 +1032,24 @@ test("public read viewer config marks session-mode visitors readonly", async () 
   const html = await (await app.request(`/session/${created.sessionId}`)).text();
   assert.ok(html.includes("__SIDESHOW_READONLY__=true"));
   assert.ok(html.includes('__SIDESHOW_PUBLIC_READ__="session"'));
+});
+
+test("viewer config enables screenshots when the deployment supports them", async () => {
+  const app = makeApp("secret", { screenshots: true });
+
+  const html = await (
+    await app.request("/", { headers: { authorization: "Bearer secret" } })
+  ).text();
+  assert.ok(html.includes("__SIDESHOW_SCREENSHOTS__=true"));
+});
+
+test("viewer config omits the screenshots flag by default (Node server)", async () => {
+  const app = makeApp("secret");
+
+  const html = await (
+    await app.request("/", { headers: { authorization: "Bearer secret" } })
+  ).text();
+  assert.ok(!html.includes("__SIDESHOW_SCREENSHOTS__"));
 });
 
 test("public read viewer config treats query key as authenticated for that response", async () => {

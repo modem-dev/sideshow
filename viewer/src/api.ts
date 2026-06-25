@@ -56,6 +56,7 @@ declare global {
     // __SIDESHOW_BASE_PATH__ lives in host.ts (the default host reads it).
     __SIDESHOW_READONLY__?: boolean;
     __SIDESHOW_PUBLIC_READ__?: PublicReadMode;
+    __SIDESHOW_SCREENSHOTS__?: boolean;
   }
 }
 
@@ -89,6 +90,19 @@ export function layoutMode(): "full" | "stream" {
 
 export function surfaceLink(id: string): string {
   return `${location.origin}${appPath(`/s/${encodeURIComponent(id)}`)}`;
+}
+
+// The PNG screenshot of a surface (the same /s/:id page, captured server-side).
+// Only reachable where `canScreenshot()` is true — see that helper.
+export function surfaceImageLink(id: string): string {
+  return `${location.origin}${appPath(`/s/${encodeURIComponent(id)}.png`)}`;
+}
+
+// Whether the deployment can render surface screenshots (the /s/:id.png route).
+// Host-first (cloud embed), falling back to the self-hosted global, mirroring
+// isReadonly(). False on a plain Node server, which has no Browser Rendering.
+export function canScreenshot(): boolean {
+  return host().screenshots ?? !!window.__SIDESHOW_SCREENSHOTS__;
 }
 
 export async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
