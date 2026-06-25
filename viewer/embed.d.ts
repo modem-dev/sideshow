@@ -78,6 +78,13 @@ export function mountViewer(el: Element, host?: SideshowHost): ViewerHandle;
 export declare const SLOTS: {
   /** Sidebar footer: doc links, connect action, theme picker. */
   readonly asideFoot: "ss:aside-foot";
+  /**
+   * Empty-sidebar affordance shown in the session list when no sessions exist.
+   * Fallback is a native "Connect an agent" row that scrolls to the empty-board
+   * pane (ss:empty); project a `slot="ss:aside-empty"` child for a host-specific
+   * nudge. Renders only on an empty (post-load) board.
+   */
+  readonly asideEmpty: "ss:aside-empty";
   /** Empty-board onboarding shown before any session exists. */
   readonly empty: "ss:empty";
   /** Per-session actions in the session header, beside the stream/timeline toggle. */

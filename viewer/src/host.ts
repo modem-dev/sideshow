@@ -78,6 +78,11 @@ export const SLOTS = {
   // Sidebar footer: design-guide / agent-setup links, the connect action, and the
   // theme picker. (`#onboard` aside, App.tsx)
   asideFoot: "ss:aside-foot",
+  // Empty-sidebar affordance shown in the session list when no sessions exist.
+  // (`#sessionList`, App.tsx) Fallback is a native "Connect an agent" row that
+  // scrolls to the empty-board pane (ss:empty); an embedder projects its own
+  // empty-list nudge here. Renders only on an empty (post-load) board.
+  asideEmpty: "ss:aside-empty",
   // Empty-board onboarding shown before any session exists. (`#onboard`, App.tsx)
   empty: "ss:empty",
   // Per-session actions in the session header, beside the stream/timeline toggle.

@@ -225,6 +225,33 @@ aside > .brand {
   color: var(--text);
   background: var(--hover);
 }
+/* Empty-sidebar affordance: the native "Connect an agent" row that is the
+   ss:aside-empty slot's fallback, shown as the first item of an otherwise-
+   empty list. It reuses .sess row chrome (padding/radius/cursor/hover) so it's
+   visually indistinguishable from a real list row; the inner layout carries an
+   accent plug icon + a 13px label, with one muted helper line beneath. */
+.aside-empty-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.aside-empty-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+.aside-empty-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.aside-empty-help {
+  font-size: 12px;
+  color: var(--faint);
+  line-height: 1.5;
+  margin-top: 2px;
+}
 .aside-foot {
   padding: 12px 16px;
   border-top: 0.5px solid var(--border);

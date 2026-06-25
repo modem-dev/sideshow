@@ -13,6 +13,7 @@ import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
 import { applyFrameHeight, Card, cardEls, frameForSource } from "./Card.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
+import { PlugIcon } from "./icons.tsx";
 import { activeTheme, initTheme, setTheme, themeOptions } from "./theme.ts";
 import {
   applyRoute,
@@ -186,6 +187,18 @@ export default function App() {
                       </>
                     )}
                   </For>
+                  {/* Host-overridable region (SLOTS.asideEmpty): the session
+                  list's empty state. The fallback below is a native "Connect an
+                  agent" row — the first item of an otherwise-empty list — that
+                  scrolls to the empty-board pane (ss:empty) holding the connect
+                  instructions. An embedder projects its own empty-list nudge
+                  here; either shows only on a post-load empty board, and
+                  neither renders once a session exists. */}
+                  <Show when={initialLoaded() && sessions.length === 0}>
+                    <slot name={SLOTS.asideEmpty}>
+                      <AsideEmptyRow />
+                    </slot>
+                  </Show>
                 </div>
                 <div class="aside-foot">
                   {/* ThemePicker is a generic feature, not deployment-specific
@@ -472,6 +485,42 @@ function SessionItem(props: { session: SessionRow }) {
           ✕
         </button>
       </Show>
+    </div>
+  );
+}
+
+// The native empty-sidebar affordance: the fallback content for the
+// ss:aside-empty slot, shown when the board has no sessions. It reads as the
+// first item of an otherwise-empty list (it reuses the .sess row chrome) — a
+// plug icon + "Connect an agent" label, with one line of muted helper text.
+// Clicking it scrolls to the empty-board pane (#onboard, wrapped by ss:empty)
+// that holds the connect instructions; generic, no deployment-specific logic.
+function AsideEmptyRow() {
+  const activate = () => {
+    setNavOpen(false);
+    root().querySelector("#onboard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  return (
+    <div
+      class="sess aside-empty"
+      role="button"
+      tabIndex={0}
+      aria-label="Connect an agent"
+      onClick={activate}
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          activate();
+        }
+      }}
+    >
+      <div class="aside-empty-head">
+        <span class="aside-empty-icon">
+          <PlugIcon />
+        </span>
+        <span class="aside-empty-label">Connect an agent</span>
+      </div>
+      <div class="aside-empty-help">Your sessions will appear here once an agent connects.</div>
     </div>
   );
 }

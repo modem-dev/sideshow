@@ -60,6 +60,18 @@ export function ImageIcon() {
   );
 }
 
+// lucide: plug — a connect glyph for the empty-sidebar affordance.
+export function PlugIcon() {
+  return (
+    <Icon>
+      <path d="M12 22v-5" />
+      <path d="M9 8V2" />
+      <path d="M15 8V2" />
+      <path d="M18 8v5a4 4 0 0 1-4 5h-4a4 4 0 0 1-4-5V8Z" />
+    </Icon>
+  );
+}
+
 // lucide: trash-2
 export function TrashIcon() {
   return (
