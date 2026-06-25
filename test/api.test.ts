@@ -40,6 +40,14 @@ const authedJson = (body: unknown, token = "secret") => ({
   headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
 });
 
+// Simulates a request from the viewer page (same-origin) — the only access
+// point that may declare `author`. The browser sets Sec-Fetch-Site
+// automatically; a sandboxed iframe is opaque-origin so it can't forge this.
+const viewerJson = (body: unknown) => ({
+  ...json(body),
+  headers: { "content-type": "application/json", "sec-fetch-site": "same-origin" },
+});
+
 test("publish without session auto-creates one", async () => {
   const app = makeApp();
   const res = await app.request(
@@ -647,7 +655,10 @@ test("comments attach to snippets and filter by author/after", async () => {
   const s = (await (
     await app.request("/api/snippets", json({ html: "<p>x</p>", title: "Sketch" }))
   ).json()) as any;
-  await app.request("/api/comments", json({ snippet: s.id, text: "love it", author: "user" }));
+  await app.request(
+    "/api/comments",
+    viewerJson({ snippet: s.id, text: "love it", author: "user" }),
+  );
   await app.request("/api/comments", json({ snippet: s.id, text: "thanks", author: "claude" }));
 
   const all = (await (await app.request(`/api/comments?session=${s.sessionId}`)).json()) as any;
@@ -667,6 +678,37 @@ test("comments attach to snippets and filter by author/after", async () => {
   assert.equal(later.comments.length, 0);
 });
 
+test('programmatic POST cannot forge author: "user" — derived from session.agent', async () => {
+  const app = makeApp();
+  // Session created with an explicit agent name so we can distinguish it
+  const s = (await (
+    await app.request("/api/snippets", json({ html: "<p>x</p>", agent: "my-agent" }))
+  ).json()) as any;
+
+  // A curl-style POST (no Sec-Fetch-Site) sends author:"user" — the server
+  // must ignore it and derive from session.agent instead.
+  const forged = (await (
+    await app.request("/api/comments", json({ snippet: s.id, text: "fake user", author: "user" }))
+  ).json()) as any;
+  assert.equal(forged.author, "my-agent");
+
+  // A same-origin POST (the viewer) may mint "user" — the composer's path
+  const real = (await (
+    await app.request(
+      "/api/comments",
+      viewerJson({ snippet: s.id, text: "real user", author: "user" }),
+    )
+  ).json()) as any;
+  assert.equal(real.author, "user");
+
+  // Only the same-origin "user" comment is delivered as feedback
+  const feedback = (await (
+    await app.request(`/api/comments?session=${s.sessionId}&author=user&after=0`)
+  ).json()) as any;
+  assert.equal(feedback.comments.length, 1);
+  assert.equal(feedback.comments[0].text, "real user");
+});
+
 test("a comment must target a surface", async () => {
   const app = makeApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
@@ -683,7 +725,7 @@ test("a comment must target a surface", async () => {
 test("author=user reads resume from the agent's server-side cursor", async () => {
   const app = makeApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
-  await app.request("/api/comments", json({ snippet: s.id, text: "first", author: "user" }));
+  await app.request("/api/comments", viewerJson({ snippet: s.id, text: "first", author: "user" }));
 
   // no cursor given: delivered once...
   const first = (await (
@@ -706,7 +748,10 @@ test("author=user reads resume from the agent's server-side cursor", async () =>
 test("piggyback delivery advances the cursor seen by author=user waits", async () => {
   const app = makeApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
-  await app.request("/api/comments", json({ snippet: s.id, text: "tweak it", author: "user" }));
+  await app.request(
+    "/api/comments",
+    viewerJson({ snippet: s.id, text: "tweak it", author: "user" }),
+  );
 
   // an agent write piggybacks the pending feedback...
   const updated = (await (
@@ -731,7 +776,7 @@ test("author=user lastSeq reflects the last comment overall, not the last user c
   // the next call re-reads the agent comment and wastes a round-trip.
   const app = makeApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
-  await app.request("/api/comments", json({ snippet: s.id, text: "first", author: "user" }));
+  await app.request("/api/comments", viewerJson({ snippet: s.id, text: "first", author: "user" }));
   await app.request("/api/comments", json({ snippet: s.id, text: "reply", author: "agent" }));
 
   const res = (await (
@@ -804,7 +849,7 @@ test("long-poll resolves when a comment arrives", async () => {
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
   const pending = app.request(`/api/comments?session=${s.sessionId}&wait=5`);
   setTimeout(() => {
-    app.request("/api/comments", json({ snippet: s.id, text: "feedback!", author: "user" }));
+    app.request("/api/comments", viewerJson({ snippet: s.id, text: "feedback!", author: "user" }));
   }, 50);
   const start = Date.now();
   const result = (await (await pending).json()) as any;
@@ -1127,7 +1172,10 @@ test("mcp endpoint: initialize, tools/list, publish round trip", async () => {
   assert.equal(JSON.parse(second.result.content[0].text).sessionId, payload.sessionId);
 
   // feedback loop through the mcp tool
-  await app.request("/api/comments", json({ snippet: payload.id, text: "nice", author: "user" }));
+  await app.request(
+    "/api/comments",
+    viewerJson({ snippet: payload.id, text: "nice", author: "user" }),
+  );
   const feedback = (await (
     await app.request(
       "/mcp",
@@ -1204,8 +1252,14 @@ test("agent writes piggyback unseen user comments, delivered once", async () => 
   assert.equal(s.userFeedback, undefined);
 
   // the user comments while the agent works on something else
-  await app.request("/api/comments", json({ snippet: s.id, text: "wrong color", author: "user" }));
-  await app.request("/api/comments", json({ snippet: s.id, text: "also add a key" }));
+  await app.request(
+    "/api/comments",
+    viewerJson({ snippet: s.id, text: "wrong color", author: "user" }),
+  );
+  await app.request(
+    "/api/comments",
+    viewerJson({ snippet: s.id, text: "also add a key", author: "user" }),
+  );
 
   // the agent's next write carries the feedback
   const updated = (await (
@@ -1224,9 +1278,12 @@ test("agent writes piggyback unseen user comments, delivered once", async () => 
   assert.equal(again.userFeedback, undefined);
 
   // agent replies piggyback too; the user's own comments never do
-  await app.request("/api/comments", json({ snippet: s.id, text: "more", author: "user" }));
+  await app.request("/api/comments", viewerJson({ snippet: s.id, text: "more", author: "user" }));
   const userPost = (await (
-    await app.request("/api/comments", json({ snippet: s.id, text: "and more", author: "user" }))
+    await app.request(
+      "/api/comments",
+      viewerJson({ snippet: s.id, text: "and more", author: "user" }),
+    )
   ).json()) as any;
   assert.equal(userPost.userFeedback, undefined);
   const reply = (await (
@@ -1243,7 +1300,7 @@ test("a consumed wait is not re-delivered as piggyback", async () => {
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
   await app.request(
     "/api/comments",
-    json({ snippet: s.id, text: "seen via wait", author: "user" }),
+    viewerJson({ snippet: s.id, text: "seen via wait", author: "user" }),
   );
 
   // the agent receives it through the long-poll...
@@ -1259,7 +1316,7 @@ test("a consumed wait is not re-delivered as piggyback", async () => {
   assert.equal(updated.userFeedback, undefined);
 
   // the viewer's unfiltered reads do NOT consume the cursor
-  await app.request("/api/comments", json({ snippet: s.id, text: "fresh", author: "user" }));
+  await app.request("/api/comments", viewerJson({ snippet: s.id, text: "fresh", author: "user" }));
   await app.request(`/api/comments?session=${s.sessionId}`); // viewer-style read
   const next = (await (
     await app.request(`/api/snippets/${s.id}`, { ...json({ html: "<p>v3</p>" }), method: "PUT" })
@@ -1287,7 +1344,10 @@ test("feedback consumed via the MCP wait is not re-delivered through REST channe
     )
   ).json()) as any;
   const p = JSON.parse(published.result.content[0].text);
-  await app.request("/api/comments", json({ snippet: p.id, text: "via mcp", author: "user" }));
+  await app.request(
+    "/api/comments",
+    viewerJson({ snippet: p.id, text: "via mcp", author: "user" }),
+  );
 
   // the agent drains it through the MCP tool...
   const feedback = (await (
@@ -1319,7 +1379,10 @@ test("feedback consumed via the MCP wait is not re-delivered through REST channe
 test("feedback consumed via a REST wait is not re-delivered through the MCP wait", async () => {
   const app = makeApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
-  await app.request("/api/comments", json({ snippet: s.id, text: "via rest", author: "user" }));
+  await app.request(
+    "/api/comments",
+    viewerJson({ snippet: s.id, text: "via rest", author: "user" }),
+  );
 
   // the agent drains it through a REST author=user read...
   const restWait = (await (
@@ -1345,7 +1408,7 @@ test("feedback consumed via a REST wait is not re-delivered through the MCP wait
 
   // and a fresh comment still flows to the MCP channel — the cursor advanced,
   // it didn't wedge
-  await app.request("/api/comments", json({ snippet: s.id, text: "later", author: "user" }));
+  await app.request("/api/comments", viewerJson({ snippet: s.id, text: "later", author: "user" }));
   const next = (await (
     await app.request(
       "/mcp",
@@ -1373,7 +1436,10 @@ test("mcp publish result carries userFeedback", async () => {
     )
   ).json()) as any;
   const first = JSON.parse(published.result.content[0].text);
-  await app.request("/api/comments", json({ snippet: first.id, text: "neat", author: "user" }));
+  await app.request(
+    "/api/comments",
+    viewerJson({ snippet: first.id, text: "neat", author: "user" }),
+  );
 
   const second = (await (
     await app.request(
@@ -1427,7 +1493,7 @@ test("comment text and titles are capped before they ride the feedback channel",
 
   await app.request(
     "/api/comments",
-    json({ snippet: s.id, text: "x".repeat(20000), author: "user" }),
+    viewerJson({ snippet: s.id, text: "x".repeat(20000), author: "user" }),
   );
   const all = (await (await app.request(`/api/comments?session=${s.sessionId}`)).json()) as any;
   assert.equal(all.comments[0].text.length, 8000);
@@ -1697,8 +1763,8 @@ test("GET /api/comments?surface= filters to that surface, not the whole session"
   ).json()) as any;
 
   // A comment on each surface.
-  await app.request("/api/comments", json({ surface: a.id, text: "on A", author: "user" }));
-  await app.request("/api/comments", json({ surface: b.id, text: "on B", author: "user" }));
+  await app.request("/api/comments", viewerJson({ surface: a.id, text: "on A", author: "user" }));
+  await app.request("/api/comments", viewerJson({ surface: b.id, text: "on B", author: "user" }));
 
   // Filtering by surface must return only that surface's comment. Regression
   // guard for the app→store query mapping (q.surfaceId → CommentQuery.postId):
@@ -1975,7 +2041,7 @@ test("reply_to_user MCP tool accepts postId (and legacy surfaceId)", async () =>
       "/mcp",
       mcpCall(2, "tools/call", {
         name: "reply_to_user",
-        arguments: { postId: id, message: "ack", author: "test-agent" },
+        arguments: { postId: id, message: "ack" },
       }),
     )
   ).json()) as any;

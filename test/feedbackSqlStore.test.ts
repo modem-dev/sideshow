@@ -27,10 +27,17 @@ const json = (body: unknown) => ({
   body: JSON.stringify(body),
 });
 
+// Simulates a request from the viewer page (same-origin) — the only access
+// point that may declare `author`.
+const viewerJson = (body: unknown) => ({
+  ...json(body),
+  headers: { "content-type": "application/json", "sec-fetch-site": "same-origin" },
+});
+
 test("SqlStore: author=user feedback delivers exactly once; the viewer read is unaffected", async () => {
   const app = makeSqlApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
-  await app.request("/api/comments", json({ snippet: s.id, text: "first", author: "user" }));
+  await app.request("/api/comments", viewerJson({ snippet: s.id, text: "first", author: "user" }));
 
   // cursor-less read delivers it once...
   const first = (await (
@@ -53,7 +60,10 @@ test("SqlStore: author=user feedback delivers exactly once; the viewer read is u
 test("SqlStore: piggybacked feedback on a write advances the cursor; only author=user is delivered", async () => {
   const app = makeSqlApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
-  await app.request("/api/comments", json({ snippet: s.id, text: "tweak it", author: "user" }));
+  await app.request(
+    "/api/comments",
+    viewerJson({ snippet: s.id, text: "tweak it", author: "user" }),
+  );
 
   // the agent's write piggybacks the pending feedback...
   const updated = (await (
@@ -71,7 +81,7 @@ test("SqlStore: piggybacked feedback on a write advances the cursor; only author
   // a surface-authored comment is never delivered as user feedback
   await app.request(
     "/api/comments",
-    json({ session: s.sessionId, text: "auto", author: "surface" }),
+    viewerJson({ snippet: s.id, text: "auto", author: "surface" }),
   );
   const afterSurface = (await (
     await app.request(`/api/comments?session=${s.sessionId}&author=user`)
