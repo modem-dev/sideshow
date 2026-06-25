@@ -70,8 +70,8 @@ test("a part kind this viewer doesn't know shows a refresh hint, not a broken di
   await page.route(/\/api\/surfaces\/[^/?]+(\?|$)/, async (route) => {
     const res = await route.fetch();
     const surface = await res.json();
-    if (Array.isArray(surface.parts)) {
-      surface.parts = surface.parts.map(() => ({ kind: "futurething" }));
+    if (Array.isArray(surface.surfaces)) {
+      surface.surfaces = surface.surfaces.map(() => ({ kind: "futurething" }));
     }
     await route.fulfill({ response: res, json: surface });
   });
