@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { JsonFileStore } from "./storage.ts";
 import { SqlStore } from "./sqlStore.ts";
 import type { SqlStorage, SqlStorageCursor, SqlStorageValue } from "./types.ts";
@@ -41,6 +42,12 @@ function makeCursor(rows: Record<string, SqlStorageValue>[]): SqlStorageCursor {
 // path. `:memory:` (the default) backs the store-contract suite; a file path is
 // the real local store.
 export function createSqliteStorage(path = ":memory:"): SqlStorage {
+  if (path !== ":memory:") {
+    // node:sqlite won't create missing parent directories — it just fails with
+    // "unable to open database file". The default db path lives under the
+    // package dir (no `data/` shipped), so the first run would always crash.
+    mkdirSync(dirname(path), { recursive: true });
+  }
   const db = new DatabaseSync(path);
   if (path !== ":memory:") {
     // WAL + NORMAL: durable across a crash, far fewer fsyncs than the default
