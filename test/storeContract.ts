@@ -685,4 +685,74 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.ok(got, "referenced asset should survive its owning session's deletion");
     assert.deepEqual([...got.data], [7, 7, 7]);
   });
+
+  // The referenced-asset index is maintained incrementally (cached, then
+  // updated on post mutations) instead of recomputed on every read. These
+  // contracts pin its correctness across each kind of mutation: a stale cache
+  // after an update or remove would make isAssetReferenced lie.
+
+  contract("an asset referenced only by a removed post is no longer referenced", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    const asset = await store.putAsset({
+      sessionId: session.id,
+      kind: "image",
+      contentType: "image/png",
+      data: bytes(1, 2, 3),
+    });
+    assert.ok(asset);
+    const post = await store.createPost({
+      sessionId: session.id,
+      surfaces: [{ kind: "image", assetId: asset.id }],
+    });
+    assert.ok(post);
+    // Warm the cache (the /a/:id path reads this before any mutation).
+    assert.equal(await store.isAssetReferenced(asset.id), true);
+    await store.removePost(post.id);
+    assert.equal(await store.isAssetReferenced(asset.id), false);
+  });
+
+  contract("an update keeps history-referenced assets and adds new ones", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    const oldAsset = await store.putAsset({
+      sessionId: session.id,
+      kind: "image",
+      contentType: "image/png",
+      data: bytes(1),
+    });
+    const newAsset = await store.putAsset({
+      sessionId: session.id,
+      kind: "image",
+      contentType: "image/png",
+      data: bytes(2),
+    });
+    assert.ok(oldAsset && newAsset);
+    const post = await store.createPost({
+      sessionId: session.id,
+      surfaces: [{ kind: "image", assetId: oldAsset.id }],
+    });
+    assert.ok(post);
+    // Warm the cache, then update the surface to point at a different asset.
+    assert.equal(await store.isAssetReferenced(oldAsset.id), true);
+    const updated = await store.updatePost(post.id, {
+      surfaces: [{ kind: "image", assetId: newAsset.id }],
+    });
+    assert.ok(updated);
+    // The old asset is still referenced by the post's history (append-only),
+    // and the new asset is referenced by the current surface.
+    assert.equal(await store.isAssetReferenced(oldAsset.id), true);
+    assert.equal(await store.isAssetReferenced(newAsset.id), true);
+  });
+
+  contract("an unreferenced asset is reported unreferenced from a cold cache", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    const asset = await store.putAsset({
+      sessionId: session.id,
+      kind: "image",
+      contentType: "image/png",
+      data: bytes(9),
+    });
+    assert.ok(asset);
+    // No post references it; a fresh read (no prior warm-up) must say so.
+    assert.equal(await store.isAssetReferenced(asset.id), false);
+  });
 }

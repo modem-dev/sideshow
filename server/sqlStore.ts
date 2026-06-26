@@ -32,6 +32,15 @@ import {
 // One workspace = one database, so plain SQL with no tenant columns.
 export class SqlStore implements Store {
   private sql: SqlStorage;
+  // Cached set of asset ids referenced by any live surface (current or a
+  // historical version of any post). Built lazily and maintained incrementally
+  // — createPost/updatePost add to it, removes invalidate it — so isAssetReferenced
+  // (hit on every /a/:id miss) and putAsset's eviction scan no longer re-parse
+  // every post's surfaces+history JSON on each call. Stays correct because post
+  // history is append-only: a surface only ever moves INTO history, so an asset
+  // id once referenced stays referenced until the whole post (and its history)
+  // is deleted — at which point we invalidate and recompute from scratch.
+  private assetRefCache: Set<string> | undefined;
 
   constructor(sql: SqlStorage) {
     this.sql = sql;
@@ -273,6 +282,7 @@ export class SqlStore implements Store {
     // Posts are gone, so referencedAssetIds now reflects survivors only:
     // drop this session's own assets except any a surviving surface still
     // points at (assets are content-addressed and may be shared across sessions).
+    this.invalidateAssetRefs();
     const referenced = this.referencedAssetIds();
     for (const r of this.sql.exec("SELECT id FROM assets WHERE sessionId = ?", id).toArray()) {
       const aid = r.id as string;
@@ -356,6 +366,7 @@ export class SqlStore implements Store {
       "[]",
     );
     this.touch(input.sessionId);
+    this.addAssetRefs(input.surfaces);
     return surface;
   }
 
@@ -396,6 +407,7 @@ export class SqlStore implements Store {
       const affected = this.sql.exec("SELECT changes() AS n").one().n as number;
       if (affected > 0) {
         this.touch(surface.sessionId);
+        if (patch.surfaces !== undefined) this.addAssetRefs(patch.surfaces);
         return { ...surface, title, surfaces, version, updatedAt, history };
       }
       // Lost the race — retry with the now-current version.
@@ -407,6 +419,7 @@ export class SqlStore implements Store {
     if (!(await this.getPost(id))) return false;
     this.sql.exec("DELETE FROM comments WHERE postId = ?", id);
     this.sql.exec("DELETE FROM posts WHERE id = ?", id);
+    this.invalidateAssetRefs();
     return true;
   }
 
@@ -505,6 +518,7 @@ export class SqlStore implements Store {
   // --- assets ---
 
   private referencedAssetIds(): Set<string> {
+    if (this.assetRefCache) return this.assetRefCache;
     const out = new Set<string>();
     for (const r of this.sql.exec("SELECT surfaces, history FROM posts").toArray()) {
       collectAssetIds(JSON.parse(r.surfaces as string) as Surface[], out);
@@ -512,7 +526,19 @@ export class SqlStore implements Store {
         collectAssetIds(h.surfaces, out);
       }
     }
+    this.assetRefCache = out;
     return out;
+  }
+
+  // Fold a freshly-written surfaces list into the cache. If the cache hasn't
+  // been built yet, skip — the next referencedAssetIds() reads the post from
+  // disk and picks it up. Only mutates a populated cache.
+  private addAssetRefs(surfaces: Surface[]): void {
+    if (this.assetRefCache) collectAssetIds(surfaces, this.assetRefCache);
+  }
+
+  private invalidateAssetRefs(): void {
+    this.assetRefCache = undefined;
   }
 
   async putAsset(input: CreateAssetInput) {
@@ -694,6 +720,7 @@ export class SqlStore implements Store {
         );
       }
       this.sql.exec("COMMIT");
+      this.invalidateAssetRefs();
     } catch (e) {
       this.sql.exec("ROLLBACK");
       throw e;

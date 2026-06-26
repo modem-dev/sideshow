@@ -52,6 +52,20 @@ const MAX_STEP_LABEL = 500;
 // edge to keep one oversize value from bloating the agent's context forever.
 const MAX_COMMENT_TEXT = 8000;
 const MAX_TITLE = 500;
+// Ceiling on concurrently-held SSE + long-poll connections. Both are GETs that
+// pin a connection open (the event stream indefinitely, /api/comments?wait up
+// to MAX_WAIT_SECONDS); on a publicRead board they're reachable unauthenticated,
+// so without a cap a flood exhausts sockets. One app instance is one workspace
+// (a single Durable Object), and one workspace is one user — so legitimate
+// concurrent holds are small but not tiny: each open viewer tab holds one SSE,
+// and each active agent holds a long-poll (and possibly its own SSE). A
+// multi-agent session with 5 agents plus a few viewer tabs can legitimately
+// reach ~15. 32 clears that with headroom while still bounding a flood on a
+// no-token local board — and a real flood is orders of magnitude bigger, so
+// rejecting at 32 vs 16 makes no difference to flood protection, only to
+// legitimate use. Configurable so deployments can tune it and tests can
+// exercise the cap cheaply.
+const DEFAULT_MAX_HOLD_CONNECTIONS = 32;
 
 // Asset serving policy: only raster images are served inline; everything else
 // (incl. svg, json, text, the octet-stream catch-all) is an attachment, so a
@@ -141,6 +155,10 @@ export interface AppOptions {
   upgradeCommand?: string;
   // Test seam: replaces the npm-registry/GitHub lookup for the latest release.
   fetchLatestRelease?: () => Promise<LatestRelease | null>;
+  // Max concurrently-held SSE (`/api/events`) + long-poll (`/api/comments?wait`)
+  // connections before new ones are rejected with 503. Bounds a connection flood
+  // on publicRead boards; defaults to DEFAULT_MAX_HOLD_CONNECTIONS.
+  maxHoldConnections?: number;
 }
 
 export interface LatestRelease {
@@ -270,9 +288,28 @@ export function createApp({
   version,
   upgradeCommand,
   fetchLatestRelease,
+  maxHoldConnections = DEFAULT_MAX_HOLD_CONNECTIONS,
 }: AppOptions) {
   const app = new Hono();
   const bus = new EventBus();
+
+  // Live count of held SSE + long-poll connections, gated by maxHoldConnections.
+  // Each holder increments on entry and releases exactly once via a guarded
+  // release() wired to every exit (stream abort, request abort, normal return).
+  let holdConnections = 0;
+  const acquireHold = (): boolean => {
+    if (holdConnections >= maxHoldConnections) return false;
+    holdConnections++;
+    return true;
+  };
+  const makeRelease = () => {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      holdConnections--;
+    };
+  };
 
   // Rendered-document cache for /s/:id rich surfaces. Rendering a markdown/code/
   // diff surface runs shiki / @pierre-diffs SSR, which is non-trivial (a big diff
@@ -929,6 +966,8 @@ export function createApp({
 
   // Long-poll friendly: ?wait=N holds the request open up to N seconds until
   // a matching comment arrives. This is how terminal agents block on feedback.
+  // A wait counts against the connection cap (it pins a socket just like SSE);
+  // an instant ?wait=0 read does not.
   app.get("/api/comments", async (c) => {
     const sessionId = c.req.query("session");
     const surfaceId = c.req.query("surface") ?? c.req.query("snippet");
@@ -944,12 +983,31 @@ export function createApp({
         }
       }
     }
+    const waitSeconds = Number(c.req.query("wait") ?? 0) || 0;
+    if (waitSeconds > 0) {
+      if (!acquireHold()) return c.json({ error: "too many concurrent connections" }, 503);
+      const release = makeRelease();
+      // If the client disconnects mid-wait, release the slot promptly.
+      c.req.raw.signal.addEventListener("abort", release, { once: true });
+      try {
+        const result = await waitForComments({
+          sessionId,
+          surfaceId,
+          author: c.req.query("author"),
+          afterSeq: c.req.query("after") ? Number(c.req.query("after")) : undefined,
+          waitSeconds,
+        });
+        return c.json(result);
+      } finally {
+        release();
+      }
+    }
     const result = await waitForComments({
       sessionId,
       surfaceId,
       author: c.req.query("author"),
       afterSeq: c.req.query("after") ? Number(c.req.query("after")) : undefined,
-      waitSeconds: Number(c.req.query("wait") ?? 0) || 0,
+      waitSeconds: 0,
     });
     return c.json(result);
   });
@@ -1134,6 +1192,12 @@ export function createApp({
       if (!sessionId) return c.json({ error: "session required" }, 401);
       if (!(await store.getSession(sessionId))) return c.json({ error: "session not found" }, 404);
     }
+    if (!acquireHold()) return c.json({ error: "too many concurrent connections" }, 503);
+    const release = makeRelease();
+    // Safety net: if the client disconnects before the stream callback opens,
+    // the request abort still releases the slot. close() below is guarded so a
+    // later abort firing release again is a no-op.
+    c.req.raw.signal.addEventListener("abort", release, { once: true });
     const eventSessionId = (event: Parameters<Parameters<EventBus["subscribe"]>[0]>[0]) => {
       if ("sessionId" in event) return event.sessionId;
       if (event.type.startsWith("session-")) return event.id;
@@ -1148,32 +1212,40 @@ export function createApp({
         wake?.();
       });
       let open = true;
+      let closed = false;
       const close = () => {
+        if (closed) return;
+        closed = true;
         open = false;
         unsubscribe();
         wake?.();
+        release();
       };
       stream.onAbort(close);
       c.req.raw.signal.addEventListener("abort", close, { once: true });
-      await stream.writeSSE({ event: "hello", data: "{}" });
-      while (open) {
-        while (queue.length > 0) {
-          await stream.writeSSE({ data: JSON.stringify(queue.shift()) });
+      try {
+        await stream.writeSSE({ event: "hello", data: "{}" });
+        while (open) {
+          while (queue.length > 0) {
+            await stream.writeSSE({ data: JSON.stringify(queue.shift()) });
+          }
+          let pingTimer: ReturnType<typeof setTimeout> | null = null;
+          await Promise.race([
+            new Promise<void>((resolve) => {
+              wake = resolve;
+            }),
+            new Promise<void>((resolve) => {
+              pingTimer = setTimeout(resolve, 15000);
+            }),
+          ]);
+          wake = null;
+          if (pingTimer) clearTimeout(pingTimer);
+          if (open && queue.length === 0) {
+            await stream.writeSSE({ event: "ping", data: "{}" });
+          }
         }
-        let pingTimer: ReturnType<typeof setTimeout> | null = null;
-        await Promise.race([
-          new Promise<void>((resolve) => {
-            wake = resolve;
-          }),
-          new Promise<void>((resolve) => {
-            pingTimer = setTimeout(resolve, 15000);
-          }),
-        ]);
-        wake = null;
-        if (pingTimer) clearTimeout(pingTimer);
-        if (open && queue.length === 0) {
-          await stream.writeSSE({ event: "ping", data: "{}" });
-        }
+      } finally {
+        close();
       }
     });
   });

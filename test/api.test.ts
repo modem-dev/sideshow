@@ -13,6 +13,7 @@ function makeApp(
     basePath?: string;
     viewerHtml?: string;
     screenshots?: boolean;
+    maxHoldConnections?: number;
   },
 ) {
   const dir = mkdtempSync(join(tmpdir(), "sideshow-test-"));
@@ -811,6 +812,71 @@ test("long-poll resolves when a comment arrives", async () => {
   assert.equal(result.comments.length, 1);
   assert.equal(result.comments[0].text, "feedback!");
   assert.ok(Date.now() - start < 4000, "should resolve well before the timeout");
+});
+
+// --- connection caps (SSE + long-poll share one per-instance bound) ---
+
+test("SSE connections are capped; a released slot lets a new one in", async () => {
+  const app = makeApp(undefined, { maxHoldConnections: 2 });
+  const controllers = [new AbortController(), new AbortController()];
+  // Two streams fill the cap. The slot is acquired before streamSSE opens, so
+  // merely having the Response back means it's held — no body read needed.
+  const streams = await Promise.all(
+    controllers.map((ac) => app.request("/api/events", { signal: ac.signal })),
+  );
+  assert.ok(streams.every((s) => s.status === 200));
+  // A third is rejected.
+  assert.equal((await app.request("/api/events")).status, 503);
+  // Releasing one frees a slot for a fresh stream.
+  controllers[0].abort();
+  await streams[0].body!.cancel().catch(() => undefined);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const again = await app.request("/api/events", { signal: new AbortController().signal });
+  assert.equal(again.status, 200);
+  // cleanup
+  controllers[1].abort();
+  await streams[1].body!.cancel().catch(() => undefined);
+  await again.body!.cancel().catch(() => undefined);
+});
+
+test("long-poll waits count against the hold cap; instant reads do not", async () => {
+  const app = makeApp(undefined, { maxHoldConnections: 2 });
+  const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
+  // Two held long-polls fill the cap; they resolve when a comment lands.
+  const pending = [
+    app.request(`/api/comments?session=${s.sessionId}&wait=5`),
+    app.request(`/api/comments?session=${s.sessionId}&wait=5`),
+  ];
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  // A third held wait is rejected.
+  assert.equal((await app.request(`/api/comments?session=${s.sessionId}&wait=5`)).status, 503);
+  // An instant (?wait=0) read is not a held connection — still served at cap.
+  assert.equal((await app.request(`/api/comments?session=${s.sessionId}`)).status, 200);
+  // Post a comment so both held waits resolve and release their slots.
+  await app.request("/api/comments", json({ snippet: s.id, text: "release" }));
+  const resolved = await Promise.all(pending);
+  assert.ok(resolved.every((r) => r.status === 200));
+});
+
+test("SSE and long-poll share the same connection budget", async () => {
+  const app = makeApp(undefined, { maxHoldConnections: 2 });
+  const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
+  // One SSE + one long-poll fills the shared cap.
+  const sse = await app.request("/api/events", { signal: new AbortController().signal });
+  assert.equal(sse.status, 200);
+  const poll = app.request(`/api/comments?session=${s.sessionId}&wait=5`);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  // Neither a second SSE nor a second long-poll fits.
+  assert.equal((await app.request("/api/events")).status, 503);
+  assert.equal((await app.request(`/api/comments?session=${s.sessionId}&wait=5`)).status, 503);
+  // Releasing the long-poll (comment lands) frees a slot for SSE again.
+  await app.request("/api/comments", json({ snippet: s.id, text: "release" }));
+  await poll;
+  const sseAgain = await app.request("/api/events", { signal: new AbortController().signal });
+  assert.equal(sseAgain.status, 200);
+  // cleanup
+  await sse.body!.cancel().catch(() => undefined);
+  await sseAgain.body!.cancel().catch(() => undefined);
 });
 
 test("deleting a session cascades to snippets and comments", async () => {

@@ -145,6 +145,15 @@ export class JsonFileStore implements Store {
   private lastSeq = 0;
   private settings = new Map<string, string>();
   private loaded = false;
+  // Cached set of asset ids referenced by any live surface (current or a
+  // historical version of any post). Built lazily and maintained incrementally
+  // — createPost/updatePost add to it, removes invalidate it — so isAssetReferenced
+  // (hit on every /a/:id miss) and putAsset's eviction scan don't re-walk every
+  // post on each call. Correct because post history is append-only: a surface
+  // only ever moves INTO history, so an asset id once referenced stays
+  // referenced until the whole post (and its history) is deleted, at which point
+  // we invalidate and recompute from scratch.
+  private assetRefCache: Set<string> | undefined;
   private loadPromise: Promise<void> | null = null;
   private writeQueue: Promise<void> = Promise.resolve();
   private filePath: string;
@@ -286,6 +295,7 @@ export class JsonFileStore implements Store {
     // session only takes its OWN assets down with it, and only those no live
     // surface still points at (referencedAssetIds is computed after the above
     // deletes, so it reflects survivors only).
+    this.invalidateAssetRefs();
     const referenced = this.referencedAssetIds();
     for (const [aid, asset] of this.assets) {
       if (asset.sessionId === id && !referenced.has(aid)) this.assets.delete(aid);
@@ -351,6 +361,7 @@ export class JsonFileStore implements Store {
     };
     this.surfaces.set(surface.id, surface);
     this.touch(input.sessionId);
+    this.addAssetRefs(input.surfaces);
     await this.persist();
     return clone(surface);
   }
@@ -371,6 +382,7 @@ export class JsonFileStore implements Store {
     surface.version += 1;
     surface.updatedAt = new Date().toISOString();
     this.touch(surface.sessionId);
+    if (patch.surfaces !== undefined) this.addAssetRefs(patch.surfaces);
     await this.persist();
     return clone(surface);
   }
@@ -381,6 +393,7 @@ export class JsonFileStore implements Store {
     if (!surface) return false;
     this.surfaces.delete(id);
     this.comments = this.comments.filter((c) => c.postId !== id);
+    this.invalidateAssetRefs();
     await this.persist();
     return true;
   }
@@ -436,12 +449,25 @@ export class JsonFileStore implements Store {
   // --- assets ---
 
   private referencedAssetIds(): Set<string> {
+    if (this.assetRefCache) return this.assetRefCache;
     const out = new Set<string>();
     for (const s of this.surfaces.values()) {
       collectAssetIds(s.surfaces, out);
       for (const h of s.history) collectAssetIds(h.surfaces, out);
     }
+    this.assetRefCache = out;
     return out;
+  }
+
+  // Fold a freshly-written surfaces list into the cache. If the cache hasn't
+  // been built yet, skip — the next referencedAssetIds() walks the in-memory
+  // posts and picks it up. Only mutates a populated cache.
+  private addAssetRefs(surfaces: Surface[]): void {
+    if (this.assetRefCache) collectAssetIds(surfaces, this.assetRefCache);
+  }
+
+  private invalidateAssetRefs(): void {
+    this.assetRefCache = undefined;
   }
 
   async putAsset(input: CreateAssetInput) {
