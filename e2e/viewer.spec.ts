@@ -275,13 +275,13 @@ test("activity in an unselected session badges the tab title until viewed", asyn
   await publish(server.url, { html: "<p>a</p>", title: "First", agent: "one" });
 
   await page.goto(server.url);
-  await expect(page).toHaveTitle("sideshow");
+  await expect(page).toHaveTitle("one session · sideshow");
 
   await publish(server.url, { html: "<p>b</p>", title: "Second", agent: "two" });
 
-  await expect(page).toHaveTitle("(1) sideshow");
+  await expect(page).toHaveTitle("(1) one session · sideshow");
   await page.locator(".sess", { hasText: "two" }).click();
-  await expect(page).toHaveTitle("sideshow");
+  await expect(page).toHaveTitle("two session · sideshow");
 });
 
 test("Cmd+Option+Up/Down switches between sessions, wrapping at the ends", async ({

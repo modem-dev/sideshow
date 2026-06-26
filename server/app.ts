@@ -656,9 +656,11 @@ export function createApp({
     if (!title) return text;
     const escaped = escapeHtml(title);
     const titleTag = `<title>${escaped}</title>`;
-    return /<title>.*?<\/title>/.test(text)
-      ? text.replace(/<title>.*?<\/title>/, titleTag)
-      : injectHead(text, titleTag);
+    const titleStart = text.indexOf("<title>");
+    if (titleStart < 0) return injectHead(text, titleTag);
+    const titleEnd = text.indexOf("</title>", titleStart + "<title>".length);
+    if (titleEnd < 0) return injectHead(text, titleTag);
+    return `${text.slice(0, titleStart)}${titleTag}${text.slice(titleEnd + "</title>".length)}`;
   };
 
   const sessionDocumentTitle = (session: Session | null | undefined) => {
