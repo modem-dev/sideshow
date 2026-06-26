@@ -2949,3 +2949,49 @@ test("mcp tools/list includes the new per-surface tools", async () => {
   assert.ok(names.includes("remove_surface"));
   assert.ok(names.includes("reorder_surfaces"));
 });
+
+test("mcp get_post fetches a single post with surface ids via HTTP MCP", async () => {
+  const app = makeApp();
+  const pub = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "publish_post",
+        arguments: {
+          title: "GetPost",
+          surfaces: [
+            { kind: "html", html: "<p>a</p>" },
+            { kind: "markdown", markdown: "# b" },
+          ],
+        },
+      }),
+    )
+  ).json()) as any;
+  const postId = JSON.parse(pub.result.content[0].text).id;
+
+  const res = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "get_post",
+        arguments: { id: postId },
+      }),
+    )
+  ).json()) as any;
+  assert.equal(res.result.isError, undefined);
+  const post = JSON.parse(res.result.content[0].text);
+  assert.equal(post.id, postId);
+  assert.equal(post.title, "GetPost");
+  assert.equal(post.surfaces.length, 2);
+  assert.equal(post.surfaces[0].kind, "html");
+  assert.equal(post.surfaces[1].kind, "markdown");
+  assert.ok(post.surfaces[0].id, "surface ids are present");
+  assert.ok(post.surfaces[1].id);
+});
+
+test("mcp tools/list includes get_post", async () => {
+  const app = makeApp();
+  const list = (await (await app.request("/mcp", mcpCall(1, "tools/list"))).json()) as any;
+  const names = list.result.tools.map((t: any) => t.name);
+  assert.ok(names.includes("get_post"));
+});

@@ -127,6 +127,7 @@ usage:
                         --surface is a deprecated alias)
       --author <name>   defaults to agent name
   sideshow list [--session <id>|--all]    list posts
+  sideshow show <id>                      show a single post (surfaces, ids, version, history)
   sideshow sessions                       list sessions
   sideshow demo                           seed two example sessions to explore the viewer
   sideshow guide                          print the design contract for posts
@@ -1518,6 +1519,13 @@ const commands = {
     const session = flags.session ?? (await resolveSession(flags));
     if (!session) fail("no active session — pass --session or --all");
     out(await api(`/api/sessions/${session}/surfaces`));
+  },
+
+  async show() {
+    const { positionals } = parse({ allowPositionals: true });
+    const id = positionals[0];
+    if (!id) fail("usage: sideshow show <id>");
+    out(await api(`/api/posts/${id}`));
   },
 
   async sessions() {

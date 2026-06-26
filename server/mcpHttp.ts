@@ -195,6 +195,11 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           2,
         );
       }
+      case "get_post": {
+        const post = await deps.store.getPost(String(args.id ?? ""));
+        if (!post) throw new Error("post not found");
+        return JSON.stringify(post, null, 2);
+      }
       case "upload_asset": {
         if (typeof args.data !== "string" || args.data.length === 0) {
           throw new Error("upload_asset needs base64 `data`");

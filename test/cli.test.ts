@@ -93,6 +93,7 @@ for (const cmd of [
   "watch",
   "comment",
   "list",
+  "show",
   "kits",
 ]) {
   test(`${cmd} --help prints usage and exits 0`, async () => {
@@ -946,6 +947,35 @@ test("sessions prints the workspace's sessions", async () => {
   } finally {
     await server.close();
   }
+});
+
+test("show prints a single post with surface ids", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("h.html", "<p>a</p>");
+    const md = tmpFile("m.md", "# b");
+    const pub = await cli(server, "publish", html, "--md", md, "--title", "ShowMe");
+    const id = JSON.parse(pub.stdout).id;
+
+    const { code, stdout } = await cli(server, "show", id);
+    assert.equal(code, 0);
+    const post = JSON.parse(stdout);
+    assert.equal(post.id, id);
+    assert.equal(post.title, "ShowMe");
+    assert.equal(post.surfaces.length, 2);
+    assert.equal(post.surfaces[0].kind, "html");
+    assert.equal(post.surfaces[1].kind, "markdown");
+    assert.ok(post.surfaces[0].id, "surface ids are present");
+    assert.ok(post.surfaces[1].id);
+  } finally {
+    await server.close();
+  }
+});
+
+test("show without an id fails with a usage error", async () => {
+  const { code, stderr } = await run("show");
+  assert.notEqual(code, 0);
+  assert.match(stderr, /usage: sideshow show/);
 });
 
 // --- assets (image / upload / asset-url) ----------------------------------
