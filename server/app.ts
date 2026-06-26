@@ -386,6 +386,52 @@ export function createApp({
     return feedback.length > 0 ? feedback.map(feedbackView) : undefined;
   }
 
+  // Maps a surface kind to its primary content field — used by content-only
+  // updates (PATCH with `content`) to slot a raw string into the right field
+  // while preserving extra fields (language, cols, layout, etc.).
+  const CONTENT_FIELD: Record<string, string> = {
+    html: "html",
+    markdown: "markdown",
+    mermaid: "mermaid",
+    diff: "patch",
+    terminal: "text",
+    code: "code",
+    json: "data",
+  };
+
+  // Find a surface's index by id (first match) or 0-based numeric index.
+  function findSurfaceIndex(surfaces: Surface[], target: string): number {
+    const byId = surfaces.findIndex((s) => s.id === target);
+    if (byId >= 0) return byId;
+    const idx = Number(target);
+    if (Number.isInteger(idx) && idx >= 0 && idx < surfaces.length) return idx;
+    return -1;
+  }
+
+  // Slot a content string into a surface's content field, preserving kind and
+  // extra fields. Returns null if the kind has no content field or JSON parse
+  // fails. The caller handles error reporting.
+  function applyContent(surface: Surface, content: string, kits?: unknown): Surface | null {
+    const field = CONTENT_FIELD[surface.kind];
+    if (!field) return null;
+    let value: unknown = content;
+    if (surface.kind === "json") {
+      try {
+        value = JSON.parse(content);
+      } catch {
+        return null;
+      }
+    }
+    if (surface.kind === "html") {
+      return {
+        ...surface,
+        html: value as string,
+        ...(kits !== undefined && { kits: Array.isArray(kits) ? kits : undefined }),
+      };
+    }
+    return { ...surface, [field]: value } as Surface;
+  }
+
   async function publishSurface(input: {
     parts: Surface[];
     title?: string;
@@ -487,6 +533,117 @@ export function createApp({
       version: surface.version,
     });
     return { surface, userFeedback: await collectFeedback(surface.sessionId) };
+  }
+
+  // --- per-surface flow functions (append / replace / remove / reorder) ---
+  // Each reads the existing post, mutates the surfaces array, and writes it
+  // back via reviseSurface so version/history/SSE stay consistent. Untouched
+  // surfaces keep their ids (normalizeSurfaceIds preserves existing ids).
+
+  async function appendSurface(
+    id: string,
+    surface: Surface,
+    pos?: { before?: string; after?: string },
+  ): Promise<
+    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+  > {
+    const existing = await store.getPost(id);
+    if (!existing) return { error: "post not found", status: 404 };
+    let insertAt = existing.surfaces.length;
+    if (pos?.before !== undefined) {
+      const i = findSurfaceIndex(existing.surfaces, pos.before);
+      if (i < 0) return { error: `surface "${pos.before}" not found`, status: 404 };
+      insertAt = i;
+    } else if (pos?.after !== undefined) {
+      const i = findSurfaceIndex(existing.surfaces, pos.after);
+      if (i < 0) return { error: `surface "${pos.after}" not found`, status: 404 };
+      insertAt = i + 1;
+    }
+    const parts = [...existing.surfaces];
+    parts.splice(insertAt, 0, surface);
+    return reviseSurface(id, { parts });
+  }
+
+  async function replaceSurface(
+    id: string,
+    target: string,
+    replacement: { surface?: Surface; content?: string; kits?: unknown },
+  ): Promise<
+    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+  > {
+    const existing = await store.getPost(id);
+    if (!existing) return { error: "post not found", status: 404 };
+    const idx = findSurfaceIndex(existing.surfaces, target);
+    if (idx < 0) return { error: `surface "${target}" not found`, status: 404 };
+    let updated: Surface;
+    if (replacement.surface !== undefined) {
+      // Full replacement — preserve the old surface's id so the viewer can
+      // key by stable identity across edits.
+      updated = { ...replacement.surface, id: existing.surfaces[idx].id };
+    } else if (replacement.content !== undefined) {
+      // Content-only — slot the string into the existing surface's field.
+      const result = applyContent(existing.surfaces[idx], replacement.content, replacement.kits);
+      if (!result) {
+        return {
+          error: `content update not supported for ${existing.surfaces[idx].kind} surfaces`,
+          status: 400,
+        };
+      }
+      updated = result;
+    } else {
+      return { error: "provide surface or content", status: 400 };
+    }
+    const parsed = await validateSurfaces([updated]);
+    if (!parsed.ok) return { error: parsed.error, status: 400 };
+    // The validator strips the id field (zod schemas don't declare it), so
+    // re-apply the target's id after validation to preserve surface identity.
+    const parts = [...existing.surfaces];
+    parts[idx] = { ...parsed.parts[0], id: existing.surfaces[idx].id };
+    return reviseSurface(id, { parts });
+  }
+
+  async function removeSurface(
+    id: string,
+    target: string,
+  ): Promise<
+    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+  > {
+    const existing = await store.getPost(id);
+    if (!existing) return { error: "post not found", status: 404 };
+    const idx = findSurfaceIndex(existing.surfaces, target);
+    if (idx < 0) return { error: `surface "${target}" not found`, status: 404 };
+    if (existing.surfaces.length === 1) {
+      return { error: "a post needs at least one surface", status: 400 };
+    }
+    const parts = existing.surfaces.filter((_, i) => i !== idx);
+    return reviseSurface(id, { parts });
+  }
+
+  async function reorderSurfaces(
+    id: string,
+    order: (string | number)[],
+  ): Promise<
+    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+  > {
+    const existing = await store.getPost(id);
+    if (!existing) return { error: "post not found", status: 404 };
+    if (order.length !== existing.surfaces.length) {
+      return { error: "order array length must match surface count", status: 400 };
+    }
+    // Build the reordered array. Each entry is a surface id or 0-based index.
+    const indexed: Surface[] = Array.from({ length: order.length });
+    const used = new Set<number>();
+    for (const entry of order) {
+      const idx = findSurfaceIndex(existing.surfaces, String(entry));
+      if (idx < 0) return { error: `surface "${entry}" not found`, status: 404 };
+      if (used.has(idx)) return { error: `surface "${entry}" appears twice in order`, status: 400 };
+      used.add(idx);
+    }
+    for (let i = 0; i < order.length; i++) {
+      const idx = findSurfaceIndex(existing.surfaces, String(order[i]));
+      indexed[i] = existing.surfaces[idx];
+    }
+    return reviseSurface(id, { parts: indexed });
   }
 
   async function createComment(input: {
@@ -921,71 +1078,132 @@ export function createApp({
 
   // Content-only update: accepts raw content and slots it into the existing
   // surface's kind, preserving extra fields (language, cols, layout, etc.).
-  // Only single-surface posts for now; multi-surface needs --surface N.
-  const CONTENT_FIELD: Record<string, string> = {
-    html: "html",
-    markdown: "markdown",
-    mermaid: "mermaid",
-    diff: "patch",
-    terminal: "text",
-    code: "code",
-    json: "data",
-  };
+  // The optional `surface` field (surface id or 0-based index) targets a
+  // specific surface in a multi-surface post; without it, the post must have
+  // a single surface (back-compat with the original behavior).
   app.patch("/api/posts/:id", async (c: any) => {
     const body = await c.req.json().catch(() => null);
     if (!body) return c.json({ error: "invalid JSON body" }, 400);
-    const { content, title, kits } = body;
+    const { content, title, kits, surface } = body;
     if (content === undefined && title === undefined) {
       return c.json({ error: "provide content and/or title" }, 400);
     }
     const existing = await store.getPost(c.req.param("id"));
     if (!existing) return c.json({ error: "post not found" }, 404);
-    // Build the updated surfaces array.
     let parts: Surface[] | undefined;
     if (content !== undefined) {
       if (typeof content !== "string") {
         return c.json({ error: '"content" must be a string' }, 400);
       }
-      if (existing.surfaces.length > 1) {
+      const targetIdx =
+        surface !== undefined
+          ? findSurfaceIndex(existing.surfaces, String(surface))
+          : existing.surfaces.length === 1
+            ? 0
+            : -1;
+      if (targetIdx < 0) {
+        if (surface !== undefined) {
+          return c.json({ error: `surface "${surface}" not found` }, 404);
+        }
         return c.json(
           {
             error:
-              "content update not supported for multi-surface posts; use PUT with a full surfaces array",
+              'content update requires a "surface" target (id or index) for multi-surface posts',
           },
           400,
         );
       }
-      const surface = existing.surfaces[0];
-      const field = CONTENT_FIELD[surface.kind];
-      if (!field) {
-        return c.json({ error: `content update not supported for ${surface.kind} surfaces` }, 400);
+      const updated = applyContent(existing.surfaces[targetIdx], content, kits);
+      if (!updated) {
+        return c.json(
+          {
+            error: `content update not supported for ${existing.surfaces[targetIdx].kind} surfaces`,
+          },
+          400,
+        );
       }
-      // For json surfaces, parse the content string into a value.
-      let value: unknown = content;
-      if (surface.kind === "json") {
-        try {
-          value = JSON.parse(content);
-        } catch {
-          return c.json({ error: "content is not valid JSON" }, 400);
-        }
-      }
-      // Clone the existing surface, replace the content field, optionally update kits.
-      const updated: Surface =
-        surface.kind === "html"
-          ? {
-              ...surface,
-              html: value as string,
-              ...(kits !== undefined && { kits: Array.isArray(kits) ? kits : undefined }),
-            }
-          : ({ ...surface, [field]: value } as Surface);
       const parsed = await validateSurfaces([updated]);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-      parts = parsed.parts;
+      parts = [...existing.surfaces];
+      parts[targetIdx] = { ...parsed.parts[0], id: existing.surfaces[targetIdx].id };
     }
     const result = await reviseSurface(c.req.param("id"), {
       parts,
       title: typeof title === "string" ? title : undefined,
     });
+    if ("error" in result) return c.json({ error: result.error }, result.status);
+    return c.json({
+      ...writeResult(result.surface),
+      ...(result.userFeedback && { userFeedback: result.userFeedback }),
+    });
+  });
+
+  // --- per-surface sub-resource routes ---
+
+  // Append a surface to an existing post. Optional `before`/`after` (surface
+  // id or index) controls insert position; default is append at the end.
+  app.post("/api/posts/:id/surfaces", async (c: any) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || !body.surface) {
+      return c.json({ error: 'body must include a "surface" object' }, 400);
+    }
+    const parsed = await validateSurfaces([body.surface]);
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    const result = await appendSurface(c.req.param("id"), parsed.parts[0], {
+      before: body.before,
+      after: body.after,
+    });
+    if ("error" in result) return c.json({ error: result.error }, result.status);
+    return c.json({
+      ...writeResult(result.surface),
+      ...(result.userFeedback && { userFeedback: result.userFeedback }),
+    });
+  });
+
+  // Replace or content-edit a single surface. `:target` is a surface id or
+  // 0-based index. Body: `{surface}` for full replacement, or `{content}` for
+  // content-only (preserves kind + extra fields).
+  app.patch("/api/posts/:id/surfaces/:target", async (c: any) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || (body.surface === undefined && body.content === undefined)) {
+      return c.json({ error: 'body must include "surface" or "content"' }, 400);
+    }
+    let surface: Surface | undefined;
+    if (body.surface !== undefined) {
+      const parsed = await validateSurfaces([body.surface]);
+      if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+      surface = parsed.parts[0];
+    }
+    const result = await replaceSurface(c.req.param("id"), c.req.param("target"), {
+      surface,
+      content: body.content,
+      kits: body.kits,
+    });
+    if ("error" in result) return c.json({ error: result.error }, result.status);
+    return c.json({
+      ...writeResult(result.surface),
+      ...(result.userFeedback && { userFeedback: result.userFeedback }),
+    });
+  });
+
+  // Remove a single surface. `:target` is a surface id or 0-based index.
+  // Rejects with 400 if it's the last surface (posts need ≥1).
+  app.delete("/api/posts/:id/surfaces/:target", async (c: any) => {
+    const result = await removeSurface(c.req.param("id"), c.req.param("target"));
+    if ("error" in result) return c.json({ error: result.error }, result.status);
+    return c.json({
+      ...writeResult(result.surface),
+      ...(result.userFeedback && { userFeedback: result.userFeedback }),
+    });
+  });
+
+  // Reorder surfaces. Body: `{order: [id, ...]}` or `{order: [0, 2, 1]}`.
+  app.patch("/api/posts/:id/surfaces", async (c: any) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || !Array.isArray(body.order)) {
+      return c.json({ error: 'body must include an "order" array' }, 400);
+    }
+    const result = await reorderSurfaces(c.req.param("id"), body.order);
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
       ...writeResult(result.surface),
@@ -1331,6 +1549,10 @@ export function createApp({
     basePath: requestBasePath,
     publishSurface,
     reviseSurface,
+    appendSurface,
+    replaceSurface,
+    removeSurface,
+    reorderSurfaces,
     createComment,
     waitForComments,
     uploadAsset,

@@ -15,6 +15,7 @@ import {
   htmlSurface,
   MAX_WORKSPACE_ASSET_BYTES,
   newId,
+  normalizeSurfaceIds,
   selectEvictions,
   type Session,
   stripNul,
@@ -185,6 +186,13 @@ export class JsonFileStore implements Store {
       } else if (data.snippets) {
         for (const s of data.snippets) this.surfaces.set(s.id, liftSnippet(s));
       }
+      // Ensure every surface has a stable id (one-time migration for data
+      // written before surface ids existed). Cheap: only mutates surfaces
+      // that lack an id, and persists on the next write.
+      for (const p of this.surfaces.values()) {
+        p.surfaces = normalizeSurfaceIds(p.surfaces);
+        for (const h of p.history) h.surfaces = normalizeSurfaceIds(h.surfaces);
+      }
       this.comments = (data.comments ?? []).map(liftComment);
       for (const a of data.assets ?? []) {
         this.assets.set(a.id, {
@@ -353,7 +361,7 @@ export class JsonFileStore implements Store {
       id: newId(),
       sessionId: input.sessionId,
       title: stripNul(input.title)?.trim() || "Untitled",
-      surfaces: clone(input.surfaces),
+      surfaces: normalizeSurfaceIds(clone(input.surfaces)),
       createdAt: now,
       updatedAt: now,
       version: 1,
@@ -378,7 +386,7 @@ export class JsonFileStore implements Store {
     });
     if (surface.history.length > HISTORY_LIMIT) surface.history.shift();
     if (patch.title !== undefined) surface.title = stripNul(patch.title).trim() || surface.title;
-    if (patch.surfaces !== undefined) surface.surfaces = clone(patch.surfaces);
+    if (patch.surfaces !== undefined) surface.surfaces = normalizeSurfaceIds(clone(patch.surfaces));
     surface.version += 1;
     surface.updatedAt = new Date().toISOString();
     this.touch(surface.sessionId);

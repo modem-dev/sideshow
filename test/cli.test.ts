@@ -88,6 +88,7 @@ for (const cmd of [
   "publish",
   "diff",
   "update",
+  "surface",
   "wait",
   "watch",
   "comment",
@@ -419,7 +420,7 @@ test("publish reads html from stdin with '-'", async () => {
   }
 });
 
-test("publish combines html with --md, --code, --terminal, --mermaid surfaces", async () => {
+test("publish combines html with --md, --code, --terminal, --mermaid surfaces in flag order", async () => {
   const server = await serveSession();
   try {
     const html = tmpFile("h.html", "<div>x</div>");
@@ -442,9 +443,53 @@ test("publish combines html with --md, --code, --terminal, --mermaid surfaces", 
     );
     assert.equal(exit, 0);
     const out = JSON.parse(stdout);
-    // The publish command appends in a fixed order: html, md, mermaid, diff,
-    // terminal, json, code, image — independent of flag order on the command line.
-    assert.deepEqual(out.kinds, ["html", "markdown", "mermaid", "terminal", "code"]);
+    // Surfaces appear in the order their flags were passed on the command line.
+    assert.deepEqual(out.kinds, ["html", "markdown", "code", "terminal", "mermaid"]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("publish surface order follows flag order, not a fixed sequence", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("h.html", "<div>x</div>");
+    const md = tmpFile("m.md", "# heading");
+    const code = tmpFile("snippet.ts", "const x = 1;");
+    const mermaid = tmpFile("d.mmd", "graph TD; A-->B");
+
+    // Same flags, different order → different surface order.
+    const a = await cli(server, "publish", html, "--code", code, "--mermaid", mermaid, "--md", md);
+    const b = await cli(server, "publish", html, "--md", md, "--mermaid", mermaid, "--code", code);
+    assert.equal(a.code, 0);
+    assert.equal(b.code, 0);
+    const outA = JSON.parse(a.stdout);
+    const outB = JSON.parse(b.stdout);
+    assert.deepEqual(outA.kinds, ["html", "code", "mermaid", "markdown"]);
+    assert.deepEqual(outB.kinds, ["html", "markdown", "mermaid", "code"]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("publish surfaces with --terminal before --md produces terminal-then-markdown order", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("h.html", "<div>x</div>");
+    const md = tmpFile("m.md", "# heading");
+    const term = tmpFile("t.log", "$ echo hi");
+    const { code: exit, stdout } = await cli(
+      server,
+      "publish",
+      html,
+      "--terminal",
+      term,
+      "--md",
+      md,
+    );
+    assert.equal(exit, 0);
+    const out = JSON.parse(stdout);
+    assert.deepEqual(out.kinds, ["html", "terminal", "markdown"]);
   } finally {
     await server.close();
   }
@@ -643,6 +688,93 @@ test("update without an id fails with a usage error", async () => {
     const { code, stderr } = await cli(server, "update");
     assert.notEqual(code, 0);
     assert.match(stderr, /usage: sideshow update/);
+  } finally {
+    await server.close();
+  }
+});
+
+// --- surface subcommand (add / remove / edit / move) -----------------------
+
+test("surface add appends a markdown surface to an existing post", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("h.html", "<p>first</p>");
+    const pub = await cli(server, "publish", html);
+    const id = JSON.parse(pub.stdout).id;
+
+    const md = tmpFile("m.md", "# appended");
+    const { code, stdout } = await cli(server, "surface", "add", id, "--md", md);
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout);
+    assert.deepEqual(out.kinds, ["html", "markdown"]);
+
+    const full = (await fetch(`${server.url}/api/posts/${id}`).then((r) => r.json())) as any;
+    assert.equal(full.surfaces[1].markdown, "# appended");
+  } finally {
+    await server.close();
+  }
+});
+
+test("surface remove deletes a surface by index", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("h.html", "<p>a</p>");
+    const md = tmpFile("m.md", "# b");
+    const pub = await cli(server, "publish", html, "--md", md);
+    const id = JSON.parse(pub.stdout).id;
+
+    const { code, stdout } = await cli(server, "surface", "remove", id, "1");
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout);
+    assert.deepEqual(out.kinds, ["html"]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("surface edit replaces a surface's content by id", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("h.html", "<p>orig</p>");
+    const md = tmpFile("m.md", "# orig md");
+    const pub = await cli(server, "publish", html, "--md", md);
+    const id = JSON.parse(pub.stdout).id;
+
+    const full = (await fetch(`${server.url}/api/posts/${id}`).then((r) => r.json())) as any;
+    const mdId = full.surfaces[1].id;
+
+    const newMd = tmpFile("m2.md", "# updated md");
+    const { code } = await cli(server, "surface", "edit", id, mdId, newMd);
+    assert.equal(code, 0);
+
+    const updated = (await fetch(`${server.url}/api/posts/${id}`).then((r) => r.json())) as any;
+    assert.equal(updated.surfaces[1].markdown, "# updated md");
+    assert.equal(updated.surfaces[0].html, "<p>orig</p>", "other surface untouched");
+  } finally {
+    await server.close();
+  }
+});
+
+test("surface move reorders a surface by id", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("h.html", "<p>a</p>");
+    const md = tmpFile("m.md", "# b");
+    const code = tmpFile("c.ts", "const x = 1;");
+    const pub = await cli(server, "publish", html, "--md", md, "--code", code);
+    const id = JSON.parse(pub.stdout).id;
+
+    const full = (await fetch(`${server.url}/api/posts/${id}`).then((r) => r.json())) as any;
+    const mdId = full.surfaces[1].id;
+
+    const { code: exitCode } = await cli(server, "surface", "move", id, mdId, "--to", "0");
+    assert.equal(exitCode, 0);
+
+    const updated = (await fetch(`${server.url}/api/posts/${id}`).then((r) => r.json())) as any;
+    assert.deepEqual(
+      updated.surfaces.map((s: any) => s.kind),
+      ["markdown", "html", "code"],
+    );
   } finally {
     await server.close();
   }

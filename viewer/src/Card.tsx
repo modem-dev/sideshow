@@ -2,7 +2,6 @@ import {
   createEffect,
   createSignal,
   For,
-  Index,
   type JSX,
   Match,
   onCleanup,
@@ -234,7 +233,7 @@ export function Card(props: { post: Post; standalone?: boolean }) {
           broken diff), so it shows a neutral refresh hint instead. An html
           iframe src changes only when the version, the active theme, or the
           resolved light/dark mode does, so unrelated refetches never reload it. */}
-      <Index each={props.post.surfaces}>
+      <For each={props.post.surfaces}>
         {(surface, i) => (
           <Switch
             fallback={
@@ -243,47 +242,40 @@ export function Card(props: { post: Post; standalone?: boolean }) {
               </div>
             }
           >
-            {/* Every kind that becomes HTML renders the same way: a sandboxed
-                iframe pointed at /s/:id?part=N, which the server renders (author
-                html, server-rendered markdown/code/diff/terminal, or the
-                self-rendering mermaid doc). The src changes only when the
-                version, active theme, or resolved light/dark mode does, so
-                unrelated refetches never reload it. (`?part=` is the legacy wire
-                query key for a surface index.) */}
-            <Match when={SANDBOXED_KINDS.has(surface().kind)}>
+            <Match when={SANDBOXED_KINDS.has(surface.kind)}>
               <iframe
                 ref={(el) => {
-                  surfaceFrames.set(i, el);
+                  surfaceFrames.set(i(), el);
                   iframes.add(el);
                   onCleanup(() => {
-                    surfaceFrames.delete(i);
+                    surfaceFrames.delete(i());
                     iframes.delete(el);
                   });
                 }}
                 sandbox="allow-scripts"
-                class={FRAME_CLASS[surface().kind]}
+                class={FRAME_CLASS[surface.kind]}
                 title={
                   props.post.surfaces.length > 1
-                    ? `${props.post.title} (surface ${i + 1})`
+                    ? `${props.post.title} (surface ${i() + 1})`
                     : props.post.title
                 }
                 src={appPath(
-                  `/s/${props.post.id}?part=${i}&ver=${props.post.version}&cb=${props.post.version}&theme=${activeTheme()}&mode=${resolvedMode()}`,
+                  `/s/${props.post.id}?part=${i()}&ver=${props.post.version}&cb=${props.post.version}&theme=${activeTheme()}&mode=${resolvedMode()}`,
                 )}
               ></iframe>
             </Match>
-            <Match when={surface().kind === "image"}>
-              <ImageSurface surface={surface() as ImageSurfaceData} />
+            <Match when={surface.kind === "image"}>
+              <ImageSurface surface={surface as ImageSurfaceData} />
             </Match>
-            <Match when={surface().kind === "trace"}>
-              <TraceSurface surface={surface() as TraceSurfaceData} />
+            <Match when={surface.kind === "trace"}>
+              <TraceSurface surface={surface as TraceSurfaceData} />
             </Match>
-            <Match when={surface().kind === "json"}>
-              <JsonSurface surface={surface() as JsonSurfaceData} />
+            <Match when={surface.kind === "json"}>
+              <JsonSurface surface={surface as JsonSurfaceData} />
             </Match>
           </Switch>
         )}
-      </Index>
+      </For>
       <Show when={!props.standalone}>
         <Thread
           postId={props.post.id}

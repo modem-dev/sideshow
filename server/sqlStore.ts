@@ -13,6 +13,7 @@ import {
   htmlSurface,
   MAX_WORKSPACE_ASSET_BYTES,
   newId,
+  normalizeSurfaceIds,
   selectEvictions,
   type Session,
   type SqlStorage,
@@ -82,6 +83,7 @@ export class SqlStore implements Store {
     }
     this.migrateToSurfaces();
     this.migrateToPosts();
+    this.migrateSurfaceIds();
   }
 
   // Pre-0.5.0 workspaces stored a `snippets` table and `comments.snippetId`. Lift
@@ -172,6 +174,32 @@ export class SqlStore implements Store {
       );
     }
     this.sql.exec("DROP TABLE surfaces");
+  }
+
+  // One-time migration: assign stable ids to surfaces in existing posts that
+  // were written before surface ids existed. Gated on a settings sentinel so
+  // it only runs once per workspace; idempotent and safe to retry.
+  private migrateSurfaceIds() {
+    const rows = this.sql
+      .exec("SELECT value FROM settings WHERE key = 'surfaceIdsMigrated'")
+      .toArray();
+    if (rows.length > 0 && rows[0]?.value === "1") return;
+    for (const r of this.sql.exec("SELECT id, surfaces, history FROM posts").toArray()) {
+      const surfaces = normalizeSurfaceIds(JSON.parse(r.surfaces as string) as Surface[]);
+      const history = (JSON.parse(r.history as string) as PostVersion[]).map((h) => ({
+        ...h,
+        surfaces: normalizeSurfaceIds(h.surfaces),
+      }));
+      this.sql.exec(
+        "UPDATE posts SET surfaces = ?, history = ? WHERE id = ?",
+        JSON.stringify(surfaces),
+        JSON.stringify(history),
+        r.id,
+      );
+    }
+    this.sql.exec(
+      "INSERT OR REPLACE INTO settings (key, value) VALUES ('surfaceIdsMigrated', '1')",
+    );
   }
 
   private rowToSession(r: Record<string, SqlStorageValue>): Session {
@@ -348,7 +376,7 @@ export class SqlStore implements Store {
       id: newId(),
       sessionId: input.sessionId,
       title: stripNul(input.title)?.trim() || "Untitled",
-      surfaces: input.surfaces,
+      surfaces: normalizeSurfaceIds(input.surfaces),
       createdAt: now,
       updatedAt: now,
       version: 1,
@@ -391,7 +419,8 @@ export class SqlStore implements Store {
       if (history.length > HISTORY_LIMIT) history.shift();
       const title =
         patch.title !== undefined ? stripNul(patch.title).trim() || surface.title : surface.title;
-      const surfaces = patch.surfaces !== undefined ? patch.surfaces : surface.surfaces;
+      const surfaces =
+        patch.surfaces !== undefined ? normalizeSurfaceIds(patch.surfaces) : surface.surfaces;
       const version = surface.version + 1;
       const updatedAt = new Date().toISOString();
       this.sql.exec(
@@ -660,11 +689,13 @@ export class SqlStore implements Store {
           s.id,
           s.sessionId,
           s.title,
-          JSON.stringify(s.surfaces),
+          JSON.stringify(normalizeSurfaceIds(s.surfaces)),
           s.createdAt,
           s.updatedAt,
           s.version,
-          JSON.stringify(s.history),
+          JSON.stringify(
+            s.history.map((h) => ({ ...h, surfaces: normalizeSurfaceIds(h.surfaces) })),
+          ),
         );
       }
       for (const c of snapshot.comments) {

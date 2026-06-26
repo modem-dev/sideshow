@@ -75,6 +75,21 @@ usage:
   sideshow update <id> <file|->           revise a post (new version, same card)
       --title <t>       replace title
       --kit <id>        opt the html surface into a kit (repeatable)
+      --surface <N>     target surface N (id or 0-based index) in a multi-surface post
+  sideshow surface <sub> [options]        edit individual surfaces of a post
+    surface add <id> [flags]              append a surface to an existing post
+        --md <f>          markdown surface
+        --code <f>        code surface (language inferred from filename)
+        --diff <f>        diff surface from a patch
+        --terminal <f>    terminal surface
+        --mermaid <f>     mermaid surface
+        --json <f>        json surface
+        --image <f>       image surface (uploads the file first)
+        --before <N>      insert before surface N (id or index)
+        --after <N>       insert after surface N (id or index)
+    surface remove <id> <N>               remove surface N (id or 0-based index)
+    surface edit <id> <N> <file|->        replace surface N's content (kind preserved)
+    surface move <id> <N> --to <M>        move surface N to position M
   sideshow wait [options]                 block until the user comments (long-poll)
       --session <id>    session to watch (default: auto)
       --timeout <sec>   max seconds to wait (default 120)
@@ -799,7 +814,12 @@ const commands = {
   },
 
   async publish() {
-    const { values: flags, positionals } = parse({
+    const {
+      values: flags,
+      positionals,
+      tokens,
+    } = parse({
+      tokens: true,
       allowPositionals: true,
       options: {
         title: { type: "string" },
@@ -821,44 +841,60 @@ const commands = {
     const htmlPart = { kind: "html", html: readContent(positionals[0]) };
     const kits = normalizeKits(flags.kit);
     if (kits) htmlPart.kits = kits;
-    const parts = [htmlPart];
-    if (flags.md !== undefined) {
-      parts.push({ kind: "markdown", markdown: readContent(flags.md || "-") });
-    }
-    if (flags.mermaid !== undefined) {
-      parts.push({ kind: "mermaid", mermaid: readContent(flags.mermaid || "-") });
-    }
-    if (flags.diff !== undefined) {
-      parts.push({
-        kind: "diff",
-        patch: readContent(flags.diff || "-"),
-        ...(flags.layout === "split" && { layout: "split" }),
-      });
-    }
-    if (flags.terminal !== undefined) {
-      parts.push({ kind: "terminal", text: readContent(flags.terminal || "-") });
-    }
-    if (flags.json !== undefined) {
-      const text = readContent(flags.json || "-");
-      try {
-        parts.push({ kind: "json", data: JSON.parse(text) });
-      } catch {
-        fail(`--json: invalid JSON${flags.json ? ` in ${flags.json}` : ""}`);
+    // Surfaces render top-to-bottom, so order is user-visible. Walk the
+    // parseArgs tokens (which preserve command-line order) and append each
+    // surface flag the first time it appears, instead of a fixed if-ladder.
+    const SURFACE_FLAGS = new Map([
+      ["md", "markdown"],
+      ["mermaid", "mermaid"],
+      ["diff", "diff"],
+      ["terminal", "terminal"],
+      ["json", "json"],
+      ["code", "code"],
+      ["image", "image"],
+    ]);
+    const orderedKinds = [];
+    const seen = new Set();
+    for (const t of tokens ?? []) {
+      if (t.kind === "option" && SURFACE_FLAGS.has(t.name) && !seen.has(t.name)) {
+        seen.add(t.name);
+        orderedKinds.push(SURFACE_FLAGS.get(t.name));
       }
     }
-    if (flags.code !== undefined) {
-      const codeFile = flags.code || "-";
-      const part = { kind: "code", code: readContent(codeFile) };
-      const codeLang = codeFile !== "-" ? inferLang(codeFile) : undefined;
-      if (codeLang) part.language = codeLang;
-      if (codeFile !== "-") part.title = codeFile.split("/").pop() || codeFile;
-      parts.push(part);
-    }
-    // Resolve the session first so the image upload and the post share it.
+    // Resolve the session first so image uploads and the post share it.
     const session = await resolveSession(flags, { create: true });
-    if (flags.image !== undefined) {
-      const asset = await uploadFile(flags.image, { session, kind: "image" });
-      parts.push({ kind: "image", assetId: asset.id });
+    const parts = [htmlPart];
+    for (const kind of orderedKinds) {
+      if (kind === "markdown") {
+        parts.push({ kind: "markdown", markdown: readContent(flags.md || "-") });
+      } else if (kind === "mermaid") {
+        parts.push({ kind: "mermaid", mermaid: readContent(flags.mermaid || "-") });
+      } else if (kind === "diff") {
+        parts.push({
+          kind: "diff",
+          patch: readContent(flags.diff || "-"),
+          ...(flags.layout === "split" && { layout: "split" }),
+        });
+      } else if (kind === "terminal") {
+        parts.push({ kind: "terminal", text: readContent(flags.terminal || "-") });
+      } else if (kind === "json") {
+        const text = readContent(flags.json || "-");
+        try {
+          parts.push({ kind: "json", data: JSON.parse(text) });
+        } catch {
+          fail(`--json: invalid JSON${flags.json ? ` in ${flags.json}` : ""}`);
+        }
+      } else if (kind === "code") {
+        const codeFile = flags.code || "-";
+        const part = { kind: "code", code: readContent(codeFile) };
+        const codeLang = codeFile !== "-" ? inferLang(codeFile) : undefined;
+        if (codeLang) part.language = codeLang;
+        if (codeFile !== "-") part.title = codeFile.split("/").pop() || codeFile;
+        parts.push(part);
+      } else if (kind === "image") {
+        const asset = await uploadFile(flags.image, { session, kind: "image" });
+        parts.push({ kind: "image", assetId: asset.id });
+      }
     }
     outSurface(await publishSurface(parts, { ...flags, session }));
   },
@@ -1070,22 +1106,168 @@ const commands = {
   async update() {
     const { values: flags, positionals } = parse({
       allowPositionals: true,
-      options: { title: { type: "string" }, kit: { type: "string", multiple: true } },
+      options: {
+        title: { type: "string" },
+        kit: { type: "string", multiple: true },
+        surface: { type: "string" },
+      },
     });
     const id = positionals[0];
-    if (!id) fail("usage: sideshow update <id> <file|->");
-    const body = { title: flags.title };
+    if (!id) fail("usage: sideshow update <id> <file|-> [--surface N]");
+    const body = {};
+    if (flags.title !== undefined) body.title = flags.title;
     if (positionals[1] !== undefined) {
       body.content = readContent(positionals[1]);
     }
     const kits = normalizeKits(flags.kit);
     if (kits) body.kits = kits;
+    if (flags.surface !== undefined) body.surface = flags.surface;
     outSurface(
       await api(`/api/posts/${id}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
     );
+  },
+
+  async surface() {
+    const sub = rest.shift();
+    if (!sub || sub === "--help" || sub === "-h") {
+      console.log(HELP);
+      process.exit(0);
+    }
+
+    if (sub === "add") {
+      const {
+        values: flags,
+        positionals,
+        tokens,
+      } = parse({
+        tokens: true,
+        allowPositionals: true,
+        options: {
+          md: { type: "string" },
+          mermaid: { type: "string" },
+          diff: { type: "string" },
+          terminal: { type: "string" },
+          json: { type: "string" },
+          code: { type: "string" },
+          image: { type: "string" },
+          before: { type: "string" },
+          after: { type: "string" },
+          session: { type: "string" },
+        },
+      });
+      const postId = positionals[0];
+      if (!postId) fail("usage: sideshow surface add <postId> [--md f] [--code f] ...");
+
+      const SURFACE_FLAGS = new Map([
+        ["md", "markdown"],
+        ["mermaid", "mermaid"],
+        ["diff", "diff"],
+        ["terminal", "terminal"],
+        ["json", "json"],
+        ["code", "code"],
+        ["image", "image"],
+      ]);
+      const orderedKinds = [];
+      const seen = new Set();
+      for (const t of tokens ?? []) {
+        if (t.kind === "option" && SURFACE_FLAGS.has(t.name) && !seen.has(t.name)) {
+          seen.add(t.name);
+          orderedKinds.push(SURFACE_FLAGS.get(t.name));
+        }
+      }
+      if (orderedKinds.length === 0) fail("provide at least one surface flag (--md, --code, ...)");
+      const session = await resolveSession(flags, { create: true });
+      let lastResult;
+      for (const kind of orderedKinds) {
+        let surface;
+        if (kind === "markdown") {
+          surface = { kind: "markdown", markdown: readContent(flags.md || "-") };
+        } else if (kind === "mermaid") {
+          surface = { kind: "mermaid", mermaid: readContent(flags.mermaid || "-") };
+        } else if (kind === "diff") {
+          surface = { kind: "diff", patch: readContent(flags.diff || "-") };
+        } else if (kind === "terminal") {
+          surface = { kind: "terminal", text: readContent(flags.terminal || "-") };
+        } else if (kind === "json") {
+          const text = readContent(flags.json || "-");
+          try {
+            surface = { kind: "json", data: JSON.parse(text) };
+          } catch {
+            fail(`--json: invalid JSON${flags.json ? ` in ${flags.json}` : ""}`);
+          }
+        } else if (kind === "code") {
+          const codeFile = flags.code || "-";
+          surface = { kind: "code", code: readContent(codeFile) };
+          const codeLang = codeFile !== "-" ? inferLang(codeFile) : undefined;
+          if (codeLang) surface.language = codeLang;
+          if (codeFile !== "-") surface.title = codeFile.split("/").pop() || codeFile;
+        } else if (kind === "image") {
+          const asset = await uploadFile(flags.image, { session, kind: "image" });
+          surface = { kind: "image", assetId: asset.id };
+        }
+        const body = { surface };
+        if (flags.before !== undefined) body.before = flags.before;
+        if (flags.after !== undefined) body.after = flags.after;
+        lastResult = await api(`/api/posts/${postId}/surfaces`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+      }
+      outSurface(lastResult);
+    } else if (sub === "remove") {
+      const { positionals } = parse({ allowPositionals: true });
+      const [postId, target] = positionals;
+      if (!postId || !target) fail("usage: sideshow surface remove <postId> <N|id>");
+      outSurface(await api(`/api/posts/${postId}/surfaces/${target}`, { method: "DELETE" }));
+    } else if (sub === "edit") {
+      const { positionals } = parse({ allowPositionals: true });
+      const [postId, target, file] = positionals;
+      if (!postId || !target || file === undefined) {
+        fail("usage: sideshow surface edit <postId> <N|id> <file|->");
+      }
+      outSurface(
+        await api(`/api/posts/${postId}/surfaces/${target}`, {
+          method: "PATCH",
+          body: JSON.stringify({ content: readContent(file) }),
+        }),
+      );
+    } else if (sub === "move") {
+      const { values: flags, positionals } = parse({
+        allowPositionals: true,
+        options: { to: { type: "string" } },
+      });
+      const [postId, target] = positionals;
+      if (!postId || !target || flags.to === undefined) {
+        fail("usage: sideshow surface move <postId> <N|id> --to <M>");
+      }
+      const post = await api(`/api/posts/${postId}`);
+      const surfaces = post.surfaces ?? [];
+      let fromIdx = surfaces.findIndex((s) => s.id === target);
+      if (fromIdx < 0) {
+        fromIdx = Number(target);
+        if (!Number.isInteger(fromIdx) || fromIdx < 0 || fromIdx >= surfaces.length) {
+          fail(`surface "${target}" not found`);
+        }
+      }
+      const toIdx = Number(flags.to);
+      if (!Number.isInteger(toIdx) || toIdx < 0 || toIdx >= surfaces.length) {
+        fail(`--to must be a valid index (0-${surfaces.length - 1})`);
+      }
+      const ids = surfaces.map((s) => s.id);
+      const [moved] = ids.splice(fromIdx, 1);
+      ids.splice(toIdx, 0, moved);
+      outSurface(
+        await api(`/api/posts/${postId}/surfaces`, {
+          method: "PATCH",
+          body: JSON.stringify({ order: ids }),
+        }),
+      );
+    } else {
+      fail(`unknown surface subcommand: ${sub} (use add, remove, edit, or move)`);
+    }
   },
 
   async wait() {

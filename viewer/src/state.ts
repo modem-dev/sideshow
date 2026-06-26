@@ -341,7 +341,7 @@ async function upsertPost(id: string, { scroll = true } = {}) {
   if (!s || s.sessionId !== selected()) return;
   const idx = posts.findIndex((x) => x.id === s.id);
   if (idx >= 0) {
-    setPostsInternal(idx, reconcile(s));
+    setPostsInternal(idx, reconcile(s, { key: "id" }));
   } else {
     // Follow new posts only when the user is already at the bottom;
     // never yank them away from whatever they're reading mid-scroll.

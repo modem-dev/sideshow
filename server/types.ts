@@ -159,16 +159,20 @@ export interface CodeSurface {
   lineStart?: number;
 }
 
+// Every surface optionally carries a server-assigned id — a short, stable
+// identifier for per-surface targeting (append/edit/remove/reorder). The id
+// is assigned by normalizeSurfaceIds on create/update and preserved across
+// per-surface mutations; full-replace updates assign fresh ids.
 export type Surface =
-  | HtmlSurface
-  | DiffSurface
-  | ImageSurface
-  | TraceSurface
-  | MarkdownSurface
-  | TerminalSurface
-  | MermaidSurface
-  | JsonSurface
-  | CodeSurface;
+  | (HtmlSurface & { id?: string })
+  | (DiffSurface & { id?: string })
+  | (ImageSurface & { id?: string })
+  | (TraceSurface & { id?: string })
+  | (MarkdownSurface & { id?: string })
+  | (TerminalSurface & { id?: string })
+  | (MermaidSurface & { id?: string })
+  | (JsonSurface & { id?: string })
+  | (CodeSurface & { id?: string });
 
 export interface PostVersion {
   version: number;
@@ -383,6 +387,14 @@ export async function hashAssetId(data: Uint8Array): Promise<string> {
   // ArrayBuffer, and this also avoids the SharedArrayBuffer-backed lib type.
   const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(data));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Assign a stable id to every surface that lacks one, preserving existing ids.
+// Called by the stores on create/update so all persisted surfaces are
+// addressable. Per-surface flow functions call this after mutating a single
+// surface so untouched surfaces keep their ids.
+export function normalizeSurfaceIds(surfaces: Surface[]): Surface[] {
+  return surfaces.map((s) => (s.id ? s : { ...s, id: newId() }));
 }
 
 // A snippet is sugar for a single html surface; this bridges the legacy

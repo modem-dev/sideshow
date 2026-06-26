@@ -32,6 +32,18 @@ export interface McpDeps {
     agent?: string;
   }): FlowResult<Post>;
   reviseSurface(id: string, patch: { parts?: Surface[]; title?: string }): FlowResult<Post>;
+  appendSurface(
+    id: string,
+    surface: Surface,
+    pos?: { before?: string; after?: string },
+  ): FlowResult<Post>;
+  replaceSurface(
+    id: string,
+    target: string,
+    replacement: { surface?: Surface; content?: string; kits?: unknown },
+  ): FlowResult<Post>;
+  removeSurface(id: string, target: string): FlowResult<Post>;
+  reorderSurfaces(id: string, order: (string | number)[]): FlowResult<Post>;
   createComment(input: {
     text: string;
     surface?: string;
@@ -213,6 +225,51 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       }
       case "get_design_guide":
         return deps.guide;
+      case "add_surface": {
+        const parts = await coerceParts([args.surface]);
+        if (parts.length === 0) throw new Error("invalid surface");
+        const result = await deps.appendSurface(String(args.postId ?? ""), parts[0], {
+          before: typeof args.before === "string" ? args.before : undefined,
+          after: typeof args.after === "string" ? args.after : undefined,
+        });
+        if ("error" in result) throw new Error(result.error);
+        return surfaceResult(result, origin, "p");
+      }
+      case "edit_surface": {
+        let surface: Surface | undefined;
+        if (args.surface !== undefined) {
+          const parts = await coerceParts([args.surface]);
+          if (parts.length === 0) throw new Error("invalid surface");
+          surface = parts[0];
+        }
+        const result = await deps.replaceSurface(
+          String(args.postId ?? ""),
+          String(args.target ?? ""),
+          {
+            surface,
+            content: typeof args.content === "string" ? args.content : undefined,
+            kits: args.kits,
+          },
+        );
+        if ("error" in result) throw new Error(result.error);
+        return surfaceResult(result, origin, "p");
+      }
+      case "remove_surface": {
+        const result = await deps.removeSurface(
+          String(args.postId ?? ""),
+          String(args.target ?? ""),
+        );
+        if ("error" in result) throw new Error(result.error);
+        return surfaceResult(result, origin, "p");
+      }
+      case "reorder_surfaces": {
+        const result = await deps.reorderSurfaces(
+          String(args.postId ?? ""),
+          Array.isArray(args.order) ? args.order : [],
+        );
+        if ("error" in result) throw new Error(result.error);
+        return surfaceResult(result, origin, "p");
+      }
       default:
         throw new Error(`unknown tool: ${name}`);
     }

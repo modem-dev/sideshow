@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HISTORY_LIMIT, htmlSurface, type Store } from "../server/types.ts";
+import { HISTORY_LIMIT, htmlSurface, type Store, type Surface } from "../server/types.ts";
 
 const bytes = (...values: number[]) => new Uint8Array(values);
 const NUL = String.fromCharCode(0);
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Strip the server-assigned id from each surface for deepEqual comparisons
+// against test-constructed surfaces that don't carry ids.
+const stripIds = (surfaces: Surface[]) => surfaces.map(({ id: _, ...rest }) => rest);
 
 // Reusable contract suite: every Store implementation must pass it.
 // makeStore must return a fresh, empty store on each call.
@@ -135,14 +138,18 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     surface.title = "mutated return";
     surface.surfaces[0] = htmlSurface("<p>mutated return</p>");
     assert.equal((await store.getPost(surface.id))?.title, "Card");
-    assert.deepEqual((await store.getPost(surface.id))?.surfaces, [htmlSurface("<p>v1</p>")]);
+    assert.deepEqual(stripIds((await store.getPost(surface.id))?.surfaces ?? []), [
+      htmlSurface("<p>v1</p>"),
+    ]);
 
     const patchParts = [htmlSurface("<p>v2</p>")];
     const updated = await store.updatePost(surface.id, { surfaces: patchParts });
     assert.ok(updated);
     patchParts[0].html = "<p>mutated patch</p>";
     updated.surfaces[0] = htmlSurface("<p>mutated update return</p>");
-    assert.deepEqual((await store.getPost(surface.id))?.surfaces, [htmlSurface("<p>v2</p>")]);
+    assert.deepEqual(stripIds((await store.getPost(surface.id))?.surfaces ?? []), [
+      htmlSurface("<p>v2</p>"),
+    ]);
 
     const comment = await store.createComment({
       sessionId: session.id,
@@ -206,7 +213,7 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.ok(surface);
     assert.equal(surface.title, "Untitled");
     assert.equal(surface.version, 1);
-    assert.deepEqual(surface.surfaces, [htmlSurface("<p>x</p>")]);
+    assert.deepEqual(stripIds(surface.surfaces), [htmlSurface("<p>x</p>")]);
     assert.deepEqual(surface.history, []);
     assert.equal(surface.updatedAt, surface.createdAt);
 
@@ -246,6 +253,34 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.deepEqual(await store.getPost(surface.id), surface);
   });
 
+  contract("assigns stable ids to surfaces on create and update", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    const surface = await store.createPost({
+      sessionId: session.id,
+      surfaces: [htmlSurface("<p>a</p>"), { kind: "markdown", markdown: "# b" }],
+    });
+    assert.ok(surface);
+    assert.equal(surface.surfaces.length, 2);
+    assert.ok(surface.surfaces[0].id, "create assigns ids to every surface");
+    assert.ok(surface.surfaces[1].id);
+    assert.notEqual(surface.surfaces[0].id, surface.surfaces[1].id, "ids are unique");
+
+    // full-replace update assigns fresh ids (the validator strips client-sent ids)
+    const updated = await store.updatePost(surface.id, {
+      surfaces: [htmlSurface("<p>c</p>"), { kind: "markdown", markdown: "# d" }],
+    });
+    assert.ok(updated);
+    assert.ok(updated.surfaces[0].id);
+    assert.ok(updated.surfaces[1].id);
+    // the old ids and new ids differ (full replace = new surfaces)
+    assert.notEqual(surface.surfaces[0].id, updated.surfaces[0].id);
+
+    // title-only update preserves surface ids
+    const retitled = await store.updatePost(surface.id, { title: "T2" });
+    assert.ok(retitled);
+    assert.equal(retitled.surfaces[0].id, updated.surfaces[0].id, "title-only keeps ids");
+  });
+
   contract("lists surfaces oldest first, optionally filtered by session", async (store) => {
     const one = await store.createSession({ agent: "a" });
     const two = await store.createSession({ agent: "b" });
@@ -280,20 +315,26 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
 
     const updated = await store.updatePost(surface.id, { surfaces: [htmlSurface("<p>v2</p>")] });
     assert.equal(updated?.version, 2);
-    assert.deepEqual(updated?.surfaces, [htmlSurface("<p>v2</p>")]);
+    assert.deepEqual(stripIds(updated?.surfaces ?? []), [htmlSurface("<p>v2</p>")]);
     assert.equal(updated?.title, "T");
     assert.equal(updated?.history.length, 1);
-    assert.deepEqual(updated?.history[0], {
-      version: 1,
-      title: "T",
-      surfaces: [htmlSurface("<p>v1</p>")],
-      at: v1UpdatedAt,
-    });
+    assert.deepEqual(
+      {
+        ...updated?.history[0],
+        surfaces: stripIds(updated?.history[0].surfaces ?? []),
+      },
+      {
+        version: 1,
+        title: "T",
+        surfaces: [htmlSurface("<p>v1</p>")],
+        at: v1UpdatedAt,
+      },
+    );
 
     // title-only patch keeps parts; blank title keeps the old title
     const retitled = await store.updatePost(surface.id, { title: "T2" });
     assert.equal(retitled?.title, "T2");
-    assert.deepEqual(retitled?.surfaces, [htmlSurface("<p>v2</p>")]);
+    assert.deepEqual(stripIds(retitled?.surfaces ?? []), [htmlSurface("<p>v2</p>")]);
     const blank = await store.updatePost(surface.id, {
       title: "  ",
       surfaces: [htmlSurface("<p>v4</p>")],
@@ -324,7 +365,7 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     // oldest entries fell off the front; the newest archived version remains
     assert.equal(final?.history[0].version, updates + 1 - HISTORY_LIMIT);
     assert.equal(final?.history[HISTORY_LIMIT - 1].version, updates);
-    assert.deepEqual(final?.history[HISTORY_LIMIT - 1].surfaces, [
+    assert.deepEqual(stripIds(final?.history[HISTORY_LIMIT - 1].surfaces ?? []), [
       htmlSurface(`<p>v${updates}</p>`),
     ]);
   });

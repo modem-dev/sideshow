@@ -355,7 +355,9 @@ test("REST surface routes reject malformed parts before storage", async () => {
 
   const unchanged = (await (await app.request(`/api/surfaces/${good.id}`)).json()) as any;
   assert.equal(unchanged.version, 1);
-  assert.deepEqual(unchanged.surfaces, [{ kind: "html", html: "<p>x</p>" }]);
+  assert.equal(unchanged.surfaces.length, 1);
+  assert.equal(unchanged.surfaces[0].kind, "html");
+  assert.equal(unchanged.surfaces[0].html, "<p>x</p>");
 });
 
 test("publish_surface MCP tool round-trips a diff part", async () => {
@@ -2525,4 +2527,393 @@ test("PATCH /api/posts/:id bumps version and keeps history", async () => {
   assert.equal(full.version, 2);
   assert.equal(full.history.length, 1);
   assert.equal(full.history[0].surfaces[0].markdown, "# v1");
+});
+
+// ---------------------------------------------------------------------------
+// Per-surface sub-resource routes (append / replace / remove / reorder)
+// ---------------------------------------------------------------------------
+
+test("POST /api/posts/:id/surfaces appends a surface", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Multi", surfaces: [{ kind: "html", html: "<p>first</p>" }] }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(
+    `/api/posts/${created.id}/surfaces`,
+    json({
+      surface: { kind: "markdown", markdown: "# appended" },
+    }),
+  );
+  assert.equal(res.status, 200);
+  const updated = (await res.json()) as any;
+  assert.deepEqual(updated.kinds, ["html", "markdown"]);
+
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces.length, 2);
+  assert.equal(full.surfaces[1].kind, "markdown");
+  assert.equal(full.surfaces[1].markdown, "# appended");
+  assert.ok(full.surfaces[1].id, "appended surface gets an id");
+});
+
+test("POST /api/posts/:id/surfaces inserts at a position via before/after", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Pos",
+        surfaces: [
+          { kind: "html", html: "<p>a</p>" },
+          { kind: "html", html: "<p>b</p>" },
+        ],
+      }),
+    )
+  ).json()) as any;
+  const full0 = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  const firstId = full0.surfaces[0].id;
+
+  // Insert before the first surface (by id)
+  await app.request(
+    `/api/posts/${created.id}/surfaces`,
+    json({
+      surface: { kind: "markdown", markdown: "# inserted" },
+      before: firstId,
+    }),
+  );
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.deepEqual(
+    full.surfaces.map((s: any) => s.kind),
+    ["markdown", "html", "html"],
+  );
+});
+
+test("PATCH /api/posts/:id/surfaces/:target replaces a surface by id", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Rep",
+        surfaces: [
+          { kind: "html", html: "<p>orig</p>" },
+          { kind: "markdown", markdown: "# keep" },
+        ],
+      }),
+    )
+  ).json()) as any;
+  const full0 = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  const targetId = full0.surfaces[0].id;
+
+  const res = await app.request(
+    `/api/posts/${created.id}/surfaces/${targetId}`,
+    patch({
+      surface: { kind: "code", code: "console.log('new')" },
+    }),
+  );
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].kind, "code");
+  assert.equal(full.surfaces[0].code, "console.log('new')");
+  assert.equal(full.surfaces[0].id, targetId, "replaced surface keeps its id");
+  assert.equal(full.surfaces[1].kind, "markdown", "other surface untouched");
+});
+
+test("PATCH /api/posts/:id/surfaces/:target content-only update by index", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "CI",
+        surfaces: [
+          { kind: "html", html: "<p>a</p>" },
+          { kind: "markdown", markdown: "# b" },
+        ],
+      }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(
+    `/api/posts/${created.id}/surfaces/1`,
+    patch({
+      content: "# updated",
+    }),
+  );
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[1].kind, "markdown", "kind preserved");
+  assert.equal(full.surfaces[1].markdown, "# updated");
+  assert.equal(full.surfaces[0].html, "<p>a</p>", "other surface untouched");
+});
+
+test("DELETE /api/posts/:id/surfaces/:target removes a surface", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Del",
+        surfaces: [
+          { kind: "html", html: "<p>a</p>" },
+          { kind: "markdown", markdown: "# b" },
+        ],
+      }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}/surfaces/1`, {
+    method: "DELETE",
+  });
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces.length, 1);
+  assert.equal(full.surfaces[0].kind, "html");
+});
+
+test("DELETE /api/posts/:id/surfaces/:target rejects removing the last surface", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Last", surfaces: [{ kind: "html", html: "<p>only</p>" }] }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}/surfaces/0`, {
+    method: "DELETE",
+  });
+  assert.equal(res.status, 400);
+  assert.match(((await res.json()) as any).error, /at least one surface/);
+});
+
+test("PATCH /api/posts/:id/surfaces reorders surfaces by id", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Ord",
+        surfaces: [
+          { kind: "html", html: "<p>a</p>" },
+          { kind: "markdown", markdown: "# b" },
+          { kind: "code", code: "x" },
+        ],
+      }),
+    )
+  ).json()) as any;
+  const full0 = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  const ids = full0.surfaces.map((s: any) => s.id);
+
+  const res = await app.request(
+    `/api/posts/${created.id}/surfaces`,
+    patch({
+      order: [ids[2], ids[0], ids[1]],
+    }),
+  );
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.deepEqual(
+    full.surfaces.map((s: any) => s.kind),
+    ["code", "html", "markdown"],
+  );
+  // ids are preserved on the surfaces
+  assert.equal(full.surfaces[0].id, ids[2]);
+  assert.equal(full.surfaces[1].id, ids[0]);
+  assert.equal(full.surfaces[2].id, ids[1]);
+});
+
+test("PATCH /api/posts/:id with surface param targets multi-surface post", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "T",
+        surfaces: [
+          { kind: "html", html: "<p>a</p>" },
+          { kind: "markdown", markdown: "# b" },
+        ],
+      }),
+    )
+  ).json()) as any;
+  const full0 = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  const targetId = full0.surfaces[1].id;
+
+  // Content-only update targeting surface 1 by id
+  const res = await app.request(
+    `/api/posts/${created.id}`,
+    patch({
+      content: "# updated b",
+      surface: targetId,
+    }),
+  );
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[1].markdown, "# updated b");
+  assert.equal(full.surfaces[0].html, "<p>a</p>", "other surface untouched");
+});
+
+// ---------------------------------------------------------------------------
+// MCP per-surface tools (add_surface / edit_surface / remove_surface / reorder_surfaces)
+// ---------------------------------------------------------------------------
+
+test("mcp add_surface appends a surface via HTTP MCP", async () => {
+  const app = makeApp();
+  const pub = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "publish_post",
+        arguments: { title: "MCP", surfaces: [{ kind: "html", html: "<p>a</p>" }] },
+      }),
+    )
+  ).json()) as any;
+  const postId = JSON.parse(pub.result.content[0].text).id;
+
+  const res = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "add_surface",
+        arguments: { postId, surface: { kind: "markdown", markdown: "# appended" } },
+      }),
+    )
+  ).json()) as any;
+  assert.equal(res.result.isError, undefined);
+  const out = JSON.parse(res.result.content[0].text);
+  assert.equal(out.version, 2);
+  assert.ok(out.url.includes(`/p/${postId}`));
+
+  const full = (await (await app.request(`/api/posts/${postId}`)).json()) as any;
+  assert.deepEqual(
+    full.surfaces.map((s: any) => s.kind),
+    ["html", "markdown"],
+  );
+});
+
+test("mcp edit_surface content-only update via HTTP MCP", async () => {
+  const app = makeApp();
+  const pub = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "publish_post",
+        arguments: {
+          title: "MCP",
+          surfaces: [
+            { kind: "html", html: "<p>a</p>" },
+            { kind: "markdown", markdown: "# b" },
+          ],
+        },
+      }),
+    )
+  ).json()) as any;
+  const postId = JSON.parse(pub.result.content[0].text).id;
+  const full0 = (await (await app.request(`/api/posts/${postId}`)).json()) as any;
+  const target = full0.surfaces[1].id;
+
+  const res = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "edit_surface",
+        arguments: { postId, target, content: "# updated via mcp" },
+      }),
+    )
+  ).json()) as any;
+  assert.equal(res.result.isError, undefined);
+
+  const full = (await (await app.request(`/api/posts/${postId}`)).json()) as any;
+  assert.equal(full.surfaces[1].markdown, "# updated via mcp");
+  assert.equal(full.surfaces[1].id, target, "id preserved");
+  assert.equal(full.surfaces[0].html, "<p>a</p>", "other surface untouched");
+});
+
+test("mcp remove_surface via HTTP MCP", async () => {
+  const app = makeApp();
+  const pub = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "publish_post",
+        arguments: {
+          title: "MCP",
+          surfaces: [
+            { kind: "html", html: "<p>keep</p>" },
+            { kind: "markdown", markdown: "# remove me" },
+          ],
+        },
+      }),
+    )
+  ).json()) as any;
+  const postId = JSON.parse(pub.result.content[0].text).id;
+
+  const res = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "remove_surface",
+        arguments: { postId, target: "1" },
+      }),
+    )
+  ).json()) as any;
+  assert.equal(res.result.isError, undefined);
+
+  const full = (await (await app.request(`/api/posts/${postId}`)).json()) as any;
+  assert.equal(full.surfaces.length, 1);
+  assert.equal(full.surfaces[0].kind, "html");
+});
+
+test("mcp reorder_surfaces via HTTP MCP", async () => {
+  const app = makeApp();
+  const pub = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "publish_post",
+        arguments: {
+          title: "MCP",
+          surfaces: [
+            { kind: "html", html: "<p>a</p>" },
+            { kind: "markdown", markdown: "# b" },
+            { kind: "code", code: "x" },
+          ],
+        },
+      }),
+    )
+  ).json()) as any;
+  const postId = JSON.parse(pub.result.content[0].text).id;
+  const full0 = (await (await app.request(`/api/posts/${postId}`)).json()) as any;
+  const ids = full0.surfaces.map((s: any) => s.id);
+
+  const res = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", {
+        name: "reorder_surfaces",
+        arguments: { postId, order: [ids[2], ids[0], ids[1]] },
+      }),
+    )
+  ).json()) as any;
+  assert.equal(res.result.isError, undefined);
+
+  const full = (await (await app.request(`/api/posts/${postId}`)).json()) as any;
+  assert.deepEqual(
+    full.surfaces.map((s: any) => s.kind),
+    ["code", "html", "markdown"],
+  );
+});
+
+test("mcp tools/list includes the new per-surface tools", async () => {
+  const app = makeApp();
+  const list = (await (await app.request("/mcp", mcpCall(1, "tools/list"))).json()) as any;
+  const names = list.result.tools.map((t: any) => t.name);
+  assert.ok(names.includes("add_surface"));
+  assert.ok(names.includes("edit_surface"));
+  assert.ok(names.includes("remove_surface"));
+  assert.ok(names.includes("reorder_surfaces"));
 });
