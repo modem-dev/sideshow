@@ -139,6 +139,10 @@ export interface TerminalSurface {
 export interface JsonSurface {
   kind: "json";
   data: unknown;
+  // How many levels of containers to expand on initial render (root is depth
+  // 0). Default 0 = only the root object/array is open. Set to e.g. 2 to
+  // reveal the first two levels of nested structure at a glance.
+  openDepth?: number;
 }
 
 // A code surface is source code the trusted viewer highlights with shiki (the
@@ -415,7 +419,7 @@ export function surfacesByteLength(surfaces: Surface[]): number {
     } else if (p.kind === "mermaid") {
       n += p.mermaid.length;
     } else if (p.kind === "json") {
-      n += JSON.stringify(p.data).length;
+      n += JSON.stringify(p.data).length + (p.openDepth ? 4 : 0);
     } else if (p.kind === "code") {
       n +=
         p.code.length + (p.language?.length ?? 0) + (p.title?.length ?? 0) + (p.lineStart ? 4 : 0);

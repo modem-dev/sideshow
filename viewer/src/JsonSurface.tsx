@@ -2,27 +2,28 @@ import { createSignal, For, Show } from "solid-js";
 import type { JsonSurface as JsonSurfaceData } from "./api.ts";
 
 export function JsonSurface(props: { surface: JsonSurfaceData }) {
+  const openDepth = () => props.surface.openDepth ?? 0;
   return (
     <div class="json-surface">
-      <JsonNode value={props.surface.data} depth={0} />
+      <JsonNode value={props.surface.data} depth={0} openDepth={openDepth()} />
     </div>
   );
 }
 
-function JsonNode(props: { value: unknown; depth: number }) {
+function JsonNode(props: { value: unknown; depth: number; openDepth: number }) {
   const isContainer = () => typeof props.value === "object" && props.value !== null;
 
   return (
     <Show when={isContainer()} fallback={<Primitive value={props.value} />}>
-      <Container value={props.value as object} depth={props.depth} />
+      <Container value={props.value as object} depth={props.depth} openDepth={props.openDepth} />
     </Show>
   );
 }
 
 type Entry = readonly [string, unknown];
 
-function Container(props: { value: object; depth: number }) {
-  const [open, setOpen] = createSignal(props.depth === 0);
+function Container(props: { value: object; depth: number; openDepth: number }) {
+  const [open, setOpen] = createSignal(props.depth <= props.openDepth);
   const isArray = () => Array.isArray(props.value);
   const entries = (): Entry[] =>
     isArray()
@@ -66,7 +67,7 @@ function Container(props: { value: object; depth: number }) {
                   <span class="json-key">"{key}"</span>
                   <span class="json-colon">: </span>
                 </Show>
-                <JsonNode value={val} depth={props.depth + 1} />
+                <JsonNode value={val} depth={props.depth + 1} openDepth={props.openDepth} />
                 <Show when={i() < entries().length - 1}>
                   <span class="json-comma">,</span>
                 </Show>

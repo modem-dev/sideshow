@@ -195,24 +195,30 @@ const looseTerminalPart = z.object({
 // drops the surface if `data` is absent. The transform fixes zod's inference:
 // z.unknown() marks the key optional, but data is always present after the
 // refine, so the output type must be { kind: "json"; data: unknown }.
+// `openDepth` optionally expands containers up to that depth on render.
+function maybeOpenDepth(n: number | undefined): { openDepth?: number } {
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? { openDepth: Math.floor(n) } : {};
+}
 const strictJsonPart = z
   .object({
     kind: z.literal("json"),
     data: z.unknown(),
+    openDepth: z.number().int().min(0).optional(),
   })
   .refine((p) => p.data !== undefined, {
     message: 'json surface requires "data"',
   })
-  .transform((p) => ({ kind: "json" as const, data: p.data }));
+  .transform((p) => ({ kind: "json" as const, data: p.data, ...maybeOpenDepth(p.openDepth) }));
 const looseJsonPart = z
   .object({
     kind: z.literal("json"),
     data: z.unknown(),
+    openDepth: optionalLooseNumber,
   })
   .refine((p) => p.data !== undefined, {
     message: 'json surface requires "data"',
   })
-  .transform((p) => ({ kind: "json" as const, data: p.data }));
+  .transform((p) => ({ kind: "json" as const, data: p.data, ...maybeOpenDepth(p.openDepth) }));
 
 const strictCodePart = z.object({
   kind: z.literal("code"),
