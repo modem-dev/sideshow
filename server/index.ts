@@ -1,8 +1,10 @@
 import { serve } from "@hono/node-server";
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp } from "./app.ts";
+import { migrateLegacyDataDir } from "./migrateDataDir.ts";
 import { SqlStore } from "./sqlStore.ts";
 import { createSqliteStorage, migrateJsonToSqlite } from "./sqliteStorage.ts";
 import { JsonFileStore } from "./storage.ts";
@@ -32,12 +34,24 @@ const publicRead = pr === "session" || pr === "full" ? pr : undefined;
 // mirrors the Cloudflare Durable Object deploy — both run the same SqlStore.
 // SIDESHOW_STORE=json selects the legacy single-file JSON store instead.
 // SIDESHOW_DATA names the JSON file (and the one-time migration source);
-// SIDESHOW_DB names the SQLite file.
-const jsonPath = process.env.SIDESHOW_DATA ?? join(root, "data", "sideshow.json");
+// SIDESHOW_DB names the SQLite file. Both default to ~/.sideshow/ — a
+// user-owned dir that survives reinstalls and is writable regardless of how
+// the package was installed (a package-relative default is read-only under
+// `sudo npm i -g` and wiped on upgrade).
+const dataDir = join(homedir(), ".sideshow");
+const jsonPath = process.env.SIDESHOW_DATA ?? join(dataDir, "sideshow.json");
 // The SQLite file defaults next to the JSON one (same dir, `.db` suffix) so a
 // deploy that only sets SIDESHOW_DATA still gets an isolated, co-located db —
 // and the migration source sits right beside it.
 const dbPath = process.env.SIDESHOW_DB ?? `${jsonPath.replace(/\.json$/, "")}.db`;
+// Migrate from the legacy package-relative `<root>/data/` location to the
+// user-owned home dir, but only when using default paths — a user who set
+// SIDESHOW_DATA or SIDESHOW_DB is managing their own location.
+if (!process.env.SIDESHOW_DATA && !process.env.SIDESHOW_DB) {
+  if (migrateLegacyDataDir(join(root, "data"), dataDir)) {
+    console.log(`[sideshow] migrated existing data from ${join(root, "data")} to ${dataDir}`);
+  }
+}
 let store: Store;
 if (process.env.SIDESHOW_STORE === "json") {
   store = new JsonFileStore(jsonPath);
