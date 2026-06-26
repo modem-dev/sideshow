@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show }
 import { AgentMark } from "./agentMarks.tsx";
 import {
   api,
+  initialPageTitle,
   isReadonly,
   layoutMode,
   relTime,
@@ -69,6 +70,19 @@ function Brand() {
       <span class="livedot" classList={{ on: live() }}></span>sideshow
     </button>
   );
+}
+
+function pageTitle(
+  post: Post | null,
+  session: SessionRow | undefined,
+  unreadCount: number,
+  serverTitle: string | undefined,
+) {
+  if (post) return post.title || "sideshow";
+  const sessionTitle =
+    session && (session.title || session.agent) ? `${sessionLabel(session)} · sideshow` : null;
+  const base = sessionTitle || serverTitle || "sideshow";
+  return unreadCount > 0 ? `(${unreadCount}) ${base}` : base;
 }
 
 export default function App() {
@@ -141,9 +155,12 @@ export default function App() {
   // post instead (set below), so don't fight it here.
   createEffect(() => {
     if (isShadow()) return;
-    const solo = standalonePost();
-    if (solo) document.title = solo.title ? `${solo.title} · sideshow` : "sideshow";
-    else document.title = unread().size ? `(${unread().size}) sideshow` : "sideshow";
+    document.title = pageTitle(
+      standalonePost(),
+      sessions.find((s) => s.id === selected()),
+      unread().size,
+      initialPageTitle(),
+    );
   });
   // the mobile drawer slides in via a class on the host element (see styles.css
   // `body.nav-open`; self-hosted that element is <body>)

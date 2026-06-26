@@ -24,6 +24,7 @@ import {
   type MarkdownSurface,
   MAX_ASSET_BYTES,
   surfacesByteLength,
+  type Session,
   type Store,
   type Post,
   type Surface,
@@ -651,9 +652,30 @@ export function createApp({
       : `${head}${text}`;
   };
 
-  const withViewerConfig = (text: string, request: Request, isReadonly: boolean) => {
+  const withDocumentTitle = (text: string, title: string | null | undefined) => {
+    if (!title) return text;
+    const escaped = escapeHtml(title);
+    const titleTag = `<title>${escaped}</title>`;
+    return /<title>.*?<\/title>/.test(text)
+      ? text.replace(/<title>.*?<\/title>/, titleTag)
+      : injectHead(text, titleTag);
+  };
+
+  const sessionDocumentTitle = (session: Session | null | undefined) => {
+    if (!session) return null;
+    const label = session.title || (session.agent ? `${session.agent} session` : null);
+    return label ? `${label} · sideshow` : null;
+  };
+
+  const withViewerConfig = (
+    text: string,
+    request: Request,
+    isReadonly: boolean,
+    pageTitle?: string | null,
+  ) => {
     const config = [
       `window.__SIDESHOW_BASE_PATH__=${JSON.stringify(requestBasePath(request))};`,
+      pageTitle ? `window.__SIDESHOW_PAGE_TITLE__=${JSON.stringify(pageTitle)};` : "",
       isReadonly ? "window.__SIDESHOW_READONLY__=true;" : "",
       isReadonly && publicRead
         ? `window.__SIDESHOW_PUBLIC_READ__=${JSON.stringify(publicRead)};`
@@ -686,31 +708,40 @@ export function createApp({
     ].join("\n");
   };
 
-  const configuredViewerHtml = (c: Context, surface?: Post) => {
-    const configured = withViewerConfig(
-      withOrigin(viewerHtml, { req: { url: c.req.url } }),
-      c.req.raw,
-      !!publicRead && !isAuthenticated(c),
+  const configuredViewerHtml = (
+    c: Context,
+    opts: { surface?: Post; title?: string | null } = {},
+  ) => {
+    const pageTitle = opts.surface?.title ?? opts.title;
+    const html = withDocumentTitle(
+      withViewerConfig(
+        withOrigin(viewerHtml, { req: { url: c.req.url } }),
+        c.req.raw,
+        !!publicRead && !isAuthenticated(c),
+        pageTitle,
+      ),
+      pageTitle,
     );
-    return surface ? injectHead(configured, surfacePreviewHead(surface, c.req.raw)) : configured;
+    return opts.surface ? injectHead(html, surfacePreviewHead(opts.surface, c.req.raw)) : html;
   };
   app.get("/", (c) => c.html(configuredViewerHtml(c)));
   app.get("/session/:id", async (c) => {
-    if (isUnauthenticatedSessionRead(c) && !(await store.getSession(c.req.param("id")))) {
+    const session = await store.getSession(c.req.param("id"));
+    if (isUnauthenticatedSessionRead(c) && !session) {
       return c.text("Session not found", 404);
     }
-    return c.html(configuredViewerHtml(c));
+    return c.html(configuredViewerHtml(c, { title: sessionDocumentTitle(session) }));
   });
   const sessionSurfacePage = async (c: any) => {
+    const session = await store.getSession(c.req.param("id"));
     if (isUnauthenticatedSessionRead(c)) {
-      const session = await store.getSession(c.req.param("id"));
       const surfaceId = c.req.param("surfaceId") ?? c.req.param("postId");
       const surface = await store.getPost(surfaceId ?? "");
       if (!session || !surface || surface.sessionId !== session.id) {
         return c.text("Session or surface not found", 404);
       }
     }
-    return c.html(configuredViewerHtml(c));
+    return c.html(configuredViewerHtml(c, { title: sessionDocumentTitle(session) }));
   };
   app.get("/session/:id/s/:surfaceId", sessionSurfacePage);
   app.get("/session/:id/p/:postId", sessionSurfacePage); // canonical alias
@@ -1098,7 +1129,7 @@ export function createApp({
     const surface = await store.getPost(c.req.param("id"));
     if (!surface) return c.text("Post not found", 404);
     const partParam = c.req.query("surface") ?? c.req.query("part");
-    if (partParam == null) return c.html(configuredViewerHtml(c, surface));
+    if (partParam == null) return c.html(configuredViewerHtml(c, { surface }));
 
     const ver = c.req.query("ver");
     let title = surface.title;

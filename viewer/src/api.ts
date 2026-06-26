@@ -58,6 +58,7 @@ declare global {
     __SIDESHOW_READONLY__?: boolean;
     __SIDESHOW_PUBLIC_READ__?: PublicReadMode;
     __SIDESHOW_SCREENSHOTS__?: boolean;
+    __SIDESHOW_PAGE_TITLE__?: string;
   }
 }
 
@@ -79,6 +80,10 @@ export function isReadonly(): boolean {
 
 export function publicReadMode(): PublicReadMode | undefined {
   return window.__SIDESHOW_PUBLIC_READ__;
+}
+
+export function initialPageTitle(): string | undefined {
+  return window.__SIDESHOW_PAGE_TITLE__;
 }
 
 // The engine's layout. "full" shows the sidebar + stream; "stream" shows only

@@ -28,6 +28,50 @@ test("navigating to /session/:id selects that session", async ({ page, server })
   await expect(page.locator(".card .card-title")).toHaveText("Second");
 });
 
+test("the browser title follows the selected session", async ({ page, server }) => {
+  const s1 = await publish(server.url, {
+    html: "<p>one</p>",
+    title: "First post",
+    agent: "a1",
+    sessionTitle: "Auth refactor",
+  });
+  const s2 = await publish(server.url, {
+    html: "<p>two</p>",
+    title: "Second post",
+    agent: "a2",
+    sessionTitle: "Release prep",
+  });
+
+  await page.goto(`${server.url}/session/${s1.sessionId}`);
+  await expect(page).toHaveTitle("Auth refactor · sideshow");
+
+  await page.locator(`#sessionList .sess[data-id="${s2.sessionId}"]`).click();
+  await expect(page).toHaveTitle("Release prep · sideshow");
+});
+
+test("the standalone share page title uses the shared post title", async ({ page, server }) => {
+  const post = await publish(server.url, {
+    html: "<p>one</p>",
+    title: "First post",
+    agent: "a1",
+    sessionTitle: "Auth refactor",
+  });
+  const sessionListRequests: string[] = [];
+  page.on("request", (req) => {
+    const url = new URL(req.url());
+    if (req.method() === "GET" && url.pathname === "/api/sessions") {
+      sessionListRequests.push(req.url());
+    }
+  });
+
+  await page.goto(`${server.url}/s/${post.id}`);
+  await expect(page).toHaveTitle("First post");
+
+  await publish(server.url, { html: "<p>two</p>", title: "Other work", agent: "a2" });
+  await expect.poll(() => sessionListRequests.length).toBeGreaterThan(0);
+  await expect(page).toHaveTitle("First post");
+});
+
 test("navigating to /session/:id/s/:surfaceId selects session and scrolls to surface", async ({
   page,
   server,

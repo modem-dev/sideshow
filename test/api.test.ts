@@ -182,6 +182,7 @@ test("GET /s/:id serves the viewer shell with link-preview metadata", async () =
   const body = await page.text();
   assert.ok(body.includes("viewer"), "should serve the trusted viewer shell");
   assert.doesNotMatch(body, /<p>diagram<\/p>/, "should not inline agent HTML");
+  assert.match(body, /<title>Auth Flow<\/title>/);
   assert.match(body, /<meta property="og:title" content="Auth Flow">/);
   assert.match(body, /<meta name="twitter:title" content="Auth Flow">/);
   assert.match(body, /<meta property="og:description" content="A https:\/\/sideshow\.sh surface">/);
@@ -190,6 +191,22 @@ test("GET /s/:id serves the viewer shell with link-preview metadata", async () =
     /<meta name="twitter:description" content="A https:\/\/sideshow\.sh surface">/,
   );
   assert.doesNotMatch(body, /Secret session/);
+});
+
+test("GET /session/:id serves the viewer shell with the session title", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/snippets",
+    json({ html: "<p>x</p>", title: "Post", sessionTitle: "Auth refactor" }),
+  );
+  const surface = (await res.json()) as any;
+
+  const page = await app.request(`/session/${surface.sessionId}`);
+  assert.equal(page.status, 200);
+  assert.ok(page.headers.get("content-type")?.includes("text/html"));
+  const body = await page.text();
+  assert.ok(body.includes("viewer"), "should serve the trusted viewer shell");
+  assert.match(body, /<title>Auth refactor · sideshow<\/title>/);
 });
 
 test("GET /s/:id emits absolute token-free canonical and preview image URLs", async () => {
@@ -246,6 +263,7 @@ test("GET /s/:id escapes surface metadata in preview tags", async () => {
     body,
     /<meta property="og:title" content="A &quot;quoted&quot; &lt;tag&gt; &amp; more">/,
   );
+  assert.match(body, /<title>A &quot;quoted&quot; &lt;tag&gt; &amp; more<\/title>/);
   assert.doesNotMatch(body, /content="A "quoted" <tag> & more"/);
 });
 

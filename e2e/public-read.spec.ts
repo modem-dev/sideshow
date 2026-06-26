@@ -41,7 +41,12 @@ test("readonly session-mode viewer loads without fetching the session list", asy
   try {
     const surface = await publish(
       server.url,
-      { html: "<p>session scoped</p>", title: "Session scoped", agent: "e2e" },
+      {
+        html: "<p>session scoped</p>",
+        title: "Session scoped",
+        agent: "e2e",
+        sessionTitle: "Auth refactor",
+      },
       token,
     );
     const sessionListRequests: string[] = [];
@@ -56,6 +61,7 @@ test("readonly session-mode viewer loads without fetching the session list", asy
 
     await page.goto(`${server.url}/session/${surface.sessionId}`);
 
+    await expect(page).toHaveTitle("Auth refactor · sideshow");
     await expect(page.locator(".card:not(#whatsNew)")).toBeVisible();
     await expect(page.locator(".card-title")).toContainText("Session scoped");
     expect(sessionListRequests).toEqual([]);

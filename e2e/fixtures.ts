@@ -71,7 +71,7 @@ export { expect };
 
 export async function publish(
   serverUrl: string,
-  body: { html: string; title?: string; agent?: string; session?: string },
+  body: { html: string; title?: string; agent?: string; session?: string; sessionTitle?: string },
   token?: string,
 ): Promise<{ id: string; sessionId: string; version: number }> {
   const headers: Record<string, string> = { "content-type": "application/json" };
