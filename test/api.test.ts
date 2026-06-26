@@ -2092,3 +2092,301 @@ test("publish_surface MCP tool still accepts legacy parts", async () => {
   const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
   assert.equal(full.surfaces[0].html, "<p>old</p>");
 });
+
+// ---------------------------------------------------------------------------
+// PATCH /api/posts/:id — content-only update (preserves surface kind)
+// ---------------------------------------------------------------------------
+
+const patch = (body: unknown) => ({
+  method: "PATCH" as const,
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+test("PATCH /api/posts/:id updates markdown content preserving kind", async () => {
+  const app = makeApp();
+  // publish a markdown post
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "MD", surfaces: [{ kind: "markdown", markdown: "# v1" }] }),
+    )
+  ).json()) as any;
+
+  // patch with new content
+  const res = await app.request(`/api/posts/${created.id}`, patch({ content: "# v2" }));
+  assert.equal(res.status, 200);
+  const updated = (await res.json()) as any;
+  assert.equal(updated.version, 2);
+
+  // verify the surface kept its kind
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].kind, "markdown");
+  assert.equal(full.surfaces[0].markdown, "# v2");
+});
+
+test("PATCH /api/posts/:id updates html content", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "HTML", surfaces: [{ kind: "html", html: "<p>v1</p>" }] }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}`, patch({ content: "<p>v2</p>" }));
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].kind, "html");
+  assert.equal(full.surfaces[0].html, "<p>v2</p>");
+});
+
+test("PATCH /api/posts/:id updates code content preserving language", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Code",
+        surfaces: [{ kind: "code", code: "const x = 1;", language: "typescript" }],
+      }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}`, patch({ content: "const y = 2;" }));
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].kind, "code");
+  assert.equal(full.surfaces[0].code, "const y = 2;");
+  assert.equal(full.surfaces[0].language, "typescript");
+});
+
+test("PATCH /api/posts/:id updates diff content preserving layout", async () => {
+  const app = makeApp();
+  const diffPatch = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new";
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Diff",
+        surfaces: [{ kind: "diff", patch: diffPatch, layout: "split" }],
+      }),
+    )
+  ).json()) as any;
+
+  const diffPatch2 = "--- a/y\n+++ b/y\n@@ -1 +1 @@\n-a\n+b";
+  const res = await app.request(`/api/posts/${created.id}`, patch({ content: diffPatch2 }));
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].kind, "diff");
+  assert.equal(full.surfaces[0].patch, diffPatch2);
+  assert.equal(full.surfaces[0].layout, "split");
+});
+
+test("PATCH /api/posts/:id updates terminal content preserving cols", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Term",
+        surfaces: [{ kind: "terminal", text: "$ ls\nfoo", cols: 80 }],
+      }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}`, patch({ content: "$ ls\nbar" }));
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].kind, "terminal");
+  assert.equal(full.surfaces[0].text, "$ ls\nbar");
+  assert.equal(full.surfaces[0].cols, 80);
+});
+
+test("PATCH /api/posts/:id updates mermaid content", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Diagram", surfaces: [{ kind: "mermaid", mermaid: "graph LR; A-->B" }] }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}`, patch({ content: "graph TD; X-->Y" }));
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].kind, "mermaid");
+  assert.equal(full.surfaces[0].mermaid, "graph TD; X-->Y");
+});
+
+test("PATCH /api/posts/:id updates json content (parses string)", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Data", surfaces: [{ kind: "json", data: { a: 1 } }] }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}`, patch({ content: '{"b":2}' }));
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].kind, "json");
+  assert.deepEqual(full.surfaces[0].data, { b: 2 });
+});
+
+test("PATCH /api/posts/:id with invalid JSON content for json surface returns 400", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Data", surfaces: [{ kind: "json", data: { a: 1 } }] }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}`, patch({ content: "not valid json" }));
+  assert.equal(res.status, 400);
+});
+
+test("PATCH /api/posts/:id updates title alongside content", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Old", surfaces: [{ kind: "markdown", markdown: "# old" }] }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(
+    `/api/posts/${created.id}`,
+    patch({ content: "# new", title: "New" }),
+  );
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.title, "New");
+  assert.equal(full.surfaces[0].markdown, "# new");
+});
+
+test("PATCH /api/posts/:id title-only update (no content)", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Old", surfaces: [{ kind: "markdown", markdown: "# keep" }] }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}`, patch({ title: "Renamed" }));
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.title, "Renamed");
+  assert.equal(full.surfaces[0].markdown, "# keep");
+});
+
+test("PATCH /api/posts/:id rejects multi-surface posts", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Multi",
+        surfaces: [
+          { kind: "html", html: "<p>one</p>" },
+          { kind: "markdown", markdown: "two" },
+        ],
+      }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}`, patch({ content: "new stuff" }));
+  assert.equal(res.status, 400);
+  const body = (await res.json()) as any;
+  assert.ok(body.error);
+});
+
+test("PATCH /api/posts/:id rejects unsupported surface kinds (image, trace)", async () => {
+  const app = makeApp();
+  // image surfaces can't be content-updated (they reference an asset)
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Img", surfaces: [{ kind: "image", assetId: "abc123" }] }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}`, patch({ content: "nope" }));
+  assert.equal(res.status, 400);
+});
+
+test("PATCH /api/posts/:id returns 404 for unknown id", async () => {
+  const app = makeApp();
+  const res = await app.request("/api/posts/nonexistent", patch({ content: "hi" }));
+  assert.equal(res.status, 404);
+});
+
+test("PATCH /api/posts/:id with no content and no title returns 400", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "X", surfaces: [{ kind: "html", html: "<p>x</p>" }] }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}`, patch({}));
+  assert.equal(res.status, 400);
+});
+
+test("PATCH /api/posts/:id updates kits on html surface", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Kit", surfaces: [{ kind: "html", html: "<p>x</p>", kits: ["issues"] }] }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(
+    `/api/posts/${created.id}`,
+    patch({ content: "<p>y</p>", kits: ["slides"] }),
+  );
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].html, "<p>y</p>");
+  assert.deepEqual(full.surfaces[0].kits, ["slides"]);
+});
+
+test("PATCH /api/posts/:id returns userFeedback like PUT does", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "FB", surfaces: [{ kind: "html", html: "<p>x</p>" }] }),
+    )
+  ).json()) as any;
+  // leave a user comment so there's feedback to collect
+  await app.request("/api/comments", json({ surface: created.id, text: "nice", author: "user" }));
+
+  const res = await app.request(`/api/posts/${created.id}`, patch({ content: "<p>y</p>" }));
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as any;
+  assert.ok(Array.isArray(body.userFeedback));
+});
+
+test("PATCH /api/posts/:id bumps version and keeps history", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Hist", surfaces: [{ kind: "markdown", markdown: "# v1" }] }),
+    )
+  ).json()) as any;
+  assert.equal(created.version, 1);
+
+  await app.request(`/api/posts/${created.id}`, patch({ content: "# v2" }));
+
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.version, 2);
+  assert.equal(full.history.length, 1);
+  assert.equal(full.history[0].surfaces[0].markdown, "# v1");
+});

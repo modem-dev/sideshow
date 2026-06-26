@@ -919,6 +919,80 @@ export function createApp({
   app.put("/api/posts/:id", revise); // canonical alias
   app.put("/api/snippets/:id", revise); // legacy alias
 
+  // Content-only update: accepts raw content and slots it into the existing
+  // surface's kind, preserving extra fields (language, cols, layout, etc.).
+  // Only single-surface posts for now; multi-surface needs --surface N.
+  const CONTENT_FIELD: Record<string, string> = {
+    html: "html",
+    markdown: "markdown",
+    mermaid: "mermaid",
+    diff: "patch",
+    terminal: "text",
+    code: "code",
+    json: "data",
+  };
+  app.patch("/api/posts/:id", async (c: any) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body) return c.json({ error: "invalid JSON body" }, 400);
+    const { content, title, kits } = body;
+    if (content === undefined && title === undefined) {
+      return c.json({ error: "provide content and/or title" }, 400);
+    }
+    const existing = await store.getPost(c.req.param("id"));
+    if (!existing) return c.json({ error: "post not found" }, 404);
+    // Build the updated surfaces array.
+    let parts: Surface[] | undefined;
+    if (content !== undefined) {
+      if (typeof content !== "string") {
+        return c.json({ error: '"content" must be a string' }, 400);
+      }
+      if (existing.surfaces.length > 1) {
+        return c.json(
+          {
+            error:
+              "content update not supported for multi-surface posts; use PUT with a full surfaces array",
+          },
+          400,
+        );
+      }
+      const surface = existing.surfaces[0];
+      const field = CONTENT_FIELD[surface.kind];
+      if (!field) {
+        return c.json({ error: `content update not supported for ${surface.kind} surfaces` }, 400);
+      }
+      // For json surfaces, parse the content string into a value.
+      let value: unknown = content;
+      if (surface.kind === "json") {
+        try {
+          value = JSON.parse(content);
+        } catch {
+          return c.json({ error: "content is not valid JSON" }, 400);
+        }
+      }
+      // Clone the existing surface, replace the content field, optionally update kits.
+      const updated: Surface =
+        surface.kind === "html"
+          ? {
+              ...surface,
+              html: value as string,
+              ...(kits !== undefined && { kits: Array.isArray(kits) ? kits : undefined }),
+            }
+          : ({ ...surface, [field]: value } as Surface);
+      const parsed = await validateSurfaces([updated]);
+      if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+      parts = parsed.parts;
+    }
+    const result = await reviseSurface(c.req.param("id"), {
+      parts,
+      title: typeof title === "string" ? title : undefined,
+    });
+    if ("error" in result) return c.json({ error: result.error }, result.status);
+    return c.json({
+      ...writeResult(result.surface),
+      ...(result.userFeedback && { userFeedback: result.userFeedback }),
+    });
+  });
+
   const remove = async (c: any) => {
     const surface = await store.getPost(c.req.param("id"));
     if (!surface) return c.json({ error: "surface not found" }, 404);

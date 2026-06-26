@@ -1074,13 +1074,16 @@ const commands = {
     });
     const id = positionals[0];
     if (!id) fail("usage: sideshow update <id> <file|->");
-    const part = { kind: "html", html: readContent(positionals[1]) };
+    const body = { title: flags.title };
+    if (positionals[1] !== undefined) {
+      body.content = readContent(positionals[1]);
+    }
     const kits = normalizeKits(flags.kit);
-    if (kits) part.kits = kits;
+    if (kits) body.kits = kits;
     outSurface(
-      await api(`/api/surfaces/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ parts: [part], title: flags.title }),
+      await api(`/api/posts/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
       }),
     );
   },
