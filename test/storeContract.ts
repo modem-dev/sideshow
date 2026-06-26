@@ -81,6 +81,13 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.equal(await store.getSetting("other"), null);
   });
 
+  contract('reserves "user" as an agent name — coerced to "agent"', async (store) => {
+    const s = await store.createSession({ agent: "user" });
+    assert.equal(s.agent, "agent");
+    const got = (await store.getSession(s.id))!;
+    assert.equal(got.agent, "agent");
+  });
+
   contract("renames sessions; blank title clears it; unknown id is null", async (store) => {
     const session = await store.createSession({ agent: "pi", title: "Old" });
     const renamed = await store.renameSession(session.id, "  New  ");

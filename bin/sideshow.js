@@ -109,7 +109,6 @@ usage:
   sideshow comment <text> [options]       reply to the user on a post
       --post <id>       post to attach the comment to (required;
                         --surface is a deprecated alias)
-      --author <name>   defaults to agent name
   sideshow list [--session <id>|--all]    list posts
   sideshow sessions                       list sessions
   sideshow demo                           seed two example sessions to explore the viewer
@@ -1290,8 +1289,6 @@ const commands = {
         post: { type: "string" },
         surface: { type: "string" }, // deprecated alias
         snippet: { type: "string" }, // legacy alias
-        author: { type: "string" },
-        agent: { type: "string" },
       },
     });
     const text = positionals.join(" ").trim();
@@ -1300,14 +1297,12 @@ const commands = {
     // body key is the wire field `surface`, kept as-is.
     const post = flags.post ?? flags.surface ?? flags.snippet;
     if (!post) fail("a comment must target a post — pass --post <id>");
+    // The server derives the author from the session's agent name — the CLI
+    // never sends one, so the reserved "user" label can't be forged here.
     out(
       await api("/api/comments", {
         method: "POST",
-        body: JSON.stringify({
-          text,
-          surface: post,
-          author: flags.author ?? agentName(flags),
-        }),
+        body: JSON.stringify({ text, surface: post }),
       }),
     );
   },
@@ -1362,8 +1357,11 @@ const commands = {
             });
           }
           if (step.comment) {
+            // The demo seeds a realistic human/agent dialogue, so simulate
+            // viewer-origin requests (the only path that may mint author:"user").
             await api("/api/comments", {
               method: "POST",
+              headers: { "sec-fetch-site": "same-origin" },
               body: JSON.stringify({ snippet: snippet.id, ...step.comment }),
             });
           }

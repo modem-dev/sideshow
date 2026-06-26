@@ -59,7 +59,7 @@ function serveApp() {
 const post = (url: string, body: unknown) =>
   fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "sec-fetch-site": "same-origin" },
     body: JSON.stringify(body),
   }).then((r) => r.json() as Promise<any>);
 

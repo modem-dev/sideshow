@@ -305,11 +305,6 @@ export const HTTP_MCP_TOOLS = [
         postId: { type: "string", description: "Post whose comment thread to reply in" },
         surfaceId: { type: "string", description: "Deprecated alias of postId" },
         message: { type: "string", description: d.replyMessage },
-        author: {
-          type: "string",
-          description:
-            'Your agent name (default "agent"; "user" is reserved and coerced to "agent")',
-        },
       },
       required: ["message"],
     },

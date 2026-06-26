@@ -492,7 +492,11 @@ export function createApp({
   async function createComment(input: {
     text: string;
     surface?: string;
-    author: string;
+    // Only the viewer (same-origin REST) may set this — "user" for the composer,
+    // "surface" for the send-prompt bridge. Programmatic callers (MCP, CLI,
+    // cross-origin REST) omit it and the author is derived from session.agent,
+    // so an agent can never mint the reserved "user" trust label.
+    author?: string;
   }): Promise<
     { comment: Comment; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 }
   > {
@@ -501,10 +505,13 @@ export function createApp({
     if (!input.surface) return { error: 'provide a "surface" id', status: 400 };
     const surface = await store.getPost(input.surface);
     if (!surface) return { error: "surface not found", status: 404 };
+    const session = await store.getSession(surface.sessionId);
+    if (!session) return { error: "session not found", status: 404 };
+    const author = input.author ?? session.agent;
     const comment = await store.createComment({
       sessionId: surface.sessionId,
       postId: surface.id,
-      author: input.author,
+      author,
       text: input.text.trim().slice(0, MAX_COMMENT_TEXT),
     });
     if (!comment) return { error: "session not found", status: 404 };
@@ -517,8 +524,7 @@ export function createApp({
     });
     // agent replies are writes too — piggyback pending feedback on them, but
     // never on the user's own comments
-    const userFeedback =
-      input.author === "user" ? undefined : await collectFeedback(comment.sessionId);
+    const userFeedback = author === "user" ? undefined : await collectFeedback(comment.sessionId);
     return { comment, userFeedback };
   }
 
@@ -938,10 +944,21 @@ export function createApp({
       return c.json({ error: 'body must include non-empty "text" string' }, 400);
     }
     const surface = typeof body.surface === "string" ? body.surface : body.snippet;
+    // Only same-origin browser requests (the viewer page) may declare the
+    // author — the composer sends "user", the send-prompt bridge sends "surface".
+    // Programmatic callers (MCP, CLI) never send Sec-Fetch-Site and get the author
+    // derived from session.agent, so the reserved "user" trust label can't be
+    // forged through the supported tool surfaces. A sandboxed iframe has an opaque
+    // origin (not same-origin), so contained content can't forge it either.
+    // Note: a raw HTTP client can set this header freely (it's only browser-
+    // enforced), but that requires knowing to do so — the trivial one-liner
+    // forgery is closed, and MCP/CLI (the natural agent paths) are blocked.
+    const isViewerOrigin = c.req.header("sec-fetch-site") === "same-origin";
+    const author = isViewerOrigin && typeof body.author === "string" ? body.author : undefined;
     const result = await createComment({
       text: body.text,
       surface: typeof surface === "string" ? surface : undefined,
-      author: typeof body.author === "string" ? body.author : "user",
+      author,
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json(
