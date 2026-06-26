@@ -578,8 +578,15 @@ export function createApp({
     let updated: Surface;
     if (replacement.surface !== undefined) {
       // Full replacement — preserve the old surface's id so the viewer can
-      // key by stable identity across edits.
+      // key by stable identity across edits. If kits were supplied and the
+      // replacement is an html surface, apply them (matches content-only).
       updated = { ...replacement.surface, id: existing.surfaces[idx].id };
+      if (replacement.kits !== undefined && updated.kind === "html") {
+        updated = {
+          ...updated,
+          kits: Array.isArray(replacement.kits) ? replacement.kits : undefined,
+        };
+      }
     } else if (replacement.content !== undefined) {
       // Content-only — slot the string into the existing surface's field.
       const result = applyContent(existing.surfaces[idx], replacement.content, replacement.kits);

@@ -715,6 +715,25 @@ test("surface add appends a markdown surface to an existing post", async () => {
   }
 });
 
+test("surface add appends a diff surface with --layout split", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("h.html", "<p>first</p>");
+    const pub = await cli(server, "publish", html);
+    const id = JSON.parse(pub.stdout).id;
+
+    const patch = tmpFile("d.patch", "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n");
+    const { code } = await cli(server, "surface", "add", id, "--diff", patch, "--layout", "split");
+    assert.equal(code, 0);
+
+    const full = (await fetch(`${server.url}/api/posts/${id}`).then((r) => r.json())) as any;
+    assert.equal(full.surfaces[1].kind, "diff");
+    assert.equal(full.surfaces[1].layout, "split", "layout split is propagated");
+  } finally {
+    await server.close();
+  }
+});
+
 test("surface remove deletes a surface by index", async () => {
   const server = await serveSession();
   try {

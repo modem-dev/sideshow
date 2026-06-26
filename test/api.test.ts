@@ -2622,6 +2622,38 @@ test("PATCH /api/posts/:id/surfaces/:target replaces a surface by id", async () 
   assert.equal(full.surfaces[1].kind, "markdown", "other surface untouched");
 });
 
+test("PATCH /api/posts/:id/surfaces/:target full replacement applies kits to html surface", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Kits",
+        surfaces: [
+          { kind: "html", html: "<p>orig</p>" },
+          { kind: "markdown", markdown: "# keep" },
+        ],
+      }),
+    )
+  ).json()) as any;
+  const full0 = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  const targetId = full0.surfaces[0].id;
+
+  const res = await app.request(
+    `/api/posts/${created.id}/surfaces/${targetId}`,
+    patch({
+      surface: { kind: "html", html: "<p>new</p>" },
+      kits: ["issues"],
+    }),
+  );
+  assert.equal(res.status, 200);
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].kind, "html");
+  assert.equal(full.surfaces[0].html, "<p>new</p>");
+  assert.deepEqual(full.surfaces[0].kits, ["issues"], "kits applied to full html replacement");
+  assert.equal(full.surfaces[0].id, targetId, "replaced surface keeps its id");
+});
+
 test("PATCH /api/posts/:id/surfaces/:target content-only update by index", async () => {
   const app = makeApp();
   const created = (await (

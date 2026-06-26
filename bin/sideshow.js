@@ -85,6 +85,7 @@ usage:
         --mermaid <f>     mermaid surface
         --json <f>        json surface
         --image <f>       image surface (uploads the file first)
+        --layout split    split layout for --diff surfaces
         --before <N>      insert before surface N (id or index)
         --after <N>       insert after surface N (id or index)
     surface remove <id> <N>               remove surface N (id or 0-based index)
@@ -1155,6 +1156,7 @@ const commands = {
           image: { type: "string" },
           before: { type: "string" },
           after: { type: "string" },
+          layout: { type: "string" },
           session: { type: "string" },
         },
       });
@@ -1188,7 +1190,11 @@ const commands = {
         } else if (kind === "mermaid") {
           surface = { kind: "mermaid", mermaid: readContent(flags.mermaid || "-") };
         } else if (kind === "diff") {
-          surface = { kind: "diff", patch: readContent(flags.diff || "-") };
+          surface = {
+            kind: "diff",
+            patch: readContent(flags.diff || "-"),
+            ...(flags.layout === "split" && { layout: "split" }),
+          };
         } else if (kind === "terminal") {
           surface = { kind: "terminal", text: readContent(flags.terminal || "-") };
         } else if (kind === "json") {
