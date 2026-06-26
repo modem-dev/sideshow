@@ -362,8 +362,7 @@ export function Card(props: { post: Post; standalone?: boolean }) {
                   aria-label={`Delete "${props.post.title}"`}
                   onClick={async () => {
                     if (confirm(`Delete "${props.post.title}"?`)) {
-                      // /api/surfaces/:id is the legacy wire alias for a post.
-                      await api(`/api/surfaces/${props.post.id}`, { method: "DELETE" });
+                      await api(`/api/posts/${props.post.id}`, { method: "DELETE" });
                     }
                   }}
                 >

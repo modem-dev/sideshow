@@ -183,8 +183,7 @@ export async function bootstrap() {
 // Fetch a post and switch into standalone mode. No-op if already showing it.
 export async function enterStandalone(id: string) {
   if (standalonePost()?.id === id) return;
-  // /api/surfaces/:id is the legacy wire alias for fetching a post.
-  const post = await api<Post>(`/api/surfaces/${encodeURIComponent(id)}`).catch(() => null);
+  const post = await api<Post>(`/api/posts/${encodeURIComponent(id)}`).catch(() => null);
   if (post) setStandaloneInternal(post);
 }
 
@@ -192,8 +191,7 @@ export async function refreshSessions(targetPostId?: string | null) {
   if (isReadonly() && publicReadMode() === "session") {
     const route = host().router.get();
     if (!route.sessionId && targetPostId) {
-      // /api/surfaces/:id is the legacy wire alias for fetching a post.
-      const target = await api<Post>(`/api/surfaces/${encodeURIComponent(targetPostId)}`).catch(
+      const target = await api<Post>(`/api/posts/${encodeURIComponent(targetPostId)}`).catch(
         () => null,
       );
       if (!target) return;
@@ -217,8 +215,7 @@ export async function refreshSessions(targetPostId?: string | null) {
   await refreshSessionsQuiet();
   if (selected() && !sessions.some((s) => s.id === selected())) setSelectedInternal(null);
   if (targetPostId) {
-    // /api/surfaces/:id is the legacy wire alias for fetching a post.
-    const target = await api<Post>(`/api/surfaces/${encodeURIComponent(targetPostId)}`).catch(
+    const target = await api<Post>(`/api/posts/${encodeURIComponent(targetPostId)}`).catch(
       () => null,
     );
     if (target && sessions.some((s) => s.id === target.sessionId)) {
@@ -268,10 +265,9 @@ export async function select(
   setCommentsInternal([]);
   setTraceStepsInternal([]);
   void fetchTrace(id);
-  // /api/sessions/:id/surfaces and /api/surfaces/:id are the legacy wire aliases.
-  const metas = await api<{ id: string }[]>(`/api/sessions/${id}/surfaces`).catch(() => []);
+  const metas = await api<{ id: string }[]>(`/api/sessions/${id}/posts`).catch(() => []);
   const details = (
-    await Promise.all(metas.map((m) => api<Post>(`/api/surfaces/${m.id}`).catch(() => null)))
+    await Promise.all(metas.map((m) => api<Post>(`/api/posts/${m.id}`).catch(() => null)))
   ).filter((s) => s !== null);
   if (selected() !== id) return; // user switched away mid-load
   setPostsInternal(reconcile(details, { key: "id" }));
@@ -341,8 +337,7 @@ export async function selectAdjacent(delta: 1 | -1) {
 
 // Fetch a post and insert/update it in the open session's stream.
 async function upsertPost(id: string, { scroll = true } = {}) {
-  // /api/surfaces/:id is the legacy wire alias for fetching a post.
-  const s = await api<Post>(`/api/surfaces/${id}`).catch(() => null);
+  const s = await api<Post>(`/api/posts/${id}`).catch(() => null);
   if (!s || s.sessionId !== selected()) return;
   const idx = posts.findIndex((x) => x.id === s.id);
   if (idx >= 0) {
@@ -452,11 +447,11 @@ export function connect() {
       applyTheme(e.id);
     } else if (e.type.startsWith("session-")) {
       await refreshSessions();
-    } else if (e.type === "surface-created" || e.type === "surface-updated") {
+    } else if (e.type === "post-created" || e.type === "post-updated") {
       if (away && e.sessionId) markUnread(e.sessionId);
       if (e.sessionId === selected()) await upsertPost(e.id);
       await refreshSessionsQuiet();
-    } else if (e.type === "surface-deleted") {
+    } else if (e.type === "post-deleted") {
       const idx = posts.findIndex((s) => s.id === e.id);
       if (idx >= 0) setPostsInternal(produce((arr) => arr.splice(idx, 1)));
       await refreshSessionsQuiet();
@@ -481,8 +476,7 @@ async function resyncSelected() {
   await refreshSessions();
   if (!before || selected() !== before) return; // select() rebuilt the stream
   void fetchTrace(before);
-  // /api/sessions/:id/surfaces is the legacy wire alias.
-  const metas = await api<{ id: string }[]>(`/api/sessions/${before}/surfaces`).catch(() => []);
+  const metas = await api<{ id: string }[]>(`/api/sessions/${before}/posts`).catch(() => []);
   const ids = new Set(metas.map((m) => m.id));
   setPostsInternal(
     produce((arr) => {

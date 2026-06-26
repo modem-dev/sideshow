@@ -74,7 +74,7 @@ test("a surface kind this viewer doesn't know shows a refresh hint, not a broken
   // server returns a valid surface, but rewrite the surface kind to one THIS
   // viewer build has no Match for. It must degrade to a neutral hint, never
   // the diff fallback.
-  await page.route(/\/api\/surfaces\/[^/?]+(\?|$)/, async (route) => {
+  await page.route(/\/api\/posts\/[^/?]+(\?|$)/, async (route) => {
     const res = await route.fetch();
     const surface = await res.json();
     if (Array.isArray(surface.surfaces)) {

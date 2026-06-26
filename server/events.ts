@@ -1,7 +1,7 @@
 export type FeedEvent =
   | { type: "session-created" | "session-updated" | "session-deleted"; id: string }
-  | { type: "surface-created" | "surface-updated"; id: string; sessionId: string; version: number }
-  | { type: "surface-deleted"; id: string; sessionId: string }
+  | { type: "post-created" | "post-updated"; id: string; sessionId: string; version: number }
+  | { type: "post-deleted"; id: string; sessionId: string }
   | {
       type: "comment-created";
       id: string;

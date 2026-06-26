@@ -386,7 +386,7 @@ export function createApp({
       title: input.title?.slice(0, MAX_TITLE),
     });
     if (!surface) return { error: "session not found", status: 404 };
-    bus.broadcast({ type: "surface-created", id: surface.id, sessionId, version: 1 });
+    bus.broadcast({ type: "post-created", id: surface.id, sessionId, version: 1 });
     return { surface, userFeedback: await collectFeedback(sessionId) };
   }
 
@@ -444,7 +444,7 @@ export function createApp({
     const surface = await store.updatePost(id, { surfaces: patch.parts, title: patch.title });
     if (!surface) return { error: "surface not found", status: 404 };
     bus.broadcast({
-      type: "surface-updated",
+      type: "post-updated",
       id: surface.id,
       sessionId: surface.sessionId,
       version: surface.version,
@@ -886,7 +886,7 @@ export function createApp({
     const surface = await store.getPost(c.req.param("id"));
     if (!surface) return c.json({ error: "surface not found" }, 404);
     await store.removePost(surface.id);
-    bus.broadcast({ type: "surface-deleted", id: surface.id, sessionId: surface.sessionId });
+    bus.broadcast({ type: "post-deleted", id: surface.id, sessionId: surface.sessionId });
     return c.json({ ok: true });
   };
   app.delete("/api/surfaces/:id", remove);
