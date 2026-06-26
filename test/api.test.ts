@@ -525,6 +525,18 @@ test("json part without data key is rejected", async () => {
   assert.equal(res.status, 400);
 });
 
+test("json part openDepth round-trips", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/surfaces",
+    json({ title: "Tree", parts: [{ kind: "json", data: { a: { b: 1 } }, openDepth: 2 }] }),
+  );
+  assert.equal(res.status, 201);
+  const surface = (await res.json()) as any;
+  const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
+  assert.equal(full.surfaces[0].openDepth, 2);
+});
+
 test("publishes a code part; round-trips code/lang/title and 404s on /s", async () => {
   const app = makeApp();
   const res = await app.request(

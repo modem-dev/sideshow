@@ -26,6 +26,7 @@ usage:
       --diff <file|->   add a diff surface from a unified/git patch (combine with html)
       --terminal <file|->  add a terminal surface from monospace/ANSI output
       --json <file|->    add a json surface from a JSON file (collapsible tree)
+      --open-depth <n>  expand json containers up to this depth (with --json)
       --code <file|->    add a code surface from a file (shiki-highlighted)
       --kit <id>        opt the html surface into a kit (repeatable; see "sideshow kits")
       --image <file>    upload an image and append it as an image surface
@@ -61,6 +62,8 @@ usage:
       (also: --session, --session-title, --agent, --new-session)
   sideshow json <file|-> [options]        publish a JSON post (collapsible tree)
       --title <t>       post title
+      --open-depth <n>  expand all containers up to this depth on render
+                        (0 = only root open, default; 2 = first 2 levels)
       (also: --session, --session-title, --agent, --new-session)
   sideshow code <file|-> [options]        publish a code post (shiki-highlighted)
       --title <t>       post (card) title
@@ -809,6 +812,7 @@ const commands = {
         image: { type: "string" },
         terminal: { type: "string" },
         json: { type: "string" },
+        "open-depth": { type: "string" },
         code: { type: "string" },
         kit: { type: "string", multiple: true },
         layout: { type: "string" },
@@ -841,7 +845,10 @@ const commands = {
     if (flags.json !== undefined) {
       const text = readContent(flags.json || "-");
       try {
-        parts.push({ kind: "json", data: JSON.parse(text) });
+        const jsonPart = { kind: "json", data: JSON.parse(text) };
+        const od = Number(flags["open-depth"]);
+        if (Number.isFinite(od) && od >= 0) jsonPart.openDepth = Math.floor(od);
+        parts.push(jsonPart);
       } catch {
         fail(`--json: invalid JSON${flags.json ? ` in ${flags.json}` : ""}`);
       }
@@ -1017,13 +1024,14 @@ const commands = {
       allowPositionals: true,
       options: {
         title: { type: "string" },
+        "open-depth": { type: "string" },
         session: { type: "string" },
         "session-title": { type: "string" },
         agent: { type: "string" },
         "new-session": { type: "boolean" },
       },
     });
-    if (!positionals[0]) fail("usage: sideshow json <file|-> [--title t]");
+    if (!positionals[0]) fail("usage: sideshow json <file|-> [--title t] [--open-depth n]");
     const text = readContent(positionals[0]);
     let data;
     try {
@@ -1031,7 +1039,10 @@ const commands = {
     } catch {
       fail(`invalid JSON${positionals[0] !== "-" ? ` in ${positionals[0]}` : ""}`);
     }
-    const parts = [{ kind: "json", data }];
+    const part = { kind: "json", data };
+    const od = Number(flags["open-depth"]);
+    if (Number.isFinite(od) && od >= 0) part.openDepth = Math.floor(od);
+    const parts = [part];
     outSurface(await publishSurface(parts, flags));
   },
   async code() {

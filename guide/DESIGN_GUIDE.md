@@ -50,6 +50,8 @@ a `kind`:
   for it for API responses, config files, test results — any structured data
   where a tree beats a fenced code block. Like image/trace it is data, not
   markup: the viewer renders it with escaped text nodes, so no sandbox is needed.
+  `openDepth` (number, default 0) expands all containers up to that depth on
+  initial render — e.g. `2` reveals the first two levels of nested structure.
 - **`code`** — source code you hand over as _text_; the trusted viewer highlights
   it with shiki (same highlighter as markdown fenced code blocks) and renders it
   in a sandboxed iframe. `language` is a shiki lang id (`ts`, `js`, `python`,
@@ -83,6 +85,7 @@ A **`Surface`** is one of:
 { "kind": "trace", "assetId": "<id of an uploaded JSON/JSONL trace>", "title": "..." }
 { "kind": "terminal", "text": "<output, may include ANSI SGR escapes>", "cols": 80, "title": "..." }
 { "kind": "json", "data": { "a": 1, "b": [true, null, "hi"] } }
+{ "kind": "json", "data": {...}, "openDepth": 2 }
 { "kind": "code", "code": "const x = 42;", "language": "ts", "title": "example.ts" }
 { "kind": "code", "code": "...", "language": "ts", "title": "x.ts", "lineStart": 80 }
 { "kind": "html", "html": "<ul class=\"tree\">...</ul>", "kits": ["issues"] }   # opt into a kit (see Kits)
@@ -160,6 +163,7 @@ sideshow markdown plan.md --title "Migration plan"         # markdown
 sideshow mermaid flow.mmd --title "Request flow"           # mermaid
 sideshow diff change.patch --layout split --title "..."    # diff
 sideshow json data.json --title "API response"             # json (collapsible tree)
+sideshow json data.json --open-depth 2 --title "Nested"    # json (first 2 levels open)
 sideshow code app.ts --title "Entry point"                  # code (lang inferred from filename)
 sideshow code - --language python --title "Script"          # code from stdin
 sideshow code app.ts --line-start 80 --title "app.ts"       # excerpt with original line numbers

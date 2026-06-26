@@ -89,7 +89,7 @@ test("validateSurfaces accepts all supported part kinds", async () => {
     { kind: "trace", steps: [{ label: "read", kind: "tool" }], title: "Trace" },
     { kind: "trace", assetId: "trace-file" },
     { kind: "json", data: { a: 1, b: [true, null, "hi"] } },
-    { kind: "json", data: null },
+    { kind: "json", data: null, openDepth: 2 },
     { kind: "json", data: 42 },
     { kind: "code", code: "const x = 1;", language: "ts", title: "a.ts" },
     { kind: "code", code: "print('hi')" },
