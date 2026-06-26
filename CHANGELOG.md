@@ -1,5 +1,125 @@
 # Changelog
 
+## 0.9.0
+
+### Minor Changes
+
+- 3046bc9: Add a host-overridable `ss:aside-empty` slot for the sidebar's empty state. When the session list is empty (post-load), it now shows a lightweight native "Connect an agent" row — the first item of an otherwise-empty list — with a plug icon and a one-line helper, instead of a blank list area. Clicking it scrolls to the empty-board pane (`ss:empty`) that holds the connect instructions. An embedder can project a `slot="ss:aside-empty"` child to replace the fallback with its own empty-list nudge; once a session exists, neither renders. Self-hosted gets the affordance via the fallback; the slot lets embedders override it.
+- fdc5b3e: The engine now uses the canonical `/api/posts` wire and `post-*` SSE events; legacy `/api/surfaces` routes, `surface-*` aliases, and `publish_surface` MCP tools remain as deprecated aliases.
+- 14c48dd: Bring the new **post / surface** vocabulary to the HTTP and MCP wire layers,
+  additively. The canonical hierarchy is now **workspace ▸ session ▸ post ▸
+  surface** (a post is an ordered list of surfaces); the older spellings keep
+  working as deprecated aliases — nothing is removed.
+
+  New HTTP routes mirror the existing surface routes, sharing the same handlers:
+  `GET/POST/PUT/DELETE /api/posts(/:id)`, `GET /p/:id` (with `?surface=N`),
+  `GET /session/:id/p/:postId`, and `GET /api/sessions/:id/posts`. The publish
+  and revise handlers now accept a `surfaces` body (falling back to the legacy
+  `parts`), so both `/api/posts` and `/api/surfaces` take either field; `/p/:id`
+  and `/s/:id` accept `?surface=N` as well as `?part=N`.
+
+  New MCP tools `publish_post`, `update_post`, and `list_posts` are advertised on
+  both transports, advertising a `surfaces` argument and emitting `/p/<id>` view
+  URLs. The legacy `publish_surface` / `update_surface` / `list_surfaces` tools
+  remain (now described as deprecated aliases) and still accept `parts`.
+  `reply_to_user` additionally accepts a `postId` argument. Tool prose and schemas
+  are rewritten in the new vocabulary (surface→post, part→surface,
+  board→workspace).
+
+- 13e6a14: Each surface footer gains an **open-as-image** action that opens the surface
+  rendered as a PNG (`/s/:id.png`). The image is captured by Cloudflare Browser
+  Rendering, so the action is live only on a Workers deployment; on a plain Node
+  server it is shown but disabled, with a tooltip pointing at the README. The
+  embeddable engine learns the capability through a new host field
+  (`SideshowHost.screenshots`); `createApp({ screenshots })` surfaces it to the
+  self-hosted viewer via `window.__SIDESHOW_SCREENSHOTS__`, and the Workers entry
+  sets it (the Node entry leaves it off).
+- 80cc684: Adopt the **post / surface** vocabulary throughout the viewer engine and the
+  host contract. The canonical hierarchy is **workspace ▸ session ▸ post ▸
+  surface**: a **post** is the published artifact (an ordered list of surfaces),
+  and a **surface** is one block inside a post.
+
+  This is an internal rename of the viewer's local identifiers, component names,
+  props, CSS classes, and user-visible strings — behavior is unchanged and all
+  wire paths, query keys (`?part=`), SSE event types, and server-provided JSON
+  field names are kept byte-identical for compatibility. The block component
+  files were renamed (`ImagePart`→`ImageSurface`, `JsonPart`→`JsonSurface`,
+  `TracePart`→`TraceSurface`), and the server helper `surfaceParts.ts` is now
+  `postSurfaces.ts` (`coerceSurfaceParts`→`coerceSurfaces`,
+  `validateSurfaceParts`→`validateSurfaces`).
+
+  **Host-contract change (embedders must update):** the host identity key
+  `identity.accountSlug` is renamed to `identity.workspaceSlug`. Any embedder
+  passing `accountSlug` on the injected host's `identity` must rename it to
+  `workspaceSlug`.
+
+### Patch Changes
+
+- 138dafe: Add `sideshow --version`, `-V`, and `version` subcommand. Prints the installed version and checks the npm registry for updates (best-effort, 3 s timeout, 24 h disk cache).
+- 5dfcb82: Held SSE (`/api/events`) and long-poll (`/api/comments?wait=N`) connections
+  are now bounded per workspace. Both are GETs that pin a socket open and, on a
+  `publicRead` board, are reachable unauthenticated — without a ceiling a flood
+  could exhaust connections (cleanup was already correct, there was just no
+  limit). Once over `maxHoldConnections` (default 32, configurable via
+  `AppOptions`), new held connections return `503`; an instant `?wait=0` read
+  still succeeds since it doesn't hold a slot. Slots release exactly once on
+  stream/request abort or normal return. The default is sized for the real
+  concurrency of a single-user workspace — a few viewer tabs (one SSE each) plus
+  active agent long-polls, including a multi-agent session with several agents
+  connected at once — since one workspace is one user; a real flood is orders of
+  magnitude bigger, so the cap rejects it regardless of the exact default.
+
+  Also indexes the referenced-asset set used by `/a/:id`'s optimistic-read wait
+  and asset eviction: it was re-parsing every post's `surfaces` + `history` JSON
+  on each call (a full-table scan on every `/a/:id` miss), and is now built
+  lazily and maintained incrementally on post create/update and invalidated on
+  remove. History is append-only, so an asset id once referenced stays
+  referenced until its whole post is deleted — the cache stays correct without
+  re-scanning.
+
+- faa1322: The `json` and `code` surface kinds (publishable over the CLI and REST since
+  they were added) are now advertised by the MCP tools too. Both the streamable
+  HTTP (`/mcp`) and stdio MCP transports list `json` and `code` in their
+  `publish_post`/`update_post` (and the deprecated `publish_surface`/
+  `update_surface` aliases) `kind` enums and document their fields (`data` for
+  json; `code`/`language`/`title`/`lineStart` for code), so an MCP agent can
+  publish a collapsible JSON tree or a syntax-highlighted code block — not just
+  CLI/REST callers.
+
+  To stop the surface-kind list from drifting between tiers again, all three
+  surfaces now derive from one canonical `SURFACE_KINDS` list in
+  `server/types.ts`: the `SurfaceKind` type, both MCP `kind` enums, and a new
+  `test/mcpSpec.test.ts` guard that fails if any kind is missing from the MCP
+  schemas or the runtime validator.
+
+- 3177e5b: Improve the mobile viewer layout for phone-sized screens, including sidebar ergonomics, native surface primitives, and timeline trace readability.
+- 67a9681: Adopt the **post / surface** vocabulary across all human-readable text: the
+  design/how-to guides (`guide/*.md`, `AGENTS.md`), the CLI help, usage, and
+  user-facing messages (`bin/sideshow.js`), and the comments and non-wire strings
+  in `server/*` and the residual viewer comments. The canonical hierarchy is
+  **workspace ▸ session ▸ post ▸ surface**: a **post** is the published artifact
+  (an ordered list of surfaces), a **surface** is one block inside a post, and the
+  tenant is a **workspace**. This is prose and CLI-help only — no behavior, API,
+  route, query-key, SSE-event, MCP-tool-name, or identifier changes. All
+  wire-bound strings (`/api/surfaces`, the `parts` body key, `?part=`,
+  `surface-created/updated/deleted`, the deprecated MCP tool aliases, the
+  `status board` kit, `--surface`) are kept byte-identical, and the CLI keeps
+  every endpoint and subcommand it has today (a new `--post` flag on `sideshow
+comment` is added alongside the existing `--surface`/`--snippet` aliases).
+- 76a9976: Move the default data directory from the package-relative `<package-root>/data/` to a user-owned `~/.sideshow/`. The package-relative default was read-only under `sudo npm install -g` (crashing with `EACCES` even after the #157 mkdir guard) and was wiped on every `npm install -g` upgrade — silent data loss. `~/.sideshow/` is always writable and survives reinstalls. A one-time migration copies any existing `sideshow.{db,db-wal,db-shm,json}` from the old location to the new one on first boot (only when using default paths; `SIDESHOW_DATA`/`SIDESHOW_DB` overrides are unchanged and skip the migration).
+- 61b57f2: Fix first-run crash when the SQLite db path's parent directory does not exist. `node:sqlite` does not create missing parent directories, so the default `<package-root>/data/sideshow.db` path (no `data/` shipped in the package) failed with `ERR_SQLITE_ERROR: unable to open database file` on a fresh `npx sideshow serve`. `createSqliteStorage` now `mkdirSync(dirname(path), { recursive: true })` before opening, guarded by the existing `:memory:` check so the in-memory contract suite is untouched. A user-supplied `SIDESHOW_DB` pointing into a not-yet-created directory now works too.
+- da74857: Submit-time validation now rejects diffs and mermaid diagrams that won't
+  render, not just ones with the wrong shape. A `diff` part whose `patch`
+  parses to zero files (e.g. a hunk without `---`/`+++` headers) returns a
+  `400` from `POST /api/surfaces` and `PUT /api/surfaces/:id` with the parse
+  error. A `mermaid` part whose source fails to parse also returns a `400`;
+  the parser (`@mermaid-js/parser`, the official mermaid-js extraction) covers
+  the 15 Langium-migrated diagram types (pie, gitGraph, architecture, radar,
+  treemap, wardley, …) — types still on Jison (flowchart, sequence, class,
+  state, er, gantt) skip validation and fall back to the viewer's existing
+  graceful render-failure UI. MCP tool calls (loose mode) drop the invalid
+  part instead of publishing a broken card.
+
 ## 0.8.0
 
 ### Minor Changes
