@@ -63,6 +63,22 @@ const post = (url: string, body: unknown) =>
     body: JSON.stringify(body),
   }).then((r) => r.json() as Promise<any>);
 
+// --- version ---
+
+for (const flag of ["--version", "-V", "version"]) {
+  test(`${flag} prints the version`, async () => {
+    const { code, stdout } = await run(...(flag.startsWith("-") ? [flag] : [flag]));
+    assert.equal(code, 0);
+    assert.match(stdout, /^sideshow \d+\.\d+\.\d+/);
+  });
+}
+
+test("version runs end-to-end (update check is best-effort)", async () => {
+  const { code, stdout } = await run("version");
+  assert.equal(code, 0);
+  assert.match(stdout, /^sideshow \d+\.\d+\.\d+/);
+});
+
 // None of these reach the network: --help and option errors resolve in
 // parsing, before any request (no server needs to be running).
 

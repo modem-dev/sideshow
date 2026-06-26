@@ -10,6 +10,7 @@ import { parseArgs } from "node:util";
 const BASE = (process.env.SIDESHOW_URL ?? "http://localhost:8228").replace(/\/$/, "");
 const TOKEN = process.env.SIDESHOW_TOKEN;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const PKG_VERSION = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version;
 // This script's own path — used to register the Stop hook so it works whether
 // or not `sideshow` is on PATH (a fresh clone, an npx run, a global install).
 const SELF = fileURLToPath(import.meta.url);
@@ -115,7 +116,11 @@ usage:
   sideshow guide                          print the design contract for posts
   sideshow setup                          print the AGENTS.md integration block
   sideshow agent-howto             print current agent how-to
+  sideshow version                         show version and check for updates
   sideshow mcp                            run the stdio MCP server (for agent configs)
+
+flags:
+  --version, -V                           print version and exit
 
 environment:
   SIDESHOW_URL      server base URL (default http://localhost:8228; set to a
@@ -470,6 +475,43 @@ async function publishSurface(parts, flags) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Semver greater-than for plain x.y.z (mirrors server/app.ts versionGt).
+function versionGt(a, b) {
+  const pa = a.split("-")[0].split(".").map(Number);
+  const pb = b.split("-")[0].split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d > 0;
+  }
+  return false;
+}
+
+// Disk-cached update check so `sideshow version` doesn't hit the registry every
+// time. TTL = 24 hours; stale/missing/corrupt cache is silently ignored.
+const UPDATE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function updateCachePath() {
+  const dir = join(tmpdir(), `sideshow-${userInfo().username}`);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return join(dir, "update-check.json");
+}
+
+function readUpdateCache() {
+  try {
+    const data = JSON.parse(readFileSync(updateCachePath(), "utf8"));
+    if (Date.now() - data.at < UPDATE_CACHE_TTL_MS && typeof data.version === "string") {
+      return data.version;
+    }
+  } catch {}
+  return null;
+}
+
+function writeUpdateCache(version) {
+  try {
+    writeFileSync(updateCachePath(), JSON.stringify({ at: Date.now(), version }));
+  } catch {}
+}
 
 // One comment → one line (one monitor notification). Newlines are collapsed so
 // a multi-line comment stays a single notification.
@@ -1345,6 +1387,41 @@ const commands = {
     parse();
     console.log(await fetchTextWithFallback("/agent-howto", join(ROOT, "guide", "AGENT_HOWTO.md")));
   },
+
+  // Print the running version and check for updates (non-blocking, best-effort).
+  async version() {
+    parse();
+    console.log(`sideshow ${PKG_VERSION}`);
+    try {
+      const cached = readUpdateCache();
+      let latest = cached;
+      if (!latest) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 3000);
+        try {
+          const res = await fetch("https://registry.npmjs.org/sideshow/latest", {
+            signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+          if (res.ok) {
+            const pkg = await res.json();
+            if (typeof pkg.version === "string") {
+              latest = pkg.version;
+              writeUpdateCache(latest);
+            }
+          }
+        } catch {
+          // Offline / timed out — skip silently.
+        }
+      }
+      if (latest && versionGt(latest, PKG_VERSION)) {
+        console.log(`\nUpdate available: ${PKG_VERSION} → ${latest}`);
+        console.log(`Run: npm install -g sideshow`);
+      }
+    } catch {
+      // Never let the update check fail the command.
+    }
+  },
 };
 
 async function fetchTextWithFallback(path, localFile) {
@@ -1355,7 +1432,9 @@ async function fetchTextWithFallback(path, localFile) {
   return readFileSync(localFile, "utf8");
 }
 
-if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
+if (cmd === "--version" || cmd === "-V") {
+  await commands.version();
+} else if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
   console.log(HELP);
 } else if (commands[cmd]) {
   await commands[cmd]();
