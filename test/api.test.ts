@@ -1262,6 +1262,142 @@ test("mcp endpoint requires bearer when token configured", async () => {
   assert.equal(ok.status, 200);
 });
 
+test("mcp upload_asset stores base64 bytes and returns id + url + kind", async () => {
+  const app = makeApp();
+  const data = Buffer.from("\x89PNG\r\n\x1a\n pixels");
+  const res = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "upload_asset",
+        arguments: {
+          data: data.toString("base64"),
+          contentType: "image/png",
+          filename: "shot.png",
+          kind: "image",
+        },
+      }),
+    )
+  ).json()) as any;
+  assert.equal(res.result.isError, undefined);
+  const asset = JSON.parse(res.result.content[0].text);
+  assert.ok(asset.id);
+  assert.equal(asset.kind, "image");
+  assert.equal(asset.contentType, "image/png");
+  assert.equal(asset.byteLength, data.length);
+  assert.ok(asset.url.includes(`/a/${asset.id}`));
+  // the blob is retrievable at the asset route, with matching bytes
+  const blob = await app.request(`/a/${asset.id}`);
+  assert.equal(blob.status, 200);
+  assert.equal((await blob.arrayBuffer()).byteLength, data.length);
+});
+
+test("mcp upload_asset without data fails with a clear error", async () => {
+  const app = makeApp();
+  const res = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", { name: "upload_asset", arguments: { contentType: "image/png" } }),
+    )
+  ).json()) as any;
+  assert.equal(res.result.isError, true);
+  assert.match(res.result.content[0].text, /upload_asset needs base64 `data`/);
+});
+
+test("mcp upload_asset with an explicit session attaches the asset to it", async () => {
+  const app = makeApp();
+  const session = (await (await app.request("/api/sessions", json({ agent: "m" }))).json()) as any;
+  const res = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", {
+        name: "upload_asset",
+        arguments: {
+          data: Buffer.from("hi").toString("base64"),
+          contentType: "text/plain",
+          session: session.id,
+        },
+      }),
+    )
+  ).json()) as any;
+  const asset = JSON.parse(res.result.content[0].text);
+  assert.equal(asset.sessionId, session.id);
+});
+
+test("mcp get_design_guide returns the guide text", async () => {
+  const app = makeApp();
+  const res = (await (
+    await app.request("/mcp", mcpCall(1, "tools/call", { name: "get_design_guide", arguments: {} }))
+  ).json()) as any;
+  assert.equal(res.result.isError, undefined);
+  assert.equal(res.result.content[0].text, "# guide");
+});
+
+test("mcp publish_post with no surfaces fails with a clear error", async () => {
+  const app = makeApp();
+  const res = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", { name: "publish_post", arguments: { surfaces: [] } }),
+    )
+  ).json()) as any;
+  assert.equal(res.result.isError, true);
+  assert.match(res.result.content[0].text, /a post needs at least one surface/);
+});
+
+test("mcp update_snippet revises via the legacy html argument", async () => {
+  const app = makeApp();
+  const pub = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(1, "tools/call", { name: "publish_snippet", arguments: { html: "<p>v1</p>" } }),
+    )
+  ).json()) as any;
+  const id = JSON.parse(pub.result.content[0].text).id;
+  const res = (await (
+    await app.request(
+      "/mcp",
+      mcpCall(2, "tools/call", { name: "update_snippet", arguments: { id, html: "<p>v2</p>" } }),
+    )
+  ).json()) as any;
+  const out = JSON.parse(res.result.content[0].text);
+  assert.equal(out.id, id);
+  assert.equal(out.version, 2);
+});
+
+test("mcp endpoint: malformed JSON body is a -32700 parse error", async () => {
+  const app = makeApp();
+  const res = await app.request("/mcp", { method: "POST", body: "{not valid json" });
+  assert.equal(res.status, 400);
+  const body = (await res.json()) as any;
+  assert.equal(body.error.code, -32700);
+  assert.equal(body.id, null);
+});
+
+test("mcp endpoint: a JSON-RPC batch is rejected with -32600", async () => {
+  const app = makeApp();
+  const res = await app.request("/mcp", json([mcpCall(1, "tools/list").body]));
+  assert.equal(res.status, 400);
+  const body = (await res.json()) as any;
+  assert.equal(body.error.code, -32600);
+  assert.match(body.error.message, /batch/);
+});
+
+test("mcp endpoint: a notification (no id) is acknowledged 202 with no body", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/mcp",
+    json({ jsonrpc: "2.0", method: "notifications/initialized" }),
+  );
+  assert.equal(res.status, 202);
+});
+
+test("mcp endpoint: ping responds with an empty result", async () => {
+  const app = makeApp();
+  const res = (await (await app.request("/mcp", mcpCall(1, "ping"))).json()) as any;
+  assert.deepEqual(res.result, {});
+});
+
 test("agent writes piggyback unseen user comments, delivered once", async () => {
   const app = makeApp();
   const s = (await (
