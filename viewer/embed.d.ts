@@ -76,6 +76,13 @@ export function mountViewer(el: Element, host?: SideshowHost): ViewerHandle;
  * mount element. Regions, not strings — kept small and coarse on purpose.
  */
 export declare const SLOTS: {
+  /**
+   * Sidebar header: the host-overridable region at the top of the sidebar, above
+   * the session list. Empty by default (self-hosted shows nothing here); project a
+   * `slot="ss:aside-head"` child for a host header — e.g. a workspace picker and a
+   * pinned Home link.
+   */
+  readonly asideHead: "ss:aside-head";
   /** Sidebar footer: doc links, connect action, theme picker. */
   readonly asideFoot: "ss:aside-foot";
   /**

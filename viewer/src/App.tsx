@@ -195,6 +195,10 @@ export default function App() {
               <aside>
                 <Brand />
                 <UpdateBanner />
+                {/* Host-overridable region (SLOTS.asideHead): the sidebar header, above the
+                    session list. Empty by default (self-hosted shows nothing here); an embedder
+                    projects its own header — e.g. a cloud workspace picker + pinned Home link. */}
+                <slot name={SLOTS.asideHead} />
                 <div id="sessionList">
                   <For each={sessionGroups()}>
                     {(group) => (

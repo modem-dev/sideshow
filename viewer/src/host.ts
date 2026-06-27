@@ -75,6 +75,11 @@ export interface SideshowHost {
 // These are *regions*, not individual strings — keep the list small and coarse.
 // Adding one is a deliberate contract change shared with every embedder.
 export const SLOTS = {
+  // Sidebar header: the host-overridable region at the TOP of the sidebar, above
+  // the session list (`#sessionList`, App.tsx). Empty by default (self-hosted shows
+  // nothing here); an embedder projects a header — e.g. a cloud workspace picker +
+  // a pinned Home link.
+  asideHead: "ss:aside-head",
   // Sidebar footer: design-guide / agent-setup links, the connect action, and the
   // theme picker. (`#onboard` aside, App.tsx)
   asideFoot: "ss:aside-foot",
