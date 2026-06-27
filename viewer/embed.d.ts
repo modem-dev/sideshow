@@ -14,7 +14,7 @@ export interface HostRouter {
 }
 
 export interface SideshowHost {
-  /** Link/base prefix the engine prepends to every path, e.g. "/u/alice" (""). */
+  /** Link/base prefix the engine prepends to every path, e.g. "/alice" (""). */
   basePath: string;
   router: HostRouter;
   /** The caller's own identity, when the host knows it. */

@@ -23,7 +23,7 @@ export interface HostRouter {
 }
 
 export interface SideshowHost {
-  // Link/base prefix the engine prepends to every path, e.g. "/u/alice" ("" at
+  // Link/base prefix the engine prepends to every path, e.g. "/alice" ("" at
   // root). API calls are `${basePath}/api/...`.
   basePath: string;
   router: HostRouter;
@@ -157,12 +157,11 @@ export function host(): SideshowHost {
   return (defaultHostCache ??= createDefaultHost());
 }
 
-// Self-hosted default host: base path from the hosted-wrapper global / URL
-// prefix (as the pre-engine viewer read it), routing over the History API with
-// URL shapes identical to before (/session/:id and /session/:id/s/:sid).
+// Self-hosted default host: base path from the hosted-wrapper global (set by any
+// wrapper before the engine loads; empty at root), routing over the History API
+// with URL shapes identical to before (/session/:id and /session/:id/s/:sid).
 export function createDefaultHost(): SideshowHost {
-  const basePath =
-    window.__SIDESHOW_BASE_PATH__ ?? location.pathname.match(/^\/u\/[^/]+/)?.[0] ?? "";
+  const basePath = window.__SIDESHOW_BASE_PATH__ ?? "";
   const subs = new Set<(r: Route) => void>();
 
   const get = (): Route => {
