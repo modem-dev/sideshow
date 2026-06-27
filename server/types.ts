@@ -314,6 +314,8 @@ export interface Store {
   setSetting(key: string, value: string): Promise<void>;
 
   listPosts(sessionId?: string): Promise<Post[]>;
+  /** The N most-recently-updated posts across all sessions (newest first). */
+  listRecentPosts(limit: number): Promise<Post[]>;
   getPost(id: string): Promise<Post | null>;
   createPost(input: CreatePostInput): Promise<Post | null>;
   updatePost(id: string, patch: UpdatePostInput): Promise<Post | null>;

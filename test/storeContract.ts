@@ -301,6 +301,38 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.deepEqual(await store.listPosts("missing"), []);
   });
 
+  contract(
+    "listRecentPosts returns newest-updated first across sessions, clamped to limit",
+    async (store) => {
+      const one = await store.createSession({ agent: "a" });
+      const two = await store.createSession({ agent: "b" });
+      const s1 = await store.createPost({ sessionId: one.id, surfaces: [htmlSurface("<p>1</p>")] });
+      await sleep(10);
+      const s2 = await store.createPost({ sessionId: two.id, surfaces: [htmlSurface("<p>2</p>")] });
+      await sleep(10);
+      const s3 = await store.createPost({ sessionId: one.id, surfaces: [htmlSurface("<p>3</p>")] });
+
+      // Newest updatedAt first — the reverse of listPosts' oldest-first order.
+      assert.deepEqual(
+        (await store.listRecentPosts(10)).map((s) => s.id),
+        [s3?.id, s2?.id, s1?.id],
+      );
+      // limit slices to the N most recent.
+      assert.deepEqual(
+        (await store.listRecentPosts(2)).map((s) => s.id),
+        [s3?.id, s2?.id],
+      );
+
+      // Updating an older post bumps it to the front (updatedAt, not createdAt).
+      await sleep(10);
+      await store.updatePost(s1!.id, { surfaces: [htmlSurface("<p>1b</p>")] });
+      assert.deepEqual(
+        (await store.listRecentPosts(10)).map((s) => s.id),
+        [s1?.id, s3?.id, s2?.id],
+      );
+    },
+  );
+
   contract("updates bump the version and archive the previous one", async (store) => {
     const session = await store.createSession({ agent: "pi" });
     const surface = await store.createPost({

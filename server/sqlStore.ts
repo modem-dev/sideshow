@@ -377,6 +377,13 @@ export class SqlStore implements Store {
     return rows.map((r) => this.rowToPost(r));
   }
 
+  async listRecentPosts(limit: number) {
+    const rows = this.sql
+      .exec("SELECT * FROM posts ORDER BY updatedAt DESC LIMIT ?", limit)
+      .toArray();
+    return rows.map((r) => this.rowToPost(r));
+  }
+
   async getPost(id: string) {
     const rows = this.sql.exec("SELECT * FROM posts WHERE id = ?", id).toArray();
     return rows.length > 0 ? this.rowToPost(rows[0]) : null;

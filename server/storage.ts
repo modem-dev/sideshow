@@ -349,6 +349,14 @@ export class JsonFileStore implements Store {
     return all.map(clone).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
+  async listRecentPosts(limit: number) {
+    await this.load();
+    return [...this.surfaces.values()]
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, limit)
+      .map(clone);
+  }
+
   async getPost(id: string) {
     await this.load();
     return cloneOrNull(this.surfaces.get(id));
