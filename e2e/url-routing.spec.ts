@@ -6,16 +6,28 @@ test("clicking a session updates the URL to /session/:id", async ({ page, server
   await page.goto(server.url);
   await expect(page.locator("#sessionList .sess")).toHaveCount(2);
 
-  // click the second session row. Selecting a session pushes /session/:id, then
-  // focusSurface immediately replaceState's /session/:id/s/:surfaceId once the
-  // first card is visible — so match the session segment with a boundary, not a
-  // `$`, or this races the deep-link suffix (see the back/forward test below).
+  // Selecting a session pushes /session/:id. The topmost surface auto-focuses
+  // internally, but the engine no longer pins it in the URL — only an explicit
+  // surface open (a deep link, or scrolling into one) writes /session/:id/s/:id.
   await page.locator(`#sessionList .sess[data-id="${s2.sessionId}"]`).click();
-  await expect(page).toHaveURL(new RegExp(`/session/${s2.sessionId}(\\b|/)`));
+  await expect(page).toHaveURL(new RegExp(`/session/${s2.sessionId}$`));
 
   // click the first session row
   await page.locator(`#sessionList .sess[data-id="${s1.sessionId}"]`).click();
-  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}(\\b|/)`));
+  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}$`));
+});
+
+test("auto-selecting a session on boot does not pin the default surface in the URL", async ({
+  page,
+  server,
+}) => {
+  // A session with a post: landing at root auto-selects it. The topmost surface
+  // auto-focuses internally, but the URL must stay /session/:id — no /s/:id —
+  // because the user didn't open a specific surface.
+  const s = await publish(server.url, { html: "<p>hi</p>", title: "Top", agent: "pi" });
+  await page.goto(server.url);
+  await expect(page.locator(`#sessionList .sess[data-id="${s.sessionId}"]`)).toHaveClass(/sel/);
+  await expect(page).toHaveURL(new RegExp(`/session/${s.sessionId}$`));
 });
 
 test("navigating to /session/:id selects that session", async ({ page, server }) => {
@@ -169,7 +181,7 @@ test("/ redirects to the last viewed session from localStorage", async ({ page, 
 
   // now visit root — should redirect to the last session
   await page.goto(server.url);
-  await expect(page).toHaveURL(new RegExp(`/session/${s.sessionId}(\\b|/)`));
+  await expect(page).toHaveURL(new RegExp(`/session/${s.sessionId}$`));
   await expect(page.locator(`#sessionList .sess[data-id="${s.sessionId}"]`)).toHaveClass(/sel/);
 });
 

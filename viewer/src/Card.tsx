@@ -168,9 +168,23 @@ export function Card(props: { post: Post; standalone?: boolean }) {
     scrollIfTarget();
     // Update the URL as the user scrolls past posts (replaceState, no
     // history noise). The first card that crosses the 50% threshold wins.
+    // The observer's first fire reports the card's position at mount: a card
+    // already in view (the default/topmost surface when a session opens) is an
+    // auto-focus, not a user choice, so it must not write the URL — only an
+    // explicit open (a deep link, or scrolling into a surface) does. Discard
+    // that initial fire; a card that mounts off-screen fires isIntersecting
+    // false first (nothing to write either way), so its first real, user-driven
+    // intersecting fire still reflects in the route. A deep-link scroll is
+    // already covered by deepLinkScrolling (and writes via pollScrollIntoView),
+    // so this only gates the scroll-driven reflection.
+    let initialFire = true;
     const observer = new IntersectionObserver(
       (entries) => {
         if (deepLinkScrolling) return;
+        if (initialFire) {
+          initialFire = false;
+          return;
+        }
         for (const entry of entries) {
           if (entry.isIntersecting) focusPost(props.post.id);
         }
