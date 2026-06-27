@@ -496,6 +496,40 @@ test("publish surfaces with --terminal before --md produces terminal-then-markdo
   }
 });
 
+test("publish repeats a surface flag to add several of the same kind, in order", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("h.html", "<div>x</div>");
+    const a = tmpFile("a.patch", "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+aa\n");
+    const b = tmpFile("b.patch", "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-b\n+bb\n");
+    const code = tmpFile("c.ts", "const x = 1;");
+    const { code: exit, stdout } = await cli(
+      server,
+      "publish",
+      html,
+      "--diff",
+      a,
+      "--code",
+      code,
+      "--diff",
+      b,
+    );
+    assert.equal(exit, 0);
+    const out = JSON.parse(stdout);
+    // Two diff surfaces appear, with the code surface between them in argv order.
+    assert.deepEqual(out.kinds, ["html", "diff", "code", "diff"]);
+    const full = (await fetch(`${server.url}/api/surfaces/${out.id}`).then((r) => r.json())) as any;
+    const diffs = full.surfaces.filter((s: any) => s.kind === "diff");
+    assert.equal(diffs.length, 2);
+    assert.deepEqual(
+      diffs.map((s: any) => s.patch),
+      [readFileSync(a, "utf8"), readFileSync(b, "utf8")],
+    );
+  } finally {
+    await server.close();
+  }
+});
+
 test("publish --code infers the language from the filename", async () => {
   const server = await serveSession();
   try {
@@ -730,6 +764,32 @@ test("surface add appends a diff surface with --layout split", async () => {
     const full = (await fetch(`${server.url}/api/posts/${id}`).then((r) => r.json())) as any;
     assert.equal(full.surfaces[1].kind, "diff");
     assert.equal(full.surfaces[1].layout, "split", "layout split is propagated");
+  } finally {
+    await server.close();
+  }
+});
+
+test("surface add repeats a flag to append several of the same kind, in order", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("h.html", "<p>first</p>");
+    const pub = await cli(server, "publish", html);
+    const id = JSON.parse(pub.stdout).id;
+
+    const a = tmpFile("a.md", "# first append");
+    const b = tmpFile("b.md", "# second append");
+    const { code } = await cli(server, "surface", "add", id, "--md", a, "--md", b);
+    assert.equal(code, 0);
+
+    const full = (await fetch(`${server.url}/api/posts/${id}`).then((r) => r.json())) as any;
+    assert.deepEqual(
+      full.surfaces.map((s: any) => s.kind),
+      ["html", "markdown", "markdown"],
+    );
+    assert.deepEqual(
+      full.surfaces.slice(1).map((s: any) => s.markdown),
+      ["# first append", "# second append"],
+    );
   } finally {
     await server.close();
   }
