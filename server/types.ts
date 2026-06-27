@@ -371,11 +371,19 @@ export const MAX_WORKSPACE_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
 // kept only the first 32-bit segment (~4e9), brute-forceable in about an hour.
 // (Assets use a separate content-hash id, not this.) btoa is a global in both
 // Node and Workers, same as the atob the asset path already relies on.
-export const newId = () =>
-  btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(8))))
+export const newId = () => {
+  let id = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(8))))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
+  // Ids are used as CLI positional args and path segments. A leading "-" or
+  // "_" makes node:util parseArgs treat them as options ("Unknown option '-6'"
+  // for an id like "-6K4AJsKD4M"), so swap a leading separator for an
+  // alphanumeric. Collision risk is negligible (the remaining ~10 chars hold
+  // ~8e17 possibilities).
+  if (id[0] === "-" || id[0] === "_") id = "0" + id.slice(1);
+  return id;
+};
 
 // Content-addressed asset id: the lowercase hex SHA-256 of the bytes. Because
 // it depends only on the content, an agent can derive `/a/:id` from the bytes

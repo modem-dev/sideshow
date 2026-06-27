@@ -21,15 +21,16 @@ usage:
   sideshow serve [--port N] [--open]      start the surface (API + viewer)
   sideshow publish <file|-> [options]     publish an HTML post (one html surface)
       --title <t>       post title
-      --md <file|->     add a markdown surface (prose) — combine with html
-      --mermaid <file|-> add a mermaid surface (diagram source → SVG) — combine with html
-      --diff <file|->   add a diff surface from a unified/git patch (combine with html)
-      --terminal <file|->  add a terminal surface from monospace/ANSI output
-      --json <file|->    add a json surface from a JSON file (collapsible tree)
-      --code <file|->    add a code surface from a file (shiki-highlighted)
+      --md <file|->     add a markdown surface (prose) — repeatable
+      --mermaid <file|-> add a mermaid surface (diagram source → SVG) — repeatable
+      --diff <file|->   add a diff surface from a unified/git patch — repeatable
+      --terminal <file|->  add a terminal surface from monospace/ANSI output — repeatable
+      --json <file|->    add a json surface from a JSON file (collapsible tree) — repeatable
+      --code <file|->    add a code surface from a file (shiki-highlighted) — repeatable
       --kit <id>        opt the html surface into a kit (repeatable; see "sideshow kits")
-      --image <file>    upload an image and append it as an image surface
+      --image <file>    upload an image and append it as an image surface — repeatable
       --session <id>    target session (default: auto per agent session)
+      surfaces appear in command-line flag order; repeat a flag to add several of one kind
       --session-title <t>  name for a newly created session — name the task,
                         e.g. "Auth refactor" (ignored if the session exists)
       --agent <name>    agent name for new sessions (default: $SIDESHOW_AGENT or "agent")
@@ -78,16 +79,17 @@ usage:
       --surface <N>     target surface N (id or 0-based index) in a multi-surface post
   sideshow surface <sub> [options]        edit individual surfaces of a post
     surface add <id> [flags]              append a surface to an existing post
-        --md <f>          markdown surface
-        --code <f>        code surface (language inferred from filename)
-        --diff <f>        diff surface from a patch
-        --terminal <f>    terminal surface
-        --mermaid <f>     mermaid surface
-        --json <f>        json surface
-        --image <f>       image surface (uploads the file first)
+        --md <f>          markdown surface (repeatable)
+        --code <f>        code surface (language inferred from filename; repeatable)
+        --diff <f>        diff surface from a patch (repeatable)
+        --terminal <f>    terminal surface (repeatable)
+        --mermaid <f>     mermaid surface (repeatable)
+        --json <f>        json surface (repeatable)
+        --image <f>       image surface (uploads the file first; repeatable)
         --layout split    split layout for --diff surfaces
         --before <N>      insert before surface N (id or index)
         --after <N>       insert after surface N (id or index)
+        surfaces append in command-line flag order; repeat a flag for several of one kind
     surface remove <id> <N>               remove surface N (id or 0-based index)
     surface edit <id> <N> <file|->        replace surface N's content (kind preserved)
     surface move <id> <N> --to <M>        move surface N to position M
@@ -478,6 +480,77 @@ function normalizeKits(flag) {
   return ids.length > 0 ? [...new Set(ids)] : undefined;
 }
 
+// Surface-kind flags accepted by `publish` and `surface add` (the two commands
+// that compose a post from one flag per surface kind). Each is declared
+// `multiple: true` in the parser, so a repeated flag yields an array — letting
+// an author emit several surfaces of the same kind (--diff a --diff b).
+const SURFACE_FLAGS = new Map([
+  ["md", "markdown"],
+  ["mermaid", "mermaid"],
+  ["diff", "diff"],
+  ["terminal", "terminal"],
+  ["json", "json"],
+  ["code", "code"],
+  ["image", "image"],
+]);
+
+// Build a single surface object from one flag value. Mirrors the per-kind
+// construction that used to be inlined in `publish` and `surface add`.
+async function buildSurface(kind, value, { session, layout }) {
+  const file = value || "-";
+  if (kind === "markdown") return { kind: "markdown", markdown: readContent(file) };
+  if (kind === "mermaid") return { kind: "mermaid", mermaid: readContent(file) };
+  if (kind === "diff")
+    return {
+      kind: "diff",
+      patch: readContent(file),
+      ...(layout === "split" && { layout: "split" }),
+    };
+  if (kind === "terminal") return { kind: "terminal", text: readContent(file) };
+  if (kind === "json") {
+    const text = readContent(file);
+    try {
+      return { kind: "json", data: JSON.parse(text) };
+    } catch {
+      fail(`--json: invalid JSON${value && value !== "-" ? ` in ${value}` : ""}`);
+    }
+  }
+  if (kind === "code") {
+    const part = { kind: "code", code: readContent(file) };
+    const codeLang = value && value !== "-" ? inferLang(value) : undefined;
+    if (codeLang) part.language = codeLang;
+    if (value && value !== "-") part.title = value.split("/").pop() || value;
+    return part;
+  }
+  if (kind === "image") {
+    const asset = await uploadFile(value, { session, kind: "image" });
+    return { kind: "image", assetId: asset.id };
+  }
+  fail(`unknown surface kind: ${kind}`);
+}
+
+// Walk parseArgs `tokens` (which preserve command-line order, including
+// repeats when a surface flag is `multiple: true`) and build one surface per
+// flag occurrence, pulling successive values from each flag's value array.
+// Surfaces render top-to-bottom, so order is user-visible — this honors the
+// order the author wrote the flags, repeats included.
+async function surfacesFromFlags(flags, tokens, { session, layout }) {
+  const idx = new Map();
+  const out = [];
+  for (const t of tokens ?? []) {
+    if (t.kind !== "option" || !SURFACE_FLAGS.has(t.name)) continue;
+    const flagName = t.name;
+    const arr = flags[flagName];
+    if (!Array.isArray(arr)) continue;
+    const i = idx.get(flagName) ?? 0;
+    const value = arr[i];
+    if (value === undefined) continue;
+    idx.set(flagName, i + 1);
+    out.push(await buildSurface(SURFACE_FLAGS.get(flagName), value, { session, layout }));
+  }
+  return out;
+}
+
 async function publishSurface(parts, flags) {
   const session = await resolveSession(flags, { create: true });
   return api("/api/surfaces", {
@@ -545,11 +618,27 @@ const [cmd, ...rest] = process.argv.slice(2);
 // Subcommand flag parsing. parseArgs is strict, so without this --help (or
 // any typo) throws a raw stack trace; instead --help/-h prints usage and
 // exits 0, and an unknown option fails with a one-line hint.
+//
+// Ids are base64url and can start with - or _ (~1/64 each). parseArgs strict
+// mode treats those as unknown options ("Unknown option '-6'" for an id like
+// "-6K4AJsKD4M"). We swap any id-shaped token that starts with a separator
+// for a sentinel before parsing, then restore it in the result — so positionals,
+// tokens, and option values all get the original id back, in the right order.
+const ID_LIKE = /^[-_](?![-_])[A-Za-z0-9_-]{7,}$/;
 function parse(config = {}) {
+  const rescued = new Map();
+  const args = rest.map((a) => {
+    if (ID_LIKE.test(a)) {
+      const s = `\x00${rescued.size}\x00`;
+      rescued.set(s, a);
+      return s;
+    }
+    return a;
+  });
   let parsed;
   try {
     parsed = parseArgs({
-      args: rest,
+      args,
       ...config,
       options: { ...config.options, help: { type: "boolean", short: "h" } },
     });
@@ -560,6 +649,17 @@ function parse(config = {}) {
   if (parsed.values.help) {
     console.log(HELP);
     process.exit(0);
+  }
+  const restore = (v) => (typeof v === "string" && rescued.has(v) ? rescued.get(v) : v);
+  if (parsed.positionals) parsed.positionals = parsed.positionals.map(restore);
+  if (parsed.tokens) {
+    parsed.tokens = parsed.tokens.map((t) =>
+      t.kind === "positional" && rescued.has(t.value) ? { ...t, value: rescued.get(t.value) } : t,
+    );
+  }
+  for (const k of Object.keys(parsed.values ?? {})) {
+    const v = parsed.values[k];
+    parsed.values[k] = Array.isArray(v) ? v.map(restore) : restore(v);
   }
   return parsed;
 }
@@ -825,13 +925,13 @@ const commands = {
       allowPositionals: true,
       options: {
         title: { type: "string" },
-        md: { type: "string" },
-        mermaid: { type: "string" },
-        diff: { type: "string" },
-        image: { type: "string" },
-        terminal: { type: "string" },
-        json: { type: "string" },
-        code: { type: "string" },
+        md: { type: "string", multiple: true },
+        mermaid: { type: "string", multiple: true },
+        diff: { type: "string", multiple: true },
+        image: { type: "string", multiple: true },
+        terminal: { type: "string", multiple: true },
+        json: { type: "string", multiple: true },
+        code: { type: "string", multiple: true },
         kit: { type: "string", multiple: true },
         layout: { type: "string" },
         session: { type: "string" },
@@ -843,61 +943,15 @@ const commands = {
     const htmlPart = { kind: "html", html: readContent(positionals[0]) };
     const kits = normalizeKits(flags.kit);
     if (kits) htmlPart.kits = kits;
-    // Surfaces render top-to-bottom, so order is user-visible. Walk the
-    // parseArgs tokens (which preserve command-line order) and append each
-    // surface flag the first time it appears, instead of a fixed if-ladder.
-    const SURFACE_FLAGS = new Map([
-      ["md", "markdown"],
-      ["mermaid", "mermaid"],
-      ["diff", "diff"],
-      ["terminal", "terminal"],
-      ["json", "json"],
-      ["code", "code"],
-      ["image", "image"],
-    ]);
-    const orderedKinds = [];
-    const seen = new Set();
-    for (const t of tokens ?? []) {
-      if (t.kind === "option" && SURFACE_FLAGS.has(t.name) && !seen.has(t.name)) {
-        seen.add(t.name);
-        orderedKinds.push(SURFACE_FLAGS.get(t.name));
-      }
-    }
     // Resolve the session first so image uploads and the post share it.
     const session = await resolveSession(flags, { create: true });
-    const parts = [htmlPart];
-    for (const kind of orderedKinds) {
-      if (kind === "markdown") {
-        parts.push({ kind: "markdown", markdown: readContent(flags.md || "-") });
-      } else if (kind === "mermaid") {
-        parts.push({ kind: "mermaid", mermaid: readContent(flags.mermaid || "-") });
-      } else if (kind === "diff") {
-        parts.push({
-          kind: "diff",
-          patch: readContent(flags.diff || "-"),
-          ...(flags.layout === "split" && { layout: "split" }),
-        });
-      } else if (kind === "terminal") {
-        parts.push({ kind: "terminal", text: readContent(flags.terminal || "-") });
-      } else if (kind === "json") {
-        const text = readContent(flags.json || "-");
-        try {
-          parts.push({ kind: "json", data: JSON.parse(text) });
-        } catch {
-          fail(`--json: invalid JSON${flags.json ? ` in ${flags.json}` : ""}`);
-        }
-      } else if (kind === "code") {
-        const codeFile = flags.code || "-";
-        const part = { kind: "code", code: readContent(codeFile) };
-        const codeLang = codeFile !== "-" ? inferLang(codeFile) : undefined;
-        if (codeLang) part.language = codeLang;
-        if (codeFile !== "-") part.title = codeFile.split("/").pop() || codeFile;
-        parts.push(part);
-      } else if (kind === "image") {
-        const asset = await uploadFile(flags.image, { session, kind: "image" });
-        parts.push({ kind: "image", assetId: asset.id });
-      }
-    }
+    // Surfaces render top-to-bottom, so order is user-visible. `surfacesFromFlags`
+    // walks parseArgs tokens (command-line order, repeats included) and builds
+    // one surface per flag occurrence — so --diff a --diff b yields two diffs.
+    const parts = [
+      htmlPart,
+      ...(await surfacesFromFlags(flags, tokens, { session, layout: flags.layout })),
+    ];
     outSurface(await publishSurface(parts, { ...flags, session }));
   },
 
@@ -1148,13 +1202,13 @@ const commands = {
         tokens: true,
         allowPositionals: true,
         options: {
-          md: { type: "string" },
-          mermaid: { type: "string" },
-          diff: { type: "string" },
-          terminal: { type: "string" },
-          json: { type: "string" },
-          code: { type: "string" },
-          image: { type: "string" },
+          md: { type: "string", multiple: true },
+          mermaid: { type: "string", multiple: true },
+          diff: { type: "string", multiple: true },
+          terminal: { type: "string", multiple: true },
+          json: { type: "string", multiple: true },
+          code: { type: "string", multiple: true },
+          image: { type: "string", multiple: true },
           before: { type: "string" },
           after: { type: "string" },
           layout: { type: "string" },
@@ -1164,57 +1218,13 @@ const commands = {
       const postId = positionals[0];
       if (!postId) fail("usage: sideshow surface add <postId> [--md f] [--code f] ...");
 
-      const SURFACE_FLAGS = new Map([
-        ["md", "markdown"],
-        ["mermaid", "mermaid"],
-        ["diff", "diff"],
-        ["terminal", "terminal"],
-        ["json", "json"],
-        ["code", "code"],
-        ["image", "image"],
-      ]);
-      const orderedKinds = [];
-      const seen = new Set();
-      for (const t of tokens ?? []) {
-        if (t.kind === "option" && SURFACE_FLAGS.has(t.name) && !seen.has(t.name)) {
-          seen.add(t.name);
-          orderedKinds.push(SURFACE_FLAGS.get(t.name));
-        }
-      }
-      if (orderedKinds.length === 0) fail("provide at least one surface flag (--md, --code, ...)");
       const session = await resolveSession(flags, { create: true });
+      const surfaces = await surfacesFromFlags(flags, tokens, { session, layout: flags.layout });
+      if (surfaces.length === 0) fail("provide at least one surface flag (--md, --code, ...)");
+      // Each surface is a separate append call so --before/--after positioning
+      // applies per surface (repeats append in command-line order).
       let lastResult;
-      for (const kind of orderedKinds) {
-        let surface;
-        if (kind === "markdown") {
-          surface = { kind: "markdown", markdown: readContent(flags.md || "-") };
-        } else if (kind === "mermaid") {
-          surface = { kind: "mermaid", mermaid: readContent(flags.mermaid || "-") };
-        } else if (kind === "diff") {
-          surface = {
-            kind: "diff",
-            patch: readContent(flags.diff || "-"),
-            ...(flags.layout === "split" && { layout: "split" }),
-          };
-        } else if (kind === "terminal") {
-          surface = { kind: "terminal", text: readContent(flags.terminal || "-") };
-        } else if (kind === "json") {
-          const text = readContent(flags.json || "-");
-          try {
-            surface = { kind: "json", data: JSON.parse(text) };
-          } catch {
-            fail(`--json: invalid JSON${flags.json ? ` in ${flags.json}` : ""}`);
-          }
-        } else if (kind === "code") {
-          const codeFile = flags.code || "-";
-          surface = { kind: "code", code: readContent(codeFile) };
-          const codeLang = codeFile !== "-" ? inferLang(codeFile) : undefined;
-          if (codeLang) surface.language = codeLang;
-          if (codeFile !== "-") surface.title = codeFile.split("/").pop() || codeFile;
-        } else if (kind === "image") {
-          const asset = await uploadFile(flags.image, { session, kind: "image" });
-          surface = { kind: "image", assetId: asset.id };
-        }
+      for (const surface of surfaces) {
         const body = { surface };
         if (flags.before !== undefined) body.before = flags.before;
         if (flags.after !== undefined) body.after = flags.after;
