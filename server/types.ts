@@ -192,6 +192,38 @@ export interface Post {
   history: PostVersion[];
 }
 
+export type CommentAnchor =
+  | {
+      kind: "point";
+      surfaceIndex: number;
+      surfaceId?: string;
+      surfaceKind?: SurfaceKind;
+      postVersion: number;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: "rect";
+      surfaceIndex: number;
+      surfaceId?: string;
+      surfaceKind?: SurfaceKind;
+      postVersion: number;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+    }
+  | {
+      kind: "lineRange";
+      surfaceIndex: number;
+      surfaceId?: string;
+      surfaceKind?: SurfaceKind;
+      postVersion: number;
+      startLine: number;
+      endLine: number;
+      file?: string;
+    };
+
 export interface Comment {
   id: string;
   seq: number;
@@ -201,6 +233,10 @@ export interface Comment {
   author: string;
   text: string;
   createdAt: string;
+  // Optional host-authored anchor for comments on a specific rendered surface
+  // area/line. It is data only: render with text/positioned elements in the
+  // trusted viewer, never as HTML.
+  anchor?: CommentAnchor;
 }
 
 // An uploaded blob (image, trace file, arbitrary file) the agent pushes once and
@@ -252,6 +288,7 @@ export interface CreateCommentInput {
   postId?: string;
   author: string;
   text: string;
+  anchor?: CommentAnchor;
 }
 
 export interface CommentQuery {
@@ -284,6 +321,7 @@ export interface Store {
 
   listComments(query: CommentQuery): Promise<Comment[]>;
   createComment(input: CreateCommentInput): Promise<Comment | null>;
+  removeComment(id: string): Promise<Comment | null>;
 
   // Session-scoped agent trace: the steps that produced a session's surfaces,
   // synced from the transcript. setTrace replaces the whole list (windowed

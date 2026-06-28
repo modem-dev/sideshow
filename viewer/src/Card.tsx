@@ -16,6 +16,7 @@ import {
   isReadonly,
   relTime,
   sessionLabel,
+  type CommentAnchor,
   type ImageSurface as ImageSurfaceData,
   type JsonSurface as JsonSurfaceData,
   type Post,
@@ -23,13 +24,14 @@ import {
   postLink,
   postImageLink,
 } from "./api.ts";
-import { CommentIcon, ImageIcon, LinkIcon, OpenIcon, TrashIcon } from "./icons.tsx";
+import { CommentIcon, ImageIcon, LinkIcon, OpenIcon, PinIcon, TrashIcon } from "./icons.tsx";
 import { ImageSurface } from "./ImageSurface.tsx";
 import { JsonSurface } from "./JsonSurface.tsx";
 import { activeTheme, resolvedMode } from "./theme.ts";
 import { TraceSurface } from "./TraceSurface.tsx";
 import {
   comments,
+  deleteComment,
   focusPost,
   scrollTarget,
   sendComment,
@@ -91,6 +93,42 @@ let deepLinkScrolling = false;
 // Iframe heights resolve asynchronously (postMessage resize), so a single
 // scrollIntoView fires before the layout settles and the target drifts.
 // Returns a cancel function so the caller can abort on cleanup.
+function anchorPoint(anchor: CommentAnchor | undefined): { x: number; y: number } | null {
+  if (!anchor || anchor.kind === "lineRange") return null;
+  return { x: anchor.x, y: anchor.y };
+}
+
+function anchorLabel(anchor: CommentAnchor | undefined): string | null {
+  if (!anchor) return null;
+  const where = `surface ${anchor.surfaceIndex + 1}`;
+  if (anchor.kind === "lineRange") return `${where} · lines ${anchor.startLine}-${anchor.endLine}`;
+  return `${where} · v${anchor.postVersion}`;
+}
+
+function authorLabel(comment: Pick<ViewComment, "author">): string {
+  return comment.author === "user" ? "you" : comment.author;
+}
+
+function avatarInitials(author: string): string {
+  const label = author === "user" ? "you" : author;
+  return (
+    label
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((s) => s[0]?.toUpperCase() ?? "")
+      .join("") || "?"
+  );
+}
+
+function AvatarPin(props: { author: string }) {
+  return (
+    <span class="avatar-pin" aria-hidden="true">
+      <span>{avatarInitials(props.author)}</span>
+    </span>
+  );
+}
+
 function pollScrollIntoView(el: HTMLElement, postId: string): () => void {
   // If the card is already near the top of the viewport, no polling needed —
   // skip straight to focusPost so the app behaves identically to a load
@@ -142,7 +180,24 @@ export function Card(props: { post: Post; standalone?: boolean }) {
   // Absolute surface index -> its sandboxed-surface iframe. Lets the version
   // dropdown rebuild each `/s/:id?part=N` src across every surface with a frame.
   const surfaceFrames = new Map<number, HTMLIFrameElement>();
+  const [annotating, setAnnotating] = createSignal(false);
+  const [anchorDraft, setAnchorDraft] = createSignal<CommentAnchor | null>(null);
   let stopPoll: (() => void) | undefined;
+
+  const anchoredComments = (surfaceIndex: number) =>
+    comments().filter((c) => c.postId === props.post.id && c.anchor?.surfaceIndex === surfaceIndex);
+
+  const sendPinnedComment = async (text: string) => {
+    const anchor = anchorDraft();
+    if (!anchor) return "place a pin first";
+    const error = await sendComment(
+      { surface: props.post.id, text, author: "user", anchor },
+      props.post.id,
+      text,
+    );
+    if (error === null) setAnchorDraft(null);
+    return error;
+  };
 
   // React to scrollTarget changes — start the polling scroll when this card
   // becomes the target.  createEffect tracks scrollTarget(); onMount covers
@@ -234,47 +289,85 @@ export function Card(props: { post: Post; standalone?: boolean }) {
           iframe src changes only when the version, the active theme, or the
           resolved light/dark mode does, so unrelated refetches never reload it. */}
       <For each={props.post.surfaces}>
-        {(surface, i) => (
-          <Switch
-            fallback={
-              <div class="surface-unsupported">
-                Can&rsquo;t show this surface — refresh sideshow to update the viewer.
-              </div>
-            }
-          >
-            <Match when={SANDBOXED_KINDS.has(surface.kind)}>
-              <iframe
-                ref={(el) => {
-                  surfaceFrames.set(i(), el);
-                  iframes.add(el);
-                  onCleanup(() => {
-                    surfaceFrames.delete(i());
-                    iframes.delete(el);
-                  });
-                }}
-                sandbox="allow-scripts"
-                class={FRAME_CLASS[surface.kind]}
-                title={
-                  props.post.surfaces.length > 1
-                    ? `${props.post.title} (surface ${i() + 1})`
-                    : props.post.title
+        {(surface, i) => {
+          const captureAnchor = (e: MouseEvent) => {
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setAnchorDraft({
+              kind: "point",
+              surfaceIndex: i(),
+              ...(surface.id && { surfaceId: surface.id }),
+              surfaceKind: surface.kind,
+              postVersion: props.post.version,
+              x: Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1),
+              y: Math.min(Math.max((e.clientY - rect.top) / rect.height, 0), 1),
+            });
+            setAnnotating(false);
+          };
+          return (
+            <div class="surface-shell" classList={{ annotating: annotating() }}>
+              <Switch
+                fallback={
+                  <div class="surface-unsupported">
+                    Can&rsquo;t show this surface — refresh sideshow to update the viewer.
+                  </div>
                 }
-                src={appPath(
-                  `/s/${props.post.id}?part=${i()}&ver=${props.post.version}&cb=${props.post.version}&theme=${activeTheme()}&mode=${resolvedMode()}`,
-                )}
-              ></iframe>
-            </Match>
-            <Match when={surface.kind === "image"}>
-              <ImageSurface surface={surface as ImageSurfaceData} />
-            </Match>
-            <Match when={surface.kind === "trace"}>
-              <TraceSurface surface={surface as TraceSurfaceData} />
-            </Match>
-            <Match when={surface.kind === "json"}>
-              <JsonSurface surface={surface as JsonSurfaceData} />
-            </Match>
-          </Switch>
-        )}
+              >
+                <Match when={SANDBOXED_KINDS.has(surface.kind)}>
+                  <iframe
+                    ref={(el) => {
+                      surfaceFrames.set(i(), el);
+                      iframes.add(el);
+                      onCleanup(() => {
+                        surfaceFrames.delete(i());
+                        iframes.delete(el);
+                      });
+                    }}
+                    sandbox="allow-scripts"
+                    class={FRAME_CLASS[surface.kind]}
+                    title={
+                      props.post.surfaces.length > 1
+                        ? `${props.post.title} (surface ${i() + 1})`
+                        : props.post.title
+                    }
+                    src={appPath(
+                      `/s/${props.post.id}?part=${i()}&ver=${props.post.version}&cb=${props.post.version}&theme=${activeTheme()}&mode=${resolvedMode()}`,
+                    )}
+                  ></iframe>
+                </Match>
+                <Match when={surface.kind === "image"}>
+                  <ImageSurface surface={surface as ImageSurfaceData} />
+                </Match>
+                <Match when={surface.kind === "trace"}>
+                  <TraceSurface surface={surface as TraceSurfaceData} />
+                </Match>
+                <Match when={surface.kind === "json"}>
+                  <JsonSurface surface={surface as JsonSurfaceData} />
+                </Match>
+              </Switch>
+              <div class="surface-pins">
+                <For each={anchoredComments(i())}>{(c) => <AnchoredComment comment={c} />}</For>
+                <Show when={anchorDraft()?.surfaceIndex === i() ? anchorDraft() : null} keyed>
+                  {(anchor) => (
+                    <AnchoredComposer
+                      anchor={anchor}
+                      send={sendPinnedComment}
+                      onCancel={() => setAnchorDraft(null)}
+                    />
+                  )}
+                </Show>
+              </div>
+              <Show when={annotating() && !props.standalone && !isReadonly()}>
+                <button
+                  class="surface-capture"
+                  type="button"
+                  aria-label="Place a comment on this surface"
+                  data-tip="Click to place a comment"
+                  onClick={captureAnchor}
+                ></button>
+              </Show>
+            </div>
+          );
+        }}
       </For>
       <Show when={!props.standalone}>
         <Thread
@@ -292,6 +385,18 @@ export function Card(props: { post: Post; standalone?: boolean }) {
                   onClick={startReply}
                 >
                   <CommentIcon />
+                </button>
+                <button
+                  class="act icon pin-act"
+                  classList={{ active: annotating() }}
+                  title="Comment on a spot in a surface"
+                  aria-label="Comment on a spot in a surface"
+                  onClick={() => {
+                    setAnchorDraft(null);
+                    setAnnotating((v) => !v);
+                  }}
+                >
+                  <PinIcon />
                 </button>
               </Show>
               <span class="sp"></span>
@@ -372,6 +477,99 @@ export function Card(props: { post: Post; standalone?: boolean }) {
   );
 }
 
+function AnchoredComment(props: { comment: ViewComment }) {
+  const point = () => anchorPoint(props.comment.anchor);
+  return (
+    <Show when={point()} keyed>
+      {(pt) => (
+        <div
+          class="anchored-note"
+          classList={{ left: pt.x > 0.62, pending: !!props.comment.pending }}
+          style={{ left: `${pt.x * 100}%`, top: `${pt.y * 100}%` }}
+        >
+          <AvatarPin author={props.comment.author} />
+          <div class="anchor-card">
+            <div class="anchor-head">
+              <span class="avatar">{avatarInitials(props.comment.author)}</span>
+              <span class="who">{authorLabel(props.comment)}</span>
+              <span class="when">{relTime(props.comment.createdAt)}</span>
+              <Show when={!isReadonly()}>
+                <button
+                  class="anchor-del"
+                  title="Delete comment"
+                  aria-label="Delete pinned comment"
+                  onClick={async () => {
+                    const error = await deleteComment(props.comment.id);
+                    if (error) toast(`Couldn't delete that comment — ${error}`);
+                  }}
+                >
+                  <TrashIcon />
+                </button>
+              </Show>
+            </div>
+            <div class="anchor-text">{props.comment.text}</div>
+          </div>
+        </div>
+      )}
+    </Show>
+  );
+}
+
+function AnchoredComposer(props: {
+  anchor: CommentAnchor;
+  send: (text: string) => Promise<string | null>;
+  onCancel: () => void;
+}) {
+  let input!: HTMLInputElement;
+  const point = () => anchorPoint(props.anchor);
+  const submit = async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    const error = await props.send(text);
+    if (error !== null) {
+      if (!input.value) input.value = text;
+      input.focus();
+      toast(`Couldn't post that comment — ${error}. It's back in the box.`);
+    }
+  };
+  onMount(() => input.focus());
+  return (
+    <Show when={point()} keyed>
+      {(pt) => (
+        <div
+          class="anchored-note composing"
+          classList={{ left: pt.x > 0.62 }}
+          style={{ left: `${pt.x * 100}%`, top: `${pt.y * 100}%` }}
+        >
+          <AvatarPin author="user" />
+          <div class="anchor-card">
+            <div class="anchor-head">
+              <span class="avatar">{avatarInitials("user")}</span>
+              <span class="who">you</span>
+              <span class="anchor-meta">{anchorLabel(props.anchor)}</span>
+            </div>
+            <div class="anchor-compose">
+              <input
+                ref={(el) => (input = el)}
+                placeholder="Comment on this spot…"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submit();
+                  else if (e.key === "Escape" && !input.value) props.onCancel();
+                }}
+              />
+              <button onClick={submit}>Comment</button>
+              <button class="ghost" onClick={props.onCancel}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Show>
+  );
+}
+
 function Thread(props: {
   postId: string | null;
   placeholder: string;
@@ -385,7 +583,7 @@ function Thread(props: {
   actions?: (startReply: () => void) => JSX.Element;
 }) {
   const [replying, setReplying] = createSignal(false);
-  const list = () => comments().filter((c) => c.postId === props.postId);
+  const list = () => comments().filter((c) => c.postId === props.postId && !c.anchor);
   return (
     <div class="thread">
       <Show when={list().length}>
@@ -423,7 +621,9 @@ function Thread(props: {
 // for an agent to act on the comment when handed it directly.
 function pasteBlock(c: ViewComment): string {
   if (c.postId) {
-    return `sideshow comment on “${c.postTitle ?? "a post"}” (post ${c.postId}):\n“${c.text}”`;
+    const anchor = anchorLabel(c.anchor);
+    const where = anchor ? ` at ${anchor}` : "";
+    return `sideshow comment on “${c.postTitle ?? "a post"}” (post ${c.postId})${where}:\n“${c.text}”`;
   }
   const s = sessions.find((x) => x.id === c.sessionId);
   return `sideshow comment, session “${s ? sessionLabel(s) : c.sessionId}”:\n“${c.text}”`;
@@ -446,6 +646,9 @@ function CommentRow(props: { comment: ViewComment }) {
       data-cid={props.comment.id}
     >
       <span class="who">{props.comment.author === "user" ? "you" : props.comment.author}</span>
+      <Show when={anchorLabel(props.comment.anchor)} keyed>
+        {(label) => <span class="anchor-chip">{label}</span>}
+      </Show>
       {/* Plain comment text rendered as a Solid text node — escapes by
           construction (the invariant's option-(b) for data), so no iframe is
           needed. `white-space: pre-wrap` (in styles.css) keeps the author's

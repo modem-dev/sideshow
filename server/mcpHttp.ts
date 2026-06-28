@@ -151,6 +151,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
               surfaceTitle: c.postTitle,
               text: c.text,
               at: c.createdAt,
+              ...(c.anchor && { anchor: c.anchor }),
             })),
             lastSeq: result.lastSeq,
           },

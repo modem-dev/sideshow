@@ -81,6 +81,10 @@ export class SqlStore implements Store {
     if (!sessionCols.some((c) => c.name === "agentSeq")) {
       this.sql.exec("ALTER TABLE sessions ADD COLUMN agentSeq INTEGER NOT NULL DEFAULT 0");
     }
+    const commentCols = this.sql.exec("SELECT name FROM pragma_table_info('comments')").toArray();
+    if (!commentCols.some((c) => c.name === "anchor")) {
+      this.sql.exec("ALTER TABLE comments ADD COLUMN anchor TEXT");
+    }
     this.migrateToSurfaces();
     this.migrateToPosts();
     this.migrateSurfaceIds();
@@ -245,6 +249,14 @@ export class SqlStore implements Store {
   }
 
   private rowToComment(r: Record<string, SqlStorageValue>): Comment {
+    let anchor: Comment["anchor"] | undefined;
+    if (typeof r.anchor === "string" && r.anchor) {
+      try {
+        anchor = JSON.parse(r.anchor) as Comment["anchor"];
+      } catch {
+        anchor = undefined;
+      }
+    }
     return {
       id: r.id as string,
       seq: r.seq as number,
@@ -254,6 +266,7 @@ export class SqlStore implements Store {
       author: r.author as string,
       text: r.text as string,
       createdAt: r.createdAt as string,
+      ...(anchor && { anchor }),
     };
   }
 
@@ -484,7 +497,7 @@ export class SqlStore implements Store {
     const author = stripNul(input.author).trim() || "user";
     const text = stripNul(input.text);
     this.sql.exec(
-      "INSERT INTO comments (id, sessionId, postId, postTitle, author, text, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO comments (id, sessionId, postId, postTitle, author, text, createdAt, anchor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       id,
       input.sessionId,
       surface?.id ?? null,
@@ -492,6 +505,7 @@ export class SqlStore implements Store {
       author,
       text,
       createdAt,
+      input.anchor ? JSON.stringify(input.anchor) : null,
     );
     const seq = this.sql.exec("SELECT last_insert_rowid() AS seq").one().seq as number;
     this.touch(input.sessionId);
@@ -504,7 +518,17 @@ export class SqlStore implements Store {
       author,
       text,
       createdAt,
+      ...(input.anchor && { anchor: input.anchor }),
     };
+  }
+
+  async removeComment(id: string) {
+    const rows = this.sql.exec("SELECT * FROM comments WHERE id = ?", id).toArray();
+    if (rows.length === 0) return null;
+    const comment = this.rowToComment(rows[0]);
+    this.sql.exec("DELETE FROM comments WHERE id = ?", id);
+    this.touch(comment.sessionId);
+    return comment;
   }
 
   // --- trace ---
@@ -700,7 +724,7 @@ export class SqlStore implements Store {
       }
       for (const c of snapshot.comments) {
         this.sql.exec(
-          "INSERT INTO comments (seq, id, sessionId, postId, postTitle, author, text, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO comments (seq, id, sessionId, postId, postTitle, author, text, createdAt, anchor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
           c.seq,
           c.id,
           c.sessionId,
@@ -709,6 +733,7 @@ export class SqlStore implements Store {
           c.author,
           c.text,
           c.createdAt,
+          c.anchor ? JSON.stringify(c.anchor) : null,
         );
       }
       for (const t of snapshot.traces) {

@@ -380,11 +380,24 @@ let localSeq = 0;
 // Echo the comment immediately (pending until the POST confirms), and on
 // failure report the error so the composer can put the text back — a user
 // message must never be silently lost. Returns the error message, or null.
+export async function deleteComment(id: string): Promise<string | null> {
+  const prior = commentsState();
+  setCommentsInternal((prev) => prev.filter((c) => c.id !== id));
+  try {
+    await api(`/api/comments/${encodeURIComponent(id)}`, { method: "DELETE" });
+    return null;
+  } catch (err) {
+    setCommentsInternal(prior);
+    return err instanceof Error && err.message ? err.message : "network error";
+  }
+}
+
 export async function sendComment(
   body: Record<string, unknown>,
   postId: string | null,
   text: string,
 ): Promise<string | null> {
+  const anchor = body.anchor as Comment["anchor"] | undefined;
   const local: ViewComment = {
     id: `local-${++localSeq}`,
     seq: 0,
@@ -394,6 +407,7 @@ export async function sendComment(
     author: "user",
     text,
     createdAt: new Date().toISOString(),
+    ...(anchor && { anchor }),
     pending: true,
   };
   setCommentsInternal((prev) => [...prev, local]);
@@ -465,6 +479,8 @@ export function connect() {
         const res = await api<{ comments: Comment[] }>(`/api/comments?${query}`);
         mergeComments(res.comments);
       }
+    } else if (e.type === "comment-deleted") {
+      setCommentsInternal((prev) => prev.filter((c) => c.id !== e.id));
     }
   };
 }

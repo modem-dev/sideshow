@@ -9,6 +9,7 @@ export type FeedEvent =
       surfaceId: string | null;
       seq: number;
     }
+  | { type: "comment-deleted"; id: string; sessionId: string }
   // Workspace theme changed; `id` is the new theme id. Other open tabs re-theme.
   | { type: "theme-changed"; id: string }
   // Session-scoped agent trace gained steps (synced in a batch). Carries only

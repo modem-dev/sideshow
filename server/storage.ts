@@ -107,6 +107,7 @@ function liftComment(c: LegacyComment): Comment {
     author: c.author,
     text: c.text,
     createdAt: c.createdAt,
+    ...(c.anchor && { anchor: c.anchor }),
   };
 }
 
@@ -433,9 +434,20 @@ export class JsonFileStore implements Store {
       author: stripNul(input.author).trim() || "user",
       text: stripNul(input.text),
       createdAt: new Date().toISOString(),
+      ...(input.anchor && { anchor: input.anchor }),
     };
     this.comments.push(comment);
     this.touch(input.sessionId);
+    await this.persist();
+    return clone(comment);
+  }
+
+  async removeComment(id: string) {
+    await this.load();
+    const idx = this.comments.findIndex((c) => c.id === id);
+    if (idx < 0) return null;
+    const [comment] = this.comments.splice(idx, 1);
+    this.touch(comment.sessionId);
     await this.persist();
     return clone(comment);
   }

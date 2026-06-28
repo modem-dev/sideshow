@@ -19,6 +19,7 @@ import {
   type AssetKind,
   type CodeSurface,
   type Comment,
+  type CommentAnchor,
   type DiffSurface,
   htmlSurface,
   type MarkdownSurface,
@@ -265,6 +266,7 @@ export interface Feedback {
   surfaceTitle: string | null;
   text: string;
   at: string;
+  anchor?: CommentAnchor;
 }
 
 // Lean comment shape attached to agent-facing responses.
@@ -273,6 +275,7 @@ const feedbackView = (c: Comment): Feedback => ({
   surfaceTitle: c.postTitle,
   text: c.text,
   at: c.createdAt,
+  ...(c.anchor && { anchor: c.anchor }),
 });
 
 export function createApp({
@@ -654,10 +657,65 @@ export function createApp({
     return reviseSurface(id, { parts: indexed });
   }
 
+  function numberInRange(value: unknown, min: number, max: number): number | null {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= min && n <= max ? n : null;
+  }
+
+  function sanitizeCommentAnchor(raw: unknown, post: Post): CommentAnchor | undefined {
+    if (!raw || typeof raw !== "object") return undefined;
+    const input = raw as Record<string, unknown>;
+    const kind = input.kind === "rect" || input.kind === "lineRange" ? input.kind : "point";
+    let surfaceIndex = Number(input.surfaceIndex);
+    if (
+      !Number.isInteger(surfaceIndex) ||
+      surfaceIndex < 0 ||
+      surfaceIndex >= post.surfaces.length
+    ) {
+      const surfaceId = typeof input.surfaceId === "string" ? input.surfaceId : undefined;
+      surfaceIndex = post.surfaces.findIndex((s) => s.id === surfaceId);
+    }
+    if (surfaceIndex < 0 || surfaceIndex >= post.surfaces.length) return undefined;
+    const surface = post.surfaces[surfaceIndex];
+    const base = {
+      surfaceIndex,
+      ...(surface.id && { surfaceId: surface.id }),
+      surfaceKind: surface.kind,
+      // The server pins anchors to the current stored version instead of trusting
+      // the client-supplied value.
+      postVersion: post.version,
+    };
+    if (kind === "lineRange") {
+      const startLine = Number(input.startLine);
+      const endLine = Number(input.endLine);
+      if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1) {
+        return undefined;
+      }
+      return {
+        kind,
+        ...base,
+        startLine,
+        endLine: Math.max(startLine, endLine),
+        ...(typeof input.file === "string" && { file: input.file.slice(0, MAX_TITLE) }),
+      };
+    }
+    const x = numberInRange(input.x, 0, 1);
+    const y = numberInRange(input.y, 0, 1);
+    if (x == null || y == null) return undefined;
+    if (kind === "rect") {
+      const w = numberInRange(input.w, 0, 1);
+      const h = numberInRange(input.h, 0, 1);
+      if (w == null || h == null) return undefined;
+      return { kind, ...base, x, y, w, h };
+    }
+    return { kind: "point", ...base, x, y };
+  }
+
   async function createComment(input: {
     text: string;
     surface?: string;
     author: string;
+    anchor?: unknown;
   }): Promise<
     { comment: Comment; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 }
   > {
@@ -671,6 +729,7 @@ export function createApp({
       postId: surface.id,
       author: input.author,
       text: input.text.trim().slice(0, MAX_COMMENT_TEXT),
+      anchor: sanitizeCommentAnchor(input.anchor, surface),
     });
     if (!comment) return { error: "session not found", status: 404 };
     bus.broadcast({
@@ -1274,12 +1333,20 @@ export function createApp({
       text: body.text,
       surface: typeof surface === "string" ? surface : undefined,
       author: typeof body.author === "string" ? body.author : "user",
+      anchor: body.anchor,
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json(
       { ...result.comment, ...(result.userFeedback && { userFeedback: result.userFeedback }) },
       201,
     );
+  });
+
+  app.delete("/api/comments/:id", async (c) => {
+    const comment = await store.removeComment(c.req.param("id"));
+    if (!comment) return c.json({ error: "comment not found" }, 404);
+    bus.broadcast({ type: "comment-deleted", id: comment.id, sessionId: comment.sessionId });
+    return c.json({ ok: true });
   });
 
   // The viewer's update notice: running version vs latest published release.

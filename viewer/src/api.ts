@@ -1,6 +1,7 @@
 // Thin client over the REST API, typed against the server's data model.
 import type {
   Comment,
+  CommentAnchor,
   CodeSurface,
   DiffSurface,
   HtmlSurface,
@@ -19,6 +20,7 @@ import { host } from "./host.ts";
 
 export type {
   Comment,
+  CommentAnchor,
   CodeSurface,
   DiffSurface,
   HtmlSurface,

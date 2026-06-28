@@ -688,6 +688,63 @@ test("comments attach to snippets and filter by author/after", async () => {
   assert.equal(later.comments.length, 0);
 });
 
+test("comments can carry sanitized surface anchors", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Anchors",
+        surfaces: [
+          { kind: "html", html: "<p>x</p>" },
+          { kind: "markdown", markdown: "# y" },
+        ],
+      }),
+    )
+  ).json()) as any;
+  const post = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+
+  await app.request(
+    "/api/comments",
+    json({
+      surface: post.id,
+      text: "look here",
+      author: "user",
+      anchor: { kind: "point", surfaceIndex: 1, x: 0.25, y: 0.75, postVersion: 999 },
+    }),
+  );
+
+  const all = (await (await app.request(`/api/comments?session=${post.sessionId}`)).json()) as any;
+  assert.deepEqual(all.comments[0].anchor, {
+    kind: "point",
+    surfaceIndex: 1,
+    surfaceId: post.surfaces[1].id,
+    surfaceKind: "markdown",
+    postVersion: 1,
+    x: 0.25,
+    y: 0.75,
+  });
+});
+
+test("comments can be deleted", async () => {
+  const app = makeApp();
+  const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;
+  const created = (await (
+    await app.request("/api/comments", json({ snippet: s.id, text: "remove me", author: "user" }))
+  ).json()) as any;
+
+  assert.equal(
+    (await app.request(`/api/comments/${created.id}`, { method: "DELETE" })).status,
+    200,
+  );
+  const all = (await (await app.request(`/api/comments?session=${s.sessionId}`)).json()) as any;
+  assert.equal(all.comments.length, 0);
+  assert.equal(
+    (await app.request(`/api/comments/${created.id}`, { method: "DELETE" })).status,
+    404,
+  );
+});
+
 test("a comment must target a surface", async () => {
   const app = makeApp();
   const s = (await (await app.request("/api/snippets", json({ html: "<p>x</p>" }))).json()) as any;

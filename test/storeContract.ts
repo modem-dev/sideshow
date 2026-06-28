@@ -483,6 +483,26 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.equal(onSurface?.postId, surface?.id);
     assert.equal(onSurface?.postTitle, "Sketch");
 
+    const anchored = await store.createComment({
+      sessionId: session.id,
+      postId: surface?.id,
+      author: "user",
+      text: "spot",
+      anchor: {
+        kind: "point",
+        surfaceIndex: 0,
+        surfaceId: surface?.surfaces[0].id,
+        surfaceKind: "html",
+        postVersion: 1,
+        x: 0.2,
+        y: 0.8,
+      },
+    });
+    assert.deepEqual(
+      (await store.listComments({ postId: surface?.id ?? "" })).at(-1)?.anchor,
+      anchored?.anchor,
+    );
+
     // a session-level comment, and one pointing at a surface that doesn't exist
     const onSession = await store.createComment({
       sessionId: session.id,
@@ -499,6 +519,24 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
       text: "ghost",
     });
     assert.equal(ghost?.postId, null);
+  });
+
+  contract("removes comments by id", async (store) => {
+    const session = await store.createSession({ agent: "pi" });
+    const kept = await store.createComment({ sessionId: session.id, author: "user", text: "keep" });
+    const gone = await store.createComment({
+      sessionId: session.id,
+      author: "user",
+      text: "delete",
+    });
+    assert.ok(kept && gone);
+
+    assert.equal(await store.removeComment("missing"), null);
+    assert.equal((await store.removeComment(gone.id))?.text, "delete");
+    assert.deepEqual(
+      (await store.listComments({ sessionId: session.id })).map((c) => c.text),
+      ["keep"],
+    );
   });
 
   contract("comment seq is strictly monotonic, even across deletes", async (store) => {

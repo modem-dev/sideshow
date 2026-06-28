@@ -516,6 +516,247 @@ select.vbadge {
 .card-head .act.icon.del:hover {
   color: var(--danger);
 }
+.surface-shell {
+  position: relative;
+}
+.surface-shell.annotating {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.surface-pins {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.anchored-note {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.anchored-note.pending {
+  opacity: 0.65;
+}
+.anchored-note::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: -36px;
+  width: 288px;
+  height: 130px;
+  pointer-events: auto;
+}
+.anchored-note.left::before {
+  left: auto;
+  right: -14px;
+}
+.avatar-pin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -100%);
+  display: grid;
+  place-items: start center;
+  width: 24px;
+  height: 30px;
+  color: var(--accent);
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.22));
+  pointer-events: auto;
+}
+.avatar-pin::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  clip-path: polygon(
+    50% 100%,
+    26% 65%,
+    16% 52%,
+    11% 36%,
+    16% 20%,
+    29% 7%,
+    50% 1%,
+    71% 7%,
+    84% 20%,
+    89% 36%,
+    84% 52%,
+    74% 65%
+  );
+}
+.avatar-pin span {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  margin-top: 4px;
+  border: 1.5px solid var(--surface);
+  border-radius: 999px;
+  color: white;
+  background: linear-gradient(135deg, var(--accent), var(--border-2));
+  font: 700 8px/1 var(--font-sans, system-ui, sans-serif);
+}
+.anchor-card {
+  position: absolute;
+  left: 14px;
+  top: -24px;
+  width: 250px;
+  color: var(--text);
+  background: var(--surface);
+  border: 0.5px solid var(--border-2);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(5px) scale(0.97);
+  transform-origin: 0 12px;
+  transition:
+    opacity 0.14s var(--ease-out-strong) 0.28s,
+    transform 0.16s var(--ease-out-strong) 0.28s;
+}
+.anchored-note:hover .anchor-card,
+.anchored-note:focus-within .anchor-card,
+.anchored-note.composing .anchor-card {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition-delay: 0s;
+}
+.anchored-note.left .anchor-card {
+  right: 14px;
+  left: auto;
+  transform-origin: 100% 12px;
+}
+.anchor-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px 4px;
+}
+.anchor-head .avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 999px;
+  color: white;
+  background: linear-gradient(135deg, var(--accent), var(--border-2));
+  font: 700 10px/1 var(--font-sans, system-ui, sans-serif);
+}
+.anchor-head .who {
+  min-width: 0;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text);
+}
+.anchor-head .when,
+.anchor-meta {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--faint);
+}
+.anchor-del {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: -2px;
+  color: var(--faint);
+  background: none;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0;
+}
+.anchor-card:hover .anchor-del,
+.anchor-card:focus-within .anchor-del {
+  opacity: 1;
+}
+.anchor-del svg {
+  width: 13px;
+  height: 13px;
+}
+.anchor-del:hover {
+  color: var(--danger);
+  background: var(--hover);
+}
+.anchor-text {
+  padding: 0 10px 9px 42px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.anchor-compose {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  padding: 4px 10px 10px 42px;
+}
+.anchor-compose input {
+  grid-column: 1 / -1;
+  min-width: 0;
+  font: 12.5px/1.4 inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 0.5px solid var(--accent);
+  border-radius: 7px;
+  padding: 6px 8px;
+  outline: none;
+}
+.anchor-compose button {
+  font: 12px inherit;
+  color: var(--muted);
+  background: none;
+  border: 0.5px solid var(--border-2);
+  border-radius: 7px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+.anchor-compose button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.anchor-compose .ghost {
+  border: none;
+  color: var(--faint);
+}
+.surface-capture {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  font: 12.5px inherit;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent-bg) 12%, transparent);
+  border: none;
+  cursor: crosshair;
+}
+.surface-capture::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--accent);
+  background: var(--surface);
+  border: 0.5px solid var(--border-2);
+  border-radius: 999px;
+  padding: 5px 10px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+.surface-capture:hover::after,
+.surface-capture:focus-visible::after {
+  opacity: 1;
+}
 /* Every surface that becomes HTML (html, markdown, code, diff, terminal, mermaid)
    renders as a sandboxed iframe pointed at /s/:id. These rules only size the
    frame and draw the card separator; the in-frame resize bridge sets the real
@@ -715,6 +956,26 @@ iframe {
 .cmt.user .who {
   color: var(--accent);
 }
+.cmt.flash {
+  animation: cmt-flash 1.1s ease-out;
+}
+@keyframes cmt-flash {
+  0% {
+    background: var(--accent-bg);
+  }
+  100% {
+    background: transparent;
+  }
+}
+.anchor-chip {
+  flex: none;
+  align-self: center;
+  font: 11px/1.5 var(--font-mono, ui-monospace, monospace);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-radius: 999px;
+  padding: 0 7px;
+}
 /* Comment text is plain text rendered as a Solid text node (escapes by
    construction — no iframe), so it lives in the trusted DOM. flex:1 takes the
    row's free space; pre-wrap keeps the author's line breaks. */
@@ -847,6 +1108,10 @@ iframe {
 .card-actions .act:hover {
   color: var(--text);
   background: var(--hover);
+}
+.card-actions .act.active {
+  color: var(--accent);
+  background: var(--accent-bg);
 }
 .card-actions .act.icon {
   width: 30px;
