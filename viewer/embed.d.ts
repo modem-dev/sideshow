@@ -39,6 +39,15 @@ export interface SideshowHost {
    */
   screenshots?: boolean;
   /**
+   * The host renders its own session-less landing (a "home" view) when the route
+   * carries no session. The engine then does NOT auto-pick a session: on boot it
+   * honors a deep-linked `route.sessionId` but otherwise stays session-less (no
+   * selection, nothing highlighted), and when the route later becomes session-less
+   * it clears its selection instead of leaving the last session highlighted behind
+   * the host's landing. Self-hosted leaves this unset and is unchanged. Defaults to off.
+   */
+  homeView?: boolean;
+  /**
    * The engine calls this with the fully-resolved palette on initial mount, on
    * every live theme switch, and on an OS light/dark flip — symmetric with
    * `router.navigate`. A host mirrors the tokens onto its own chrome instead of

@@ -226,16 +226,23 @@ export async function refreshSessions(targetPostId?: string | null) {
 
   if (!selected() && sessions.length > 0) {
     // Check the route first, then localStorage, then fall back to first session.
+    // A host that owns a session-less landing (homeView) skips that fallback: it
+    // honors a deep-linked route session but otherwise stays session-less so the
+    // host's home shows with nothing selected (no auto-open, no highlight).
     const route = host().router.get();
     const lastId = localStorage.getItem(LAST_SESSION_KEY);
+    const fallback = host().homeView
+      ? null
+      : (lastId && sessions.some((s) => s.id === lastId) && lastId) || sessions[0].id;
     const target =
       (route.sessionId && sessions.some((s) => s.id === route.sessionId) && route.sessionId) ||
-      (lastId && sessions.some((s) => s.id === lastId) && lastId) ||
-      sessions[0].id;
-    await select(target, {
-      replace: true,
-      initialPostId: target === route.sessionId ? (route.surfaceId ?? undefined) : undefined,
-    });
+      fallback;
+    if (target) {
+      await select(target, {
+        replace: true,
+        initialPostId: target === route.sessionId ? (route.surfaceId ?? undefined) : undefined,
+      });
+    }
   }
 }
 
@@ -317,6 +324,12 @@ export function applyRoute(route: Route) {
       fromPopState: true,
       initialPostId: route.surfaceId ?? undefined,
     });
+  } else if (!route.sessionId && host().homeView && selected()) {
+    // A host that owns a session-less landing: a route with no session IS that
+    // home view, so clear the selection — otherwise the previously-open session
+    // stays highlighted behind the host's home. (Self-hosted leaves homeView off
+    // and keeps ignoring a null route here; it deselects explicitly via goHome.)
+    setSelectedInternal(null);
   }
 }
 

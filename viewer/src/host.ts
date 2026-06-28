@@ -47,6 +47,15 @@ export interface SideshowHost {
   // tooltip when this is false. Self-hosted drives the same flag via
   // window.__SIDESHOW_SCREENSHOTS__. Optional — defaults to off.
   screenshots?: boolean;
+  // The host renders its own session-less landing (a "home" view) when the route
+  // carries no session, so the engine must NOT auto-pick a session: on boot it
+  // honors a deep-linked `route.sessionId` but otherwise stays session-less (no
+  // selection, nothing highlighted), and when the route later becomes session-less
+  // it CLEARS its selection rather than leaving the last session highlighted behind
+  // the host's landing. Self-hosted leaves this unset/false and is unchanged — it
+  // auto-selects the latest session on boot and deselects explicitly via the
+  // wordmark goHome() instead. Optional — defaults to off.
+  homeView?: boolean;
   // The engine calls this with the fully-resolved palette on initial mount, on
   // every live theme switch, and on an OS light/dark flip. Symmetric with
   // router.navigate: the engine owns the themes and TELLS the host its colors,
