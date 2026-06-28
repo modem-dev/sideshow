@@ -1554,7 +1554,9 @@ export function createApp({
     const result = await uploadAsset(body);
     if ("error" in result) return c.json({ error: result.error }, result.status);
     const origin = new URL(c.req.url).origin;
-    return c.json({ ...result.asset, url: `${origin}/a/${result.asset.id}` }, 201);
+    const publicBasePath = requestBasePath(c.req.raw);
+    const assetPath = encodeURIComponent(result.asset.id);
+    return c.json({ ...result.asset, url: `${origin}${publicBasePath}/a/${assetPath}` }, 201);
   });
 
   app.get("/a/:id", async (c) => {

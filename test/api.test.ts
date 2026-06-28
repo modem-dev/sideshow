@@ -1740,6 +1740,17 @@ test("uploads an asset via base64 JSON and serves the exact bytes", async () => 
   assert.deepEqual([...new Uint8Array(await served.arrayBuffer())], [137, 80, 78, 71, 0, 255]);
 });
 
+test("asset upload URL respects configured base path", async () => {
+  const app = makeApp(undefined, { basePath: "/u/alice" });
+  const res = await app.request(
+    "https://board.test/api/assets",
+    json({ data: b64([1, 2, 3]), contentType: "image/png" }),
+  );
+  assert.equal(res.status, 201);
+  const asset = (await res.json()) as any;
+  assert.equal(asset.url, `https://board.test/u/alice/a/${asset.id}`);
+});
+
 test("uploads raw bytes with metadata from the query string", async () => {
   const app = makeApp();
   const res = await app.request("/api/assets?filename=trace.json&kind=trace", {

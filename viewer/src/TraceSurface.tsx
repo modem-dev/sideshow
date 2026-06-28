@@ -1,5 +1,5 @@
 import { createSignal, For, onMount, Show } from "solid-js";
-import type { TraceSurface as TraceSurfaceData, TraceStep } from "./api.ts";
+import { appPath, type TraceSurface as TraceSurfaceData, type TraceStep } from "./api.ts";
 
 // Render an agent trace as a step timeline the user can scan beside the post.
 // Steps may travel inline in the surface, or live in an uploaded JSON/JSONL
@@ -9,9 +9,14 @@ export function TraceSurface(props: { surface: TraceSurfaceData }) {
   const [steps, setSteps] = createSignal<TraceStep[]>(props.surface.steps ?? []);
   const [note, setNote] = createSignal<string | null>(null);
 
+  const assetUrl = () =>
+    props.surface.assetId ? appPath(`/a/${encodeURIComponent(props.surface.assetId)}`) : null;
+
   onMount(() => {
-    if ((props.surface.steps?.length ?? 0) > 0 || !props.surface.assetId) return;
-    void fetch(`/a/${props.surface.assetId}`)
+    if ((props.surface.steps?.length ?? 0) > 0) return;
+    const url = assetUrl();
+    if (!url) return;
+    void fetch(url)
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((text) => setSteps(parseTrace(text)))
       .catch(() => setNote("Trace file unavailable — it may have been evicted."));
@@ -21,10 +26,12 @@ export function TraceSurface(props: { surface: TraceSurfaceData }) {
     <div class="trace-surface">
       <div class="trace-head">
         <span class="trace-title">{props.surface.title ?? "Agent trace"}</span>
-        <Show when={props.surface.assetId}>
-          <a class="trace-dl" href={`/a/${props.surface.assetId}`} target="_blank" rel="noopener">
-            download ↓
-          </a>
+        <Show when={assetUrl()} keyed>
+          {(url) => (
+            <a class="trace-dl" href={url} target="_blank" rel="noopener">
+              download ↓
+            </a>
+          )}
         </Show>
       </div>
       <Show when={note()}>

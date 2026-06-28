@@ -1,9 +1,11 @@
 import { expect, test as base, type Locator, type Page } from "@playwright/test";
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+
+const embedDir = fileURLToPath(new URL("../viewer/dist-embed", import.meta.url));
 
 type ServerHandle = { url: string; stop: () => void };
 
@@ -139,6 +141,23 @@ export async function expectNoHorizontalOverflow(page: Page, selector: string) {
         ),
     )
     .toBeLessThanOrEqual(1);
+}
+
+function embedContentType(path: string): string {
+  if (path.endsWith(".js") || path.endsWith(".mjs")) return "text/javascript";
+  if (path.endsWith(".wasm")) return "application/wasm";
+  if (path.endsWith(".css")) return "text/css";
+  return "application/octet-stream";
+}
+
+export async function serveEmbedBundle(page: Page) {
+  await page.route("**/__embed/**", (route) => {
+    const name = new URL(route.request().url()).pathname.replace("/__embed/", "");
+    route.fulfill({
+      contentType: embedContentType(name),
+      body: readFileSync(`${embedDir}/${name}`),
+    });
+  });
 }
 
 export async function expectIframesNoHorizontalOverflow(page: Page, container: Locator) {

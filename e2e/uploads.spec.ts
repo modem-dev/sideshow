@@ -4,10 +4,28 @@ import {
   expectNoHorizontalOverflow,
   publish,
   publishParts,
+  serveEmbedBundle,
   test,
   TINY_PNG_B64,
   upload,
 } from "./fixtures.ts";
+
+const embedHtml = (sessionId: string) => `<!doctype html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%}#m{position:fixed;inset:0}</style></head>
+<body><div id="m"></div>
+<script type="module">
+  import { mountViewer } from "/__embed/engine.js";
+  mountViewer(document.getElementById("m"), {
+    basePath: "/u/alice",
+    layout: "stream",
+    readonly: true,
+    router: {
+      get: () => ({ sessionId: ${JSON.stringify(sessionId)} }),
+      navigate() {},
+      subscribe() { return () => {}; },
+    },
+  });
+</script></body></html>`;
 
 test("an image surface renders an <img> served from /a/:id", async ({ page, server }) => {
   const asset = await upload(server.url, {
@@ -32,6 +50,53 @@ test("an image surface renders an <img> served from /a/:id", async ({ page, serv
     .poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth))
     .toBeGreaterThan(0);
   await expect(page.locator(".asset-caption")).toHaveText("one pixel");
+});
+
+test("embedded native image and trace assets use the host base path", async ({ page, server }) => {
+  const image = await upload(server.url, {
+    data: TINY_PNG_B64,
+    contentType: "image/png",
+    filename: "pixel.png",
+    kind: "image",
+  });
+  const jsonl = '{"label":"from prefixed asset","kind":"shell"}';
+  const trace = await upload(server.url, {
+    data: Buffer.from(jsonl).toString("base64"),
+    contentType: "application/x-ndjson",
+    filename: "trace.jsonl",
+    kind: "trace",
+    session: image.sessionId,
+  });
+  await publishParts(server.url, {
+    title: "Prefixed assets",
+    agent: "e2e",
+    session: image.sessionId,
+    parts: [
+      { kind: "image", assetId: image.id, caption: "prefixed image" },
+      { kind: "trace", assetId: trace.id },
+    ],
+  });
+
+  await page.route("**/__embedtest", (route) =>
+    route.fulfill({ contentType: "text/html", body: embedHtml(image.sessionId) }),
+  );
+  await serveEmbedBundle(page);
+  await page.route("**/u/alice/**", (route) => {
+    const url = new URL(route.request().url());
+    url.pathname = url.pathname.replace(/^\/u\/alice(?=\/|$)/, "") || "/";
+    route.continue({ url: url.toString() });
+  });
+
+  await page.goto(`${server.url}/__embedtest`);
+
+  const card = page.locator(".card:not(#whatsNew)");
+  const img = card.locator(".asset-img");
+  await expect(img).toHaveAttribute("src", `/u/alice/a/${image.id}`);
+  await expect
+    .poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth))
+    .toBeGreaterThan(0);
+  await expect(card.locator(".trace-dl")).toHaveAttribute("href", `/u/alice/a/${trace.id}`);
+  await expect(card.locator(".trace-label")).toHaveText("from prefixed asset");
 });
 
 test("a trace surface renders a step timeline with expandable detail", async ({ page, server }) => {
