@@ -56,6 +56,12 @@ export interface SideshowHost {
   // auto-selects the latest session on boot and deselects explicitly via the
   // wordmark goHome() instead. Optional — defaults to off.
   homeView?: boolean;
+  // Omit the engine's own "sideshow" wordmark (the sidebar/header home-link brand)
+  // when the host provides its own branding/header — e.g. a cloud that puts a
+  // workspace picker at the top of the sidebar and its own wordmark in the footer.
+  // Self-hosted leaves this unset and shows the wordmark as before. Optional —
+  // defaults to off.
+  hideBrand?: boolean;
   // The engine calls this with the fully-resolved palette on initial mount, on
   // every live theme switch, and on an OS light/dark flip. Symmetric with
   // router.navigate: the engine owns the themes and TELLS the host its colors,

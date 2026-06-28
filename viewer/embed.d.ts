@@ -48,6 +48,13 @@ export interface SideshowHost {
    */
   homeView?: boolean;
   /**
+   * Omit the engine's own "sideshow" wordmark (the sidebar/header home-link brand)
+   * when the host provides its own branding/header — e.g. a cloud with a workspace
+   * picker atop the sidebar and its own wordmark in the footer. Self-hosted leaves
+   * this unset and shows the wordmark. Defaults to off.
+   */
+  hideBrand?: boolean;
+  /**
    * The engine calls this with the fully-resolved palette on initial mount, on
    * every live theme switch, and on an OS light/dark flip — symmetric with
    * `router.navigate`. A host mirrors the tokens onto its own chrome instead of

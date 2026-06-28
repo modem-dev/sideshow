@@ -197,11 +197,17 @@ export default function App() {
                   ☰<span class="dot" id="menuDot" classList={{ show: unread().size > 0 }}></span>
                 </button>
               </Show>
-              <Brand />
+              {/* A host that supplies its own branding (e.g. cloud) hides the
+                  engine wordmark via host.hideBrand. */}
+              <Show when={!host().hideBrand}>
+                <Brand />
+              </Show>
             </header>
             <Show when={!streamMode()}>
               <aside>
-                <Brand />
+                <Show when={!host().hideBrand}>
+                  <Brand />
+                </Show>
                 <UpdateBanner />
                 {/* Host-overridable region (SLOTS.asideHead): the sidebar header, above the
                     session list. Empty by default (self-hosted shows nothing here); an embedder
