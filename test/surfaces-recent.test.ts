@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createApp } from "../server/app.ts";
+import { createSqliteStorage } from "../server/sqliteStorage.ts";
+import { SqlStore } from "../server/sqlStore.ts";
 import { JsonFileStore } from "../server/storage.ts";
 
 function makeApp(authToken?: string, opts?: { publicRead?: "session" | "full" }) {
@@ -95,6 +97,10 @@ test("GET /api/surfaces/recent respects and clamps limit", async () => {
   const two = (await (await app.request("/api/surfaces/recent?limit=2")).json()) as any[];
   assert.equal(two.length, 2);
 
+  // a fractional limit truncates to an integer before it reaches SQLite LIMIT.
+  const fractional = (await (await app.request("/api/surfaces/recent?limit=1.5")).json()) as any[];
+  assert.equal(fractional.length, 1);
+
   // a negative limit clamps up to 1.
   const clampedLow = (await (await app.request("/api/surfaces/recent?limit=-5")).json()) as any[];
   assert.equal(clampedLow.length, 1);
@@ -110,17 +116,40 @@ test("GET /api/surfaces/recent respects and clamps limit", async () => {
   assert.equal(high.length, 5);
 });
 
+// SqlStore used to pass fractional values directly to SQLite LIMIT, which errors.
+// Keep an endpoint-level regression test so parsing stays store-safe.
+test("GET /api/surfaces/recent truncates fractional limits before querying SqlStore", async () => {
+  const store = new SqlStore(createSqliteStorage(":memory:"));
+  const app = createApp({
+    store,
+    viewerHtml: "<html><head></head><body>viewer</body></html>",
+    guideMarkdown: "# guide",
+    setupText: "# setup",
+    agentHowtoText: "# agent how-to",
+  });
+  const s = await createSession(app, "amp");
+  await publish(app, { session: s.id, parts: [{ kind: "html", html: "<p>x</p>" }] });
+
+  const res = await app.request("/api/surfaces/recent?limit=1.5");
+  assert.equal(res.status, 200);
+  assert.equal(((await res.json()) as any[]).length, 1);
+});
+
 test("GET /api/surfaces/recent caps oversized text parts and flags truncation", async () => {
   const app = makeApp();
   const s = await createSession(app, "amp");
   const bigHtml = "x".repeat(20_000);
   const bigMarkdown = "# ".repeat(10_000); // 20k chars
+  const bigDiffSide = "-".repeat(20_000);
+  const bigJsonString = "j".repeat(20_000);
   const smallCode = "const a = 1;";
   await publish(app, {
     session: s.id,
     parts: [
       { kind: "html", html: bigHtml },
       { kind: "markdown", markdown: bigMarkdown },
+      { kind: "diff", files: [{ filename: "big.txt", before: bigDiffSide, after: "small" }] },
+      { kind: "json", data: bigJsonString },
       { kind: "code", code: smallCode, language: "ts" },
     ],
   });
@@ -135,6 +164,14 @@ test("GET /api/surfaces/recent caps oversized text parts and flags truncation", 
   const md = parts.find((p: any) => p.kind === "markdown");
   assert.equal(md.markdown.length, 8_000);
   assert.equal(md.truncated, true);
+
+  const diff = parts.find((p: any) => p.kind === "diff");
+  assert.equal(diff.files[0].before.length, 8_000);
+  assert.equal(diff.truncated, true);
+
+  const jsonPart = parts.find((p: any) => p.kind === "json");
+  assert.equal(jsonPart.data.length, 8_000);
+  assert.equal(jsonPart.truncated, true);
 
   // a small part is left whole, with no truncated flag.
   const code = parts.find((p: any) => p.kind === "code");

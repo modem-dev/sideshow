@@ -222,14 +222,14 @@ const surfaceMeta = (s: Post) => ({
   parts: stripParts(s.surfaces),
 });
 
-// Cap inline text parts so /api/surfaces/recent stays cheap while still carrying a
-// real (clipped) preview. Unlike stripParts (which empties html for the card list),
-// this TRUNCATES the large text-bearing kinds so a feed card can render an honest
-// preview. Images/assets are already by-reference (assetId) and json/trace are
-// small, so we leave those untouched. When a field is clipped we set `truncated:true`
-// on that part so a client can offer a "view full post" affordance honestly.
-// A response is bounded by limit × (#parts × PART_TEXT_CAP).
+// Cap inline preview fields so /api/surfaces/recent stays cheap while still
+// carrying a real clipped preview. Unlike stripParts (which empties html for the
+// card list), this TRUNCATES large inline payloads so a feed card can render an
+// honest preview. Assets stay by-reference (assetId). When a field is clipped we
+// set `truncated:true` on that part so a client can offer a "view full post"
+// affordance honestly.
 const PART_TEXT_CAP = 8_000; // chars; ~a screenful, enough for a clipped preview
+const TRACE_STEP_PREVIEW_LIMIT = 25;
 type CappedSurface = Surface & { truncated?: true };
 function capText(text: string): { value: string; truncated: boolean } {
   return text.length > PART_TEXT_CAP
@@ -260,15 +260,83 @@ function capParts(parts: Surface[]): CappedSurface[] {
         return truncated ? { ...p, text: value, truncated: true } : p;
       }
       case "diff": {
-        if (p.patch === undefined) return p;
-        const { value, truncated } = capText(p.patch);
-        return truncated ? { ...p, patch: value, truncated: true } : p;
+        let truncated = false;
+        const next: CappedSurface = { ...p };
+        if (p.patch !== undefined) {
+          const capped = capText(p.patch);
+          next.patch = capped.value;
+          truncated ||= capped.truncated;
+        }
+        if (p.files !== undefined) {
+          next.files = p.files.map((file) => {
+            const before = capText(file.before);
+            const after = capText(file.after);
+            const filename = capText(file.filename);
+            const language = file.language ? capText(file.language) : undefined;
+            truncated ||= before.truncated || after.truncated || filename.truncated;
+            if (language) truncated ||= language.truncated;
+            return {
+              ...file,
+              filename: filename.value,
+              before: before.value,
+              after: after.value,
+              ...(language && { language: language.value }),
+            };
+          });
+        }
+        return truncated ? { ...next, truncated: true } : p;
       }
-      // image (assetId ref), trace (small/by-ref), json (small) travel as-is.
+      case "image": {
+        const alt = p.alt ? capText(p.alt) : undefined;
+        const caption = p.caption ? capText(p.caption) : undefined;
+        const truncated = !!alt?.truncated || !!caption?.truncated;
+        return truncated
+          ? {
+              ...p,
+              ...(alt && { alt: alt.value }),
+              ...(caption && { caption: caption.value }),
+              truncated: true,
+            }
+          : p;
+      }
+      case "trace": {
+        let truncated = false;
+        const title = p.title ? capText(p.title) : undefined;
+        if (title?.truncated) truncated = true;
+        const steps = p.steps?.slice(0, TRACE_STEP_PREVIEW_LIMIT).map((step) => {
+          const label = capText(step.label);
+          const kind = step.kind ? capText(step.kind) : undefined;
+          const detail = step.detail ? capText(step.detail) : undefined;
+          const ts = step.ts ? capText(step.ts) : undefined;
+          truncated ||=
+            label.truncated || !!kind?.truncated || !!detail?.truncated || !!ts?.truncated;
+          return {
+            label: label.value,
+            ...(kind && { kind: kind.value }),
+            ...(detail && { detail: detail.value }),
+            ...(ts && { ts: ts.value }),
+          };
+        });
+        if ((p.steps?.length ?? 0) > TRACE_STEP_PREVIEW_LIMIT) truncated = true;
+        return truncated
+          ? { ...p, ...(title && { title: title.value }), ...(steps && { steps }), truncated: true }
+          : p;
+      }
+      case "json": {
+        const serialized = JSON.stringify(p.data);
+        const { value, truncated } = capText(serialized);
+        return truncated ? { ...p, data: value, truncated: true } : p;
+      }
       default:
         return p;
     }
   });
+}
+
+function parseRecentLimit(raw: string | undefined): number {
+  const parsed = Number(raw ?? "20");
+  const limit = Number.isFinite(parsed) && parsed !== 0 ? Math.trunc(parsed) : 20;
+  return Math.min(Math.max(limit, 1), 100);
 }
 
 function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
@@ -1072,7 +1140,7 @@ export function createApp({
   // isPublicReadAllowed, which intentionally does NOT expose this path on a
   // session-scoped publicRead board.
   app.get("/api/surfaces/recent", async (c) => {
-    const limit = Math.min(Math.max(Number(c.req.query("limit") ?? "20") || 20, 1), 100);
+    const limit = parseRecentLimit(c.req.query("limit"));
     const posts = await store.listRecentPosts(limit);
     // Resolve each post's session once (agent + session title for the feed card).
     const sessions = new Map<string, Session | null>();
