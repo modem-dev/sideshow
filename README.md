@@ -31,9 +31,10 @@ works.
   have to picture in your head.
 - **Multimodal.** Combine diffs with mermaid diagrams, terminal output with HTML
   explainers, and more. Combine surfaces to illustrate ideas better.
-- **Faster, and fewer tokens.** sideshow surfaces are optimized for LLMs, so the
-  agent produces higher-fidelity diagrams and visualizations faster and using
-  fewer tokens.
+- **Faster, and fewer tokens.** A standalone HTML document re-sends its whole
+  design system every time; a surface sends only the content and the viewer
+  supplies the chrome — far fewer tokens, and a faster draw. See
+  [Token economics](#token-economics).
 - **Works with the agent you already use.** Works with any agent harness: Claude Code
   (desktop or CLI), Codex (desktop or CLI), Opencode, Pi, etc.
 
@@ -124,6 +125,27 @@ viewer. A surface is an ordered list of **parts**; one card can carry several.
     </td>
   </tr>
 </table>
+
+## Token economics
+
+Showing something visually costs tokens — the ones your agent spends _writing_
+it. A standalone HTML document pays for its whole design system (doctype, reset,
+palette, typography, component CSS, often a little JS) on every render. A surface
+pays for none of it: it hands the content over as data — mermaid source, a JSON
+value, a markdown table, a diff patch — and the viewer supplies the theme. Fewer
+output tokens also means a faster draw, since a model writes them one at a time.
+
+Measured both ways on identical content (output tokens):
+
+| Showing…              | Hand-built HTML     | sideshow surface     | Saved |
+| --------------------- | ------------------- | -------------------- | ----- |
+| Architecture diagram  | hand-drawn SVG      | mermaid source       | ~90%  |
+| API response          | tree markup + JS    | json surface         | ~88%  |
+| Data table            | table + CSS         | markdown table       | ~83%  |
+| Interactive UI mockup | standalone document | themed html fragment | ~42%  |
+
+Even an HTML surface you author inherits the viewer's theme tokens and
+pre-styled controls instead of shipping its own, so it still comes out ahead.
 
 ## Run it anywhere
 
