@@ -14,8 +14,16 @@ import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
 import { applyFrameHeight, Card, cardEls, frameForSource } from "./Card.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
-import { PlugIcon } from "./icons.tsx";
-import { activeTheme, initTheme, setTheme, themeOptions } from "./theme.ts";
+import { MoonIcon, PlugIcon, SunIcon, SystemIcon } from "./icons.tsx";
+import {
+  activeTheme,
+  colorModePreference,
+  type ColorModePreference,
+  initTheme,
+  setColorModePreference,
+  setTheme,
+  themeOptions,
+} from "./theme.ts";
 import {
   applyRoute,
   bootstrap,
@@ -754,17 +762,54 @@ function ConnectModal(props: { onClose: () => void }) {
 
 // Board-level theme selector. Persists via PUT /api/theme; the choice re-themes
 // chrome, markdown/diff syntax, and html surfaces together (see theme.ts).
+function ModeIcon(props: { mode: ColorModePreference }) {
+  if (props.mode === "dark") return <MoonIcon />;
+  if (props.mode === "light") return <SunIcon />;
+  return <SystemIcon />;
+}
+
+const COLOR_MODE_LABELS: Record<ColorModePreference, string> = {
+  system: "System",
+  light: "Light",
+  dark: "Dark",
+};
+const COLOR_MODE_OPTIONS: ColorModePreference[] = ["system", "light", "dark"];
+
+function ColorModeSwitcher() {
+  return (
+    <div class="mode-switcher" role="group" aria-label="Color mode">
+      <For each={COLOR_MODE_OPTIONS}>
+        {(mode) => (
+          <button
+            type="button"
+            classList={{ active: colorModePreference() === mode }}
+            aria-label={`${COLOR_MODE_LABELS[mode]} mode`}
+            aria-pressed={colorModePreference() === mode}
+            title={`${COLOR_MODE_LABELS[mode]} mode`}
+            onClick={() => setColorModePreference(mode)}
+          >
+            <ModeIcon mode={mode} />
+          </button>
+        )}
+      </For>
+    </div>
+  );
+}
+
 function ThemePicker() {
   return (
     <div class="theme-picker">
-      <label for="themeSel">theme</label>
-      <select
-        id="themeSel"
-        value={activeTheme()}
-        onChange={(e) => void setTheme(e.currentTarget.value)}
-      >
-        <For each={themeOptions()}>{(t) => <option value={t.id}>{t.label}</option>}</For>
-      </select>
+      <span class="theme-select-wrap">
+        <select
+          id="themeSel"
+          aria-label="Theme"
+          value={activeTheme()}
+          onChange={(e) => void setTheme(e.currentTarget.value)}
+        >
+          <For each={themeOptions()}>{(t) => <option value={t.id}>{t.label}</option>}</For>
+        </select>
+      </span>
+      <ColorModeSwitcher />
     </div>
   );
 }

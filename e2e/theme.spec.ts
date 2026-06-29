@@ -114,6 +114,39 @@ test.describe("with the OS in dark mode", () => {
       .toBe("rgb(28, 33, 40)");
   });
 
+  test("the color-mode switcher can force light and persists locally", async ({ page, server }) => {
+    await publishParts(server.url, {
+      title: "Themed",
+      agent: "e2e",
+      parts: [{ kind: "html", html: "<p>surface body</p>" }],
+    });
+    await page.goto(server.url);
+
+    const iframe = page.locator(".card iframe[src]");
+    await expect(iframe).toHaveAttribute("src", /mode=dark/);
+
+    await page.getByRole("button", { name: "Light mode" }).click();
+    await expect(page.getByRole("button", { name: "Light mode" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(iframe).toHaveAttribute("src", /mode=light/);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(),
+        ),
+      )
+      .toBe("#f6f8fa");
+
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Light mode" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator(".card iframe[src]")).toHaveAttribute("src", /mode=light/);
+  });
+
   // The opaque html part forces `color-scheme` (so its UA scrollbars/controls
   // match), but a markdown part's frame is transparent so the themed card shows
   // through — forcing `color-scheme:dark` there would paint an opaque UA canvas
