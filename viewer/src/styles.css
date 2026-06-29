@@ -826,7 +826,7 @@ iframe {
   height: 120px;
   border: none;
   border-top: 0.5px solid var(--border);
-  background: transparent;
+  background: var(--surface);
 }
 /* Shown when a surface's kind isn't recognized by this (possibly stale) viewer. */
 .surface-unsupported {

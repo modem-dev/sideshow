@@ -110,7 +110,7 @@ const MD_CSS = `
 body {
   margin: 0;
   padding: 4px 16px 14px;
-  background: transparent;
+  background: var(--surface);
   color: var(--text);
   font:
     14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -243,7 +243,7 @@ export function renderTerminal(part: TerminalSurface): RenderedSurface {
 // ---------------------------------------------------------------------------
 
 const CODE_CSS = `
-body { margin: 0; padding: 0; background: transparent; }
+body { margin: 0; padding: 0; background: var(--surface); }
 .code-wrap { position: relative; }
 .code-head {
   display: flex; align-items: center; gap: 8px; padding: 6px 12px;
@@ -343,7 +343,7 @@ export async function renderCode(
 // ---------------------------------------------------------------------------
 
 const DIFF_CSS = `
-body { margin: 0; padding: 0; background: transparent; font-size: 12.5px; }
+body { margin: 0; padding: 0; background: var(--surface); font-size: 12.5px; }
 diffs-container { display: block; }
 diffs-container + diffs-container { border-top: 0.5px solid var(--border); }
 `;
