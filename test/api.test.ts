@@ -419,11 +419,13 @@ test("publishes a markdown part; /s server-renders it to sandboxed html", async 
   assert.equal(full.surfaces[0].markdown, "## Plan\n\n- step one");
   // markdown now renders server-side: the prose is in the document, and it is
   // served opaque-sandboxed (the load-bearing CSP header).
-  const doc = await app.request(`/s/${surface.id}?part=0`);
+  const doc = await app.request(`/s/${surface.id}?part=0&mode=light`);
   assert.equal(doc.status, 200);
   const body = await doc.text();
   assert.ok(body.includes("<h2>Plan</h2>"));
   assert.ok(body.includes("step one"));
+  assert.match(body, /:root\{color-scheme:light\}/);
+  assert.match(body, /background: var\(--surface\)/);
   assert.match(doc.headers.get("content-security-policy") ?? "", /\bsandbox\b/);
 });
 
@@ -501,6 +503,7 @@ test("publishes a mermaid part; /s emits a self-rendering CDN doc", async () => 
   const body = await doc.text();
   assert.ok(body.includes("esm.sh/mermaid"));
   assert.ok(body.includes("graph TD; A--\\u003eB") || body.includes("graph TD; A-->B"));
+  assert.match(body, /background: var\(--surface\)/);
   assert.match(doc.headers.get("content-security-policy") ?? "", /\bsandbox\b/);
 });
 

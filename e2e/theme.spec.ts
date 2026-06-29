@@ -147,14 +147,11 @@ test.describe("with the OS in dark mode", () => {
     await expect(page.locator(".card iframe[src]")).toHaveAttribute("src", /mode=light/);
   });
 
-  // The opaque html part forces `color-scheme` (so its UA scrollbars/controls
-  // match), but a markdown part's frame is transparent so the themed card shows
-  // through — forcing `color-scheme:dark` there would paint an opaque UA canvas
-  // behind it. Its tokens are still pinned dark; only color-scheme stays unset.
-  test("a transparent markdown frame is pinned dark but keeps no forced color-scheme", async ({
-    page,
-    server,
-  }) => {
+  // Markdown frames paint the same themed surface backdrop as the card (instead
+  // of relying on iframe transparency, which can expose a white UA canvas in
+  // some browsers) and pin `color-scheme` so the frame cannot diverge from the
+  // chrome during a light/dark switch.
+  test("a markdown frame is pinned dark and paints the dark surface", async ({ page, server }) => {
     await publishParts(server.url, {
       title: "Prose",
       agent: "e2e",
@@ -163,14 +160,17 @@ test.describe("with the OS in dark mode", () => {
     await page.goto(server.url);
 
     const frame = page.locator(".card iframe.mdframe").contentFrame();
-    // pinned dark: the chrome text var resolved to the github dark ink
+    // pinned dark: the chrome text var resolved to the github dark ink and the
+    // body paints the github dark surface instead of a white iframe canvas.
     await expect
       .poll(() => frame.locator("body").evaluate((el) => getComputedStyle(el).color))
       .toBe("rgb(230, 237, 243)");
-    // but the root color-scheme is NOT forced, so the UA canvas stays transparent
+    await expect
+      .poll(() => frame.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor))
+      .toBe("rgb(28, 33, 40)");
     await expect
       .poll(() => frame.locator("html").evaluate((el) => getComputedStyle(el).colorScheme))
-      .not.toBe("dark");
+      .toBe("dark");
   });
 });
 
