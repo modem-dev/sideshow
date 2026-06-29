@@ -136,6 +136,9 @@ usage:
   sideshow setup                          print the AGENTS.md integration block
   sideshow agent-howto             print current agent how-to
   sideshow version                         show version and check for updates
+  sideshow upgrade [--check] [--dry-run]   update the CLI to the latest npm release
+      --check           report whether an update is available, don't install
+      --dry-run         print the install command instead of running it
   sideshow mcp                            run the stdio MCP server (for agent configs)
 
 flags:
@@ -601,6 +604,34 @@ function writeUpdateCache(version) {
   try {
     writeFileSync(updateCachePath(), JSON.stringify({ at: Date.now(), version }));
   } catch {}
+}
+
+// Resolve the latest published version from the npm registry. Uses the 24h disk
+// cache unless `force` is set (the `upgrade` command wants a fresh answer before
+// installing). Returns null when offline / timed out / the registry errors, so
+// callers stay best-effort.
+async function fetchLatestVersion({ force = false } = {}) {
+  if (!force) {
+    const cached = readUpdateCache();
+    if (cached) return cached;
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3000);
+  try {
+    const res = await fetch("https://registry.npmjs.org/sideshow/latest", { signal: ctrl.signal });
+    if (res.ok) {
+      const pkg = await res.json();
+      if (typeof pkg.version === "string") {
+        writeUpdateCache(pkg.version);
+        return pkg.version;
+      }
+    }
+  } catch {
+    // Offline / timed out / registry error — caller treats null as "unknown".
+  } finally {
+    clearTimeout(timer);
+  }
+  return null;
 }
 
 // One comment → one line (one monitor notification). Newlines are collapsed so
@@ -1602,34 +1633,51 @@ const commands = {
     parse();
     console.log(`sideshow ${PKG_VERSION}`);
     try {
-      const cached = readUpdateCache();
-      let latest = cached;
-      if (!latest) {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 3000);
-        try {
-          const res = await fetch("https://registry.npmjs.org/sideshow/latest", {
-            signal: ctrl.signal,
-          });
-          clearTimeout(timer);
-          if (res.ok) {
-            const pkg = await res.json();
-            if (typeof pkg.version === "string") {
-              latest = pkg.version;
-              writeUpdateCache(latest);
-            }
-          }
-        } catch {
-          // Offline / timed out — skip silently.
-        }
-      }
+      const latest = await fetchLatestVersion();
       if (latest && versionGt(latest, PKG_VERSION)) {
         console.log(`\nUpdate available: ${PKG_VERSION} → ${latest}`);
-        console.log(`Run: npm install -g sideshow`);
+        console.log(`Run: sideshow upgrade`);
       }
     } catch {
       // Never let the update check fail the command.
     }
+  },
+
+  // Self-update the globally installed CLI to the latest npm release. Refuses on
+  // a development checkout (a published package ships no .git) — there you
+  // upgrade with git. --check reports without installing; --dry-run prints the
+  // exact install command instead of running it.
+  async upgrade() {
+    const { values: flags } = parse({
+      options: { check: { type: "boolean" }, "dry-run": { type: "boolean" } },
+    });
+    const latest = await fetchLatestVersion({ force: true });
+    if (!latest) fail("could not reach the npm registry — check your connection and retry");
+    if (!versionGt(latest, PKG_VERSION)) {
+      console.log(`sideshow ${PKG_VERSION} is already up to date.`);
+      return;
+    }
+    if (flags.check) {
+      console.log(`Update available: ${PKG_VERSION} → ${latest}`);
+      console.log(`Run: sideshow upgrade`);
+      return;
+    }
+    if (existsSync(join(ROOT, ".git"))) {
+      fail(`development checkout at ${ROOT} — upgrade with: git pull && npm install`);
+    }
+    const spec = `sideshow@${latest}`;
+    if (flags["dry-run"]) {
+      console.log(`npm install -g ${spec}`);
+      return;
+    }
+    console.log(`Upgrading sideshow ${PKG_VERSION} → ${latest}…`);
+    const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+    try {
+      execFileSync(npm, ["install", "-g", spec], { stdio: "inherit" });
+    } catch {
+      fail(`upgrade failed — try manually: npm install -g ${spec}`);
+    }
+    console.log(`\nUpgraded to sideshow ${latest}.`);
   },
 };
 

@@ -79,7 +79,7 @@ const app = createApp({
   // SIDESHOW_VERSION fakes the running version (manual testing of the
   // notice); set it to the empty string to disable the update check
   version: process.env.SIDESHOW_VERSION ?? (JSON.parse(pkgJson) as { version: string }).version,
-  upgradeCommand: "npm install -g sideshow",
+  upgradeCommand: "sideshow upgrade",
 });
 
 const port = Number(process.env.PORT ?? 8228);
