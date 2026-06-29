@@ -1,5 +1,117 @@
 # Changelog
 
+## 0.10.0
+
+### Minor Changes
+
+- 132699b: `sideshow publish` and `sideshow surface add` now accept repeated surface
+  flags to add several surfaces of the same kind. Previously a repeated
+  non-multiple flag (`--diff a --diff b`) was silently dropped to the last
+  value with no error.
+  - `sideshow publish <html> --diff a.patch --code c.ts --diff b.patch` now
+    produces `[html, diff, code, diff]` — each repeat adds a surface, in
+    command-line flag order.
+  - `sideshow surface add <id> --md a.md --md b.md` appends two markdown
+    surfaces (one append call per surface, so `--before`/`--after` positioning
+    still applies per surface).
+  - The seven surface flags (`--md`, `--mermaid`, `--diff`, `--terminal`,
+    `--json`, `--code`, `--image`) are now `repeatable` in both commands.
+
+  This closes the remaining gap from #151 (multiple surfaces of the same kind
+  on the CLI); surface order control was already fixed in 0.9.x via the
+  token-walk for #158.
+
+- d58264a: Per-surface operations across CLI, HTTP API, and MCP. Surfaces now carry
+  stable server-assigned ids for targeted operations.
+
+  **CLI**
+  - `sideshow publish` now honors flag order: surfaces appear in the order
+    their `--md` / `--code` / `--diff` / etc. flags appear on the command line,
+    not a fixed sequence (fixes #158).
+  - `sideshow update <id> <file|-> --surface N` targets a specific surface in a
+    multi-surface post (by id or 0-based index) for content-only edits.
+  - New `sideshow surface` subcommand:
+    - `surface add <postId> [--md f] [--code f] ...` — append surfaces to an
+      existing post (flag order honored).
+    - `surface remove <postId> <N|id>` — remove a single surface.
+    - `surface edit <postId> <N|id> <file|->` — replace a surface's content.
+    - `surface move <postId> <N|id> --to M` — reorder a surface.
+
+  **HTTP API**
+  - `POST /api/posts/:id/surfaces` — append a surface (optional `before`/`after`
+    for insert position).
+  - `PATCH /api/posts/:id/surfaces/:target` — replace a surface (full or
+    content-only). `:target` is a surface id or 0-based index.
+  - `DELETE /api/posts/:id/surfaces/:target` — remove a surface (400 if last).
+  - `PATCH /api/posts/:id/surfaces` — reorder surfaces. Body: `{order: [id, ...]}`
+    or `{order: [2, 0, 1]}`.
+  - `PATCH /api/posts/:id` extended: optional `surface` param targets a specific
+    surface in multi-surface posts (previously rejected with 400).
+
+  **MCP**
+  - New tools: `add_surface`, `edit_surface`, `remove_surface`,
+    `reorder_surfaces` — all additive; `update_post` full-replace stays for
+    back-compat. Available on both stdio and HTTP MCP transports.
+
+  **Data model**
+  - Every surface now carries an optional `id: string`, assigned server-side on
+    create/update. Existing data is migrated automatically (one-time migration
+    on first boot, gated on a settings sentinel for SqlStore; in-memory
+    normalization on load for JsonFileStore).
+
+  **Viewer**
+  - Surfaces are keyed by stable `id` (Solid `<For>` with `reconcile({ key: "id"
+})`) instead of array position, so reordering moves DOM nodes instead of
+    re-creating them.
+
+### Patch Changes
+
+- f0e0337: Drop the dead `/u/`-prefix URL fallback from the default viewer host. The
+  embeddable engine's `createDefaultHost()` now derives its base path solely from
+  `window.__SIDESHOW_BASE_PATH__` (empty at root) instead of also sniffing a
+  `/u/:account` prefix out of `location.pathname`. That fallback was specific to an
+  old hosted-wrapper URL shape; self-hosted sideshow already runs at the root or
+  sets the global explicitly, so behavior is unchanged for every supported host.
+- 132699b: Fixed a latent bug where post, surface, and session ids could start with `-`
+  or `_` (URL-safe base64 maps `+`→`-`, `/`→`_`, so ~1/64 of ids began with a
+  separator). Any id starting with `-` broke CLI commands that take an id as a
+  positional — `node:util` `parseArgs` treated it as an unknown option
+  (`Unknown option '-6'` for an id like `-6K4AJsKD4M`), affecting `sideshow
+update`, `show`, and `surface add/remove/edit/move`. Two fixes:
+  - `newId` now swaps a leading separator for an alphanumeric, so new ids are
+    always CLI-safe.
+  - The CLI's `parse()` wrapper swaps id-shaped `-`/`_`-prefixed tokens for a
+    sentinel before `parseArgs` sees them, then restores them in the result
+    (positionals, tokens, option values). This rescues already-stored ids that
+    start with a separator.
+
+- ab5f91a: Fix the mobile sessions drawer in embedded WebKit viewers so the menu button
+  opens the session list reliably.
+- d26f7cc: Respect configured base paths for uploaded asset URLs and native image/trace surface loads.
+- 9e61484: Add a recent posts feed endpoint at `GET /api/surfaces/recent`, returning the newest updated posts across sessions with capped surface previews.
+- 392a134: Add a light/dark/system color-mode switcher next to the theme picker.
+- 35f75c8: Add a proof-of-concept for anchored comments on surfaces. Comments can now carry sanitized surface anchor metadata, the viewer can place host-owned pins over rendered surfaces, and agent feedback includes anchor context.
+- c498e7d: Use post and session titles for browser tab and share-page titles.
+- 3672369: `sideshow update` now preserves the surface kind instead of always treating
+  content as HTML. A markdown post updated with `sideshow update <id> file.md`
+  stays markdown; a code post stays code with its language preserved; diffs keep
+  their layout, terminals keep their cols — every kind-specific field is carried
+  forward. The same fix applies to all text-content surface kinds (html,
+  markdown, code, diff, terminal, mermaid, json).
+
+  Implemented as a new `PATCH /api/posts/:id` endpoint that accepts raw
+  `content` (plus optional `title` and `kits`) and slots it into the existing
+  surface's kind, rather than requiring the caller to construct the full typed
+  surface object. Multi-surface posts return a 400 for now — surface-level
+  targeting is a future addition. The existing `PUT` full-replacement API is
+  unchanged.
+
+- b04251f: Stop the viewer engine from pinning the default (topmost) surface in the URL
+  when a session auto-opens. Landing at the top of a session feed now keeps the
+  URL at `/session/:id`; only an explicit surface open (a deep link, or scrolling
+  into a surface) writes `/session/:id/s/:id`. Deep links loaded from the URL are
+  still honored and preserved.
+
 ## 0.9.0
 
 ### Minor Changes
