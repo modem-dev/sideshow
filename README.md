@@ -166,9 +166,9 @@ The viewer (`viewer/src/`, Solid) is Vite-built into a single self-contained
 
 ## Sponsor
 
-Sponsored by [Modem](https://modem.dev/go/oss-sideshow).
+Sponsored by [Modem](https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=oss_sideshow&utm_content=readme_footer).
 
-<a href="https://modem.dev/go/oss-sideshow">
+<a href="https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=oss_sideshow&utm_content=readme_footer">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://modem.dev/images/logo/svg/modem-combined-white.svg">
     <source media="(prefers-color-scheme: light)" srcset="https://modem.dev/images/logo/svg/modem-combined-black.svg">
