@@ -1217,6 +1217,10 @@ const commands = {
       });
       const postId = positionals[0];
       if (!postId) fail("usage: sideshow surface add <postId> [--md f] [--code f] ...");
+      const hasSurfaceFlag = (tokens ?? []).some(
+        (t) => t.kind === "option" && SURFACE_FLAGS.has(t.name),
+      );
+      if (!hasSurfaceFlag) fail("provide at least one surface flag (--md, --code, ...)");
 
       const session = await resolveSession(flags, { create: true });
       const surfaces = await surfacesFromFlags(flags, tokens, { session, layout: flags.layout });

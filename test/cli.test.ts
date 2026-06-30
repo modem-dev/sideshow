@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -18,6 +18,15 @@ function run(...args: string[]) {
 
 // Richer runner: optional cwd (install-hook writes ./.claude), env (point the
 // CLI at the test server), and stdin (the hook reads its payload from stdin).
+function testEnv(overrides?: Record<string, string>) {
+  const env = { ...process.env };
+  delete env.SIDESHOW_URL;
+  delete env.SIDESHOW_SESSION;
+  delete env.SIDESHOW_AGENT;
+  delete env.SIDESHOW_TOKEN;
+  return { ...env, ...overrides };
+}
+
 function runWith(
   opts: { cwd?: string; env?: Record<string, string>; stdin?: string },
   ...args: string[]
@@ -26,7 +35,7 @@ function runWith(
     const child = execFile(
       process.execPath,
       [CLI, ...args],
-      { cwd: opts.cwd, env: opts.env ? { ...process.env, ...opts.env } : process.env },
+      { cwd: opts.cwd, env: testEnv(opts.env) },
       (err, stdout, stderr) => {
         resolve({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, stdout, stderr });
       },
@@ -51,7 +60,13 @@ function serveApp() {
     const server = serve({ fetch: app.fetch, port: 0 }, (info) => {
       resolve({
         url: `http://localhost:${info.port}`,
-        close: () => new Promise<void>((done) => server.close(() => done())),
+        close: () =>
+          new Promise<void>((done) => {
+            server.close(() => done());
+            (
+              server as typeof server & { closeAllConnections?: () => void }
+            ).closeAllConnections?.();
+          }),
       });
     });
   });
@@ -110,11 +125,27 @@ test("-h is a short alias for --help", async () => {
   assert.match(stdout, /usage:/);
 });
 
+test("top-level help prints usage", async () => {
+  for (const args of [[], ["help"], ["--help"], ["-h"]]) {
+    const { code, stdout, stderr } = await run(...args);
+    assert.equal(code, 0);
+    assert.match(stdout, /usage:/);
+    assert.equal(stderr, "");
+  }
+});
+
 test("--help on a flag-less subcommand prints usage instead of running it", async () => {
   // would otherwise seed demo data (or fail reaching the server)
   const { code, stdout } = await run("demo", "--help");
   assert.equal(code, 0);
   assert.match(stdout, /usage:/);
+});
+
+test("unknown command fails with a one-line hint", async () => {
+  const { code, stdout, stderr } = await run("bogus-command");
+  assert.equal(code, 1);
+  assert.equal(stdout, "");
+  assert.match(stderr, /^sideshow: unknown command "bogus-command" — run "sideshow help"\n$/);
 });
 
 test("unknown option fails with a one-line error, not a stack trace", async () => {
@@ -141,7 +172,9 @@ test("a non-numeric --after fails fast instead of being silently dropped", async
 
 test("watch streams each new user comment as one line and re-arms", async () => {
   const server = await serveApp();
-  let child;
+  let child: ChildProcess | undefined;
+  let childExited = false;
+  let childExit: Promise<void> = Promise.resolve();
   try {
     const session = await post(`${server.url}/api/sessions`, { agent: "e2e", title: "Watch" });
     const snippet = await post(`${server.url}/api/snippets`, {
@@ -151,10 +184,16 @@ test("watch streams each new user comment as one line and re-arms", async () => 
     });
 
     child = spawn(process.execPath, [CLI, "watch"], {
-      env: { ...process.env, SIDESHOW_URL: server.url, SIDESHOW_SESSION: session.id },
+      env: testEnv({ SIDESHOW_URL: server.url, SIDESHOW_SESSION: session.id }),
     });
+    childExit = new Promise<void>((resolve) =>
+      child?.once("exit", () => {
+        childExited = true;
+        resolve();
+      }),
+    );
     let stdout = "";
-    child.stdout.on("data", (d) => (stdout += d));
+    child.stdout?.on("data", (d) => (stdout += d));
 
     // first comment, on a post — should surface with its title and id
     await post(`${server.url}/api/comments`, {
@@ -179,7 +218,12 @@ test("watch streams each new user comment as one line and re-arms", async () => 
   } finally {
     // Kill in finally so a failed assertion can't leave the streaming child
     // alive — an open SSE connection would otherwise block server.close().
-    child?.kill();
+    if (child) {
+      child.kill();
+      await Promise.race([childExit, new Promise((resolve) => setTimeout(resolve, 1000))]);
+      if (!childExited) child.kill("SIGKILL");
+      await childExit;
+    }
     await server.close();
   }
 });
@@ -346,6 +390,98 @@ test("hook stays silent when no sideshow session owns the cwd", async () => {
     assert.equal(code, 0);
     assert.equal(stdout, "");
     assert.equal(stderr, "");
+  } finally {
+    await server.close();
+  }
+});
+
+test("trace-sync posts transcript steps and then only sends the tail", async () => {
+  const server = await serveSession();
+  const cwd = mkdtempSync(join(tmpdir(), "sideshow-trace-sync-"));
+  try {
+    const transcript = join(cwd, "session.jsonl");
+    writeFileSync(
+      transcript,
+      [
+        `{"timestamp":"2026-06-18T00:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"build the visual"}]}}`,
+        `{"timestamp":"2026-06-18T00:00:01.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Need a compact plan"},{"type":"text","text":"I'll inspect the files."},{"type":"tool_use","id":"r1","name":"Read","input":{"file_path":"/repo/src/app.ts"}},{"type":"tool_use","id":"todo","name":"TodoWrite","input":{"todos":[]}}]}}`,
+        `{"timestamp":"2026-06-18T00:00:02.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"r1","content":[{"type":"text","text":"export const app = true;"}]}]}}`,
+        `{"timestamp":"2026-06-18T00:00:03.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"w1","name":"WebSearch","input":{"query":"sideshow examples"}},{"type":"tool_use","id":"m1","name":"mcp__sideshow__publish_post","input":{"title":"Demo"}},{"type":"tool_use","id":"x1","name":"CustomTool","input":{"ok":true}}]}}`,
+        `not json`,
+      ].join("\n"),
+    );
+
+    const first = await runWith(
+      { cwd, env: { SIDESHOW_URL: server.url, SIDESHOW_SESSION: server.session.id } },
+      "trace-sync",
+      "--transcript",
+      transcript,
+      "--all",
+    );
+    assert.equal(first.code, 0);
+    const firstOut = JSON.parse(first.stdout);
+    assert.equal(firstOut.added, 7);
+    assert.equal(firstOut.reset, true);
+    assert.equal(firstOut.windowed, false);
+
+    const stored = (await fetch(`${server.url}/api/sessions/${server.session.id}/trace`).then((r) =>
+      r.json(),
+    )) as any;
+    assert.deepEqual(
+      stored.steps.map((s: any) => s.kind),
+      ["prompt", "think", "say", "read", "web", "mcp", "customtool"],
+    );
+    assert.match(stored.steps.find((s: any) => s.kind === "read").detail, /export const app/);
+
+    writeFileSync(
+      transcript,
+      readFileSync(transcript, "utf8") +
+        `\n{"timestamp":"2026-06-18T00:00:04.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"g1","name":"Grep","input":{"pattern":"TODO"}}]}}`,
+    );
+    const second = await runWith(
+      { cwd, env: { SIDESHOW_URL: server.url, SIDESHOW_SESSION: server.session.id } },
+      "trace-sync",
+      "--transcript",
+      transcript,
+      "--all",
+    );
+    assert.equal(second.code, 0);
+    const secondOut = JSON.parse(second.stdout);
+    assert.equal(secondOut.added, 1);
+    assert.equal(secondOut.reset, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("trace-sync --quiet still syncs while suppressing stdout", async () => {
+  const server = await serveSession();
+  const cwd = mkdtempSync(join(tmpdir(), "sideshow-trace-quiet-"));
+  try {
+    const transcript = join(cwd, "quiet.jsonl");
+    writeFileSync(
+      transcript,
+      `{"timestamp":"2026-06-18T00:00:00.000Z","message":{"role":"user","content":"quiet sync"}}`,
+    );
+    const { code, stdout, stderr } = await runWith(
+      { cwd, env: { SIDESHOW_URL: server.url, SIDESHOW_SESSION: server.session.id } },
+      "trace-sync",
+      "--transcript",
+      transcript,
+      "--all",
+      "--quiet",
+    );
+    assert.equal(code, 0);
+    assert.equal(stdout, "");
+    assert.equal(stderr, "");
+
+    const stored = (await fetch(`${server.url}/api/sessions/${server.session.id}/trace`).then((r) =>
+      r.json(),
+    )) as any;
+    assert.deepEqual(
+      stored.steps.map((s: any) => s.label),
+      ["quiet sync"],
+    );
   } finally {
     await server.close();
   }
@@ -696,6 +832,25 @@ test("mermaid publishes a mermaid-only post", async () => {
   }
 });
 
+test("trace publishes a trace asset post", async () => {
+  const server = await serveSession();
+  try {
+    const trace = tmpFile(
+      "trace.json",
+      JSON.stringify({ steps: [{ kind: "run", label: "build" }] }),
+    );
+    const { code, stdout } = await cli(server, "trace", trace, "--title", "Trace");
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout);
+    assert.deepEqual(out.kinds, ["trace"]);
+    const full = (await fetch(`${server.url}/api/posts/${out.id}`).then((r) => r.json())) as any;
+    assert.equal(full.surfaces[0].kind, "trace");
+    assert.ok(full.surfaces[0].assetId);
+  } finally {
+    await server.close();
+  }
+});
+
 // --- update (revise → new version, same card) -----------------------------
 
 test("update revises a post to a new version on the same card", async () => {
@@ -858,6 +1013,43 @@ test("surface move reorders a surface by id", async () => {
   } finally {
     await server.close();
   }
+});
+
+test("surface add without a surface flag fails before hitting the API", async () => {
+  const { code, stdout, stderr } = await runWith(
+    { env: { SIDESHOW_URL: "http://127.0.0.1:1", SIDESHOW_SESSION: "session123" } },
+    "surface",
+    "add",
+    "post123",
+  );
+  assert.notEqual(code, 0);
+  assert.equal(stdout, "");
+  assert.match(stderr, /provide at least one surface flag/);
+});
+
+test("surface move validates the source and target indexes", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("h.html", "<p>a</p>");
+    const md = tmpFile("m.md", "# b");
+    const id = JSON.parse((await cli(server, "publish", html, "--md", md)).stdout).id;
+
+    const missing = await cli(server, "surface", "move", id, "no-such-surface", "--to", "0");
+    assert.notEqual(missing.code, 0);
+    assert.match(missing.stderr, /surface "no-such-surface" not found/);
+
+    const badTarget = await cli(server, "surface", "move", id, "0", "--to", "9");
+    assert.notEqual(badTarget.code, 0);
+    assert.match(badTarget.stderr, /--to must be a valid index/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("unknown surface subcommand fails with the supported verbs", async () => {
+  const { code, stderr } = await run("surface", "bogus");
+  assert.notEqual(code, 0);
+  assert.match(stderr, /unknown surface subcommand: bogus/);
 });
 
 // --- wait (blocking feedback long-poll) -----------------------------------
@@ -1092,7 +1284,79 @@ test("asset-url prints the content-hash id and url without hitting the server", 
   assert.equal(out.url, `http://127.0.0.1:1/a/${expected}`);
 });
 
+test("guide commands fall back to bundled markdown when no server is reachable", async () => {
+  for (const cmd of ["guide", "setup", "agent-howto"]) {
+    const { code, stdout, stderr } = await runWith(
+      { env: { SIDESHOW_URL: "http://127.0.0.1:1" } },
+      cmd,
+    );
+    assert.equal(code, 0);
+    assert.match(stdout, /#/);
+    assert.equal(stderr, "");
+  }
+});
+
 // --- error paths ----------------------------------------------------------
+
+test("local file and usage errors fail before hitting the server", async () => {
+  const missing = join(mkdtempSync(join(tmpdir(), "sideshow-missing-file-")), "missing.html");
+  const cases: Array<[string[], RegExp]> = [
+    [["publish", missing], /cannot read file/],
+    [["upload"], /usage: sideshow upload/],
+    [["asset-url"], /usage: sideshow asset-url/],
+    [["image"], /usage: sideshow image/],
+    [["json"], /usage: sideshow json/],
+    [["code"], /usage: sideshow code/],
+    [["trace"], /usage: sideshow trace/],
+  ];
+  for (const [args, pattern] of cases) {
+    const { code, stdout, stderr } = await runWith(
+      { env: { SIDESHOW_URL: "http://127.0.0.1:1" } },
+      ...args,
+    );
+    assert.notEqual(code, 0);
+    assert.equal(stdout, "");
+    assert.match(stderr, pattern);
+  }
+});
+
+test("wait and list explain when there is no active session", async () => {
+  for (const args of [["wait", "--timeout", "1"], ["list"]]) {
+    const { code, stdout, stderr } = await runWith(
+      {
+        cwd: mkdtempSync(join(tmpdir(), "sideshow-no-session-")),
+        env: { SIDESHOW_URL: "http://127.0.0.1:1" },
+      },
+      ...args,
+    );
+    assert.notEqual(code, 0);
+    assert.equal(stdout, "");
+    assert.match(stderr, /no active session/);
+  }
+});
+
+test("trace-sync explains missing session and missing transcript", async () => {
+  const noSession = await runWith(
+    {
+      cwd: mkdtempSync(join(tmpdir(), "sideshow-no-session-")),
+      env: { SIDESHOW_URL: "http://127.0.0.1:1" },
+    },
+    "trace-sync",
+    "--transcript",
+    "missing.jsonl",
+  );
+  assert.notEqual(noSession.code, 0);
+  assert.match(noSession.stderr, /no active session/);
+
+  const server = await serveSession();
+  try {
+    const missing = await cli(server, "trace-sync", "--transcript", "missing.jsonl");
+    assert.notEqual(missing.code, 0);
+    assert.match(missing.stderr, /no transcript found/);
+  } finally {
+    await server.close();
+  }
+});
 
 test("an unreachable server fails with a one-line error, not a stack trace", async () => {
   const { code, stdout, stderr } = await runWith(

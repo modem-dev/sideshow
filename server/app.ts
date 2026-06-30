@@ -886,6 +886,7 @@ export function createApp({
   // Long-poll: resolves as soon as a matching comment lands, or at timeout.
   async function waitForComments(
     q: CommentWait,
+    signal?: AbortSignal,
   ): Promise<{ comments: Comment[]; lastSeq: number }> {
     // An author=user session wait with no explicit cursor resumes from the
     // session's agentSeq — "where the agent left off" lives server-side so the
@@ -910,9 +911,16 @@ export function createApp({
           if (q.surfaceId && event.surfaceId !== q.surfaceId) return;
           done();
         });
+        const onAbort = () => done();
+        let settled = false;
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) done();
         function done() {
+          if (settled) return;
+          settled = true;
           clearTimeout(timer);
           unsubscribe();
+          signal?.removeEventListener("abort", onAbort);
           resolve();
         }
       });
@@ -1567,13 +1575,16 @@ export function createApp({
       // If the client disconnects mid-wait, release the slot promptly.
       c.req.raw.signal.addEventListener("abort", release, { once: true });
       try {
-        const result = await waitForComments({
-          sessionId,
-          surfaceId,
-          author: c.req.query("author"),
-          afterSeq: c.req.query("after") ? Number(c.req.query("after")) : undefined,
-          waitSeconds,
-        });
+        const result = await waitForComments(
+          {
+            sessionId,
+            surfaceId,
+            author: c.req.query("author"),
+            afterSeq: c.req.query("after") ? Number(c.req.query("after")) : undefined,
+            waitSeconds,
+          },
+          c.req.raw.signal,
+        );
         return c.json(result);
       } finally {
         release();
