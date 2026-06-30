@@ -170,15 +170,46 @@ test("publishes a combined html+diff surface; /s server-renders both parts opaqu
   );
   assert.equal(res.status, 201);
   const surface = (await res.json()) as any;
-  // the write response is lean — kinds, no part bodies echoed back
+  // the write response is lean — surface ids + kinds + indexes, no part bodies echoed back
   assert.deepEqual(surface.kinds, ["html", "diff"]);
   assert.equal(surface.parts, undefined);
+  assert.deepEqual(
+    surface.surfaces.map((p: any) => ({ id: typeof p.id, kind: p.kind, index: p.index })),
+    [
+      { id: "string", kind: "html", index: 0 },
+      { id: "string", kind: "diff", index: 1 },
+    ],
+  );
+  assert.ok(!("html" in surface.surfaces[0]), "html body is not echoed");
+  assert.ok(!("patch" in surface.surfaces[1]), "diff body is not echoed");
 
   // the full record keeps the html and the diff patch
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
   assert.equal(full.surfaces.length, 2);
   assert.equal(full.surfaces[0].html, "<p>diagram</p>");
   assert.equal(full.surfaces[1].patch, "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b");
+
+  const updated = (await (
+    await app.request(`/api/surfaces/${surface.id}`, {
+      ...json({
+        parts: [
+          { kind: "html", html: "<p>diagram</p>" },
+          { kind: "diff", patch: "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b", layout: "split" },
+        ],
+      }),
+      method: "PUT",
+    })
+  ).json()) as any;
+  assert.deepEqual(updated.kinds, ["html", "diff"]);
+  assert.deepEqual(
+    updated.surfaces.map((p: any) => ({ id: typeof p.id, kind: p.kind, index: p.index })),
+    [
+      { id: "string", kind: "html", index: 0 },
+      { id: "string", kind: "diff", index: 1 },
+    ],
+  );
+  assert.ok(!("html" in updated.surfaces[0]), "updated html body is not echoed");
+  assert.ok(!("patch" in updated.surfaces[1]), "updated diff body is not echoed");
 
   // /s renders the html part...
   const part0 = await app.request(`/s/${surface.id}?part=0`);
