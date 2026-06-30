@@ -156,15 +156,15 @@ const MCP_SURFACES_JSON_SCHEMA = {
 
 export const MCP_TOOL_DESCRIPTIONS = {
   publishPostHttp:
-    "Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id, view URL, and sessionId — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+    "Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id, view URL, sessionId, and the new surface ids (use them to target a surface for later edits without a get_post round-trip) — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
   publishPostStdio:
-    "Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+    "Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id, view URL, and the new surface ids (use them to target a surface for later edits without a get_post round-trip). On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
   updatePost:
-    "Revise a post in place (same card, new version). Prefer this over publishing a near-duplicate. Pass the full replacement surfaces array. If the result includes userFeedback, read it.",
+    "Revise a post in place (same card, new version). Prefer this over publishing a near-duplicate. Pass the full replacement surfaces array. Returns the new surface ids (use them to target a surface for later edits without a get_post round-trip). If the result includes userFeedback, read it.",
   listPostsHttp: "List posts — pass a session id to scope, or omit for all sessions.",
   listPostsStdio: "List posts in this conversation's session.",
   getPost:
-    "Fetch a single post by id — returns the full post object including surfaces (with their ids), version, and history. Use this to recover surface ids for per-surface operations (edit_surface, remove_surface, reorder_surfaces) after a context compaction, or to inspect a post's current state before editing.",
+    "Fetch a single post by id — returns the full post object including surfaces (with their ids and 0-based indexes), version, and history. Use this to recover surface ids (or indexes) for per-surface operations (edit_surface, remove_surface, reorder_surfaces) after a context compaction, or to inspect a post's current state before editing.",
   publishSurfaceHttp:
     "Deprecated alias of publish_post — Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id, view URL, and sessionId — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
   publishSurfaceStdio:

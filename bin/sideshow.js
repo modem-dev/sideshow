@@ -129,7 +129,7 @@ usage:
                         --surface is a deprecated alias)
       --author <name>   defaults to agent name
   sideshow list [--session <id>|--all]    list posts
-  sideshow show <id>                      show a single post (surfaces, ids, version, history)
+  sideshow show <id>                      show a single post (surfaces, indexes, ids, version, history)
   sideshow sessions                       list sessions
   sideshow demo                           seed two example sessions to explore the viewer
   sideshow guide                          print the design contract for posts
