@@ -312,11 +312,14 @@ function buildRichCsp(origin: string): string {
 // workspace. `css` is the surface-specific stylesheet (prose/diff/mermaid rules);
 // chrome theme vars come from viewerThemeCss so the surface matches the viewer.
 // `mode` PINS those vars (and any shiki dark-flip the css carries) to the
-// scheme the chrome resolved, so this frame can't diverge from it. Unlike an
-// html surface, it deliberately does NOT force `color-scheme`: these frames are
-// transparent so the themed card surface shows through, and a forced
-// `color-scheme` would paint an opaque UA canvas behind them. They carry no
-// native scrollbars/controls that need it, so the var pinning alone suffices.
+// scheme the chrome resolved, so this frame can't diverge from it — and that
+// includes `color-scheme`. A sandboxed, opaque-origin iframe loaded by URL
+// defaults to `color-scheme: normal` (i.e. light): in dark mode the UA paints a
+// WHITE canvas behind the transparent body, and the dark-mode text (--text) is
+// washed out over it. (An earlier note here assumed omitting the property kept
+// the frame transparent; it doesn't — it just leaves the canvas light.) Pinning
+// the scheme, exactly as an html surface does, makes the UA canvas track the
+// card so the frame reads as transparent in both schemes.
 export function renderSandboxedPart(doc: {
   body: string;
   css: string;
@@ -337,7 +340,7 @@ export function renderSandboxedPart(doc: {
      img-src in buildRichCsp allows that origin. (html surfaces don't need this —
      they load via /s/:id, whose URL is already the base.) -->
 <base href="${doc.origin}/">
-<style>${viewerThemeCss(theme, doc.mode)}${doc.css}</style>
+<style>${viewerThemeCss(theme, doc.mode)}${doc.css}${colorSchemeCss(doc.mode)}</style>
 </head>
 <body>
 ${doc.body}
@@ -508,7 +511,7 @@ try {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${buildCsp(doc.origin)}">
 <base href="${doc.origin}/">
-<style>${viewerThemeCss(theme, doc.mode)}${MERMAID_CSS}</style>
+<style>${viewerThemeCss(theme, doc.mode)}${MERMAID_CSS}${colorSchemeCss(doc.mode)}</style>
 </head>
 <body>
 <div id="m"></div>

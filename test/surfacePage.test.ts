@@ -125,7 +125,7 @@ test("theme tokens are injected and resolve unknown/absent themes to the default
   );
 });
 
-test("a pinned mode forces the scheme into html parts but not transparent rich frames", () => {
+test("a pinned mode forces color-scheme into both html parts and transparent rich frames", () => {
   const gh = renderHtmlPage({ title: "t", html: "<p>x</p>", origin: ORIGIN, mode: "dark" });
   // the document's used color-scheme is forced so the UA canvas/scrollbars/
   // controls follow it, overriding the static `color-scheme: light dark` default
@@ -146,15 +146,15 @@ test("a pinned mode forces the scheme into html parts but not transparent rich f
   assert.ok(!auto.includes("color-scheme:dark"), "no mode → no forced scheme");
   assert.ok(auto.includes("@media (prefers-color-scheme: dark)"), "no mode → OS media query kept");
 
-  // rich/comment frames pin the same way — EXCEPT color-scheme. Those frames are
-  // transparent so the themed card surface shows through; a forced color-scheme
-  // would paint an opaque UA canvas behind them. So the tokens are pinned (flat
-  // :root, dark --text, no media query) but color-scheme is left unset.
+  // rich/comment frames pin the same way, color-scheme INCLUDED. A sandboxed
+  // opaque-origin iframe defaults to `color-scheme: normal` (light), so without
+  // this pin the UA paints a white canvas behind the transparent body and the
+  // dark-mode text washes out. Pinning it makes the canvas track the dark card.
   const rich = renderSandboxedPart({ body: "x", css: "", origin: ORIGIN, mode: "dark" });
   const dark = themeById("github").dark;
   assert.ok(
-    !rich.includes("color-scheme:"),
-    "rich frame must NOT force color-scheme (stays transparent)",
+    /:root\{color-scheme:dark\}/.test(rich),
+    "rich frame must pin color-scheme so the UA canvas isn't white in dark mode",
   );
   assert.ok(
     !rich.includes("@media (prefers-color-scheme: dark)"),
@@ -163,6 +163,17 @@ test("a pinned mode forces the scheme into html parts but not transparent rich f
   assert.ok(
     rich.includes(`--text: ${dark.text}`),
     "rich frame carries the pinned dark chrome vars",
+  );
+  // light pins light; an unpinned (no-mode) frame leaves the scheme to the OS.
+  assert.ok(
+    /:root\{color-scheme:light\}/.test(
+      renderSandboxedPart({ body: "x", css: "", origin: ORIGIN, mode: "light" }),
+    ),
+    "light mode pins color-scheme:light",
+  );
+  assert.ok(
+    !/:root\{color-scheme:/.test(renderSandboxedPart({ body: "x", css: "", origin: ORIGIN })),
+    "no mode → scheme left to the OS (the @media query may still mention prefers-color-scheme)",
   );
 });
 
