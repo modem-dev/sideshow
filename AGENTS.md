@@ -25,6 +25,9 @@ consciously, not as a side effect):
   card's thread) and reaches the agent (`userFeedback` piggybacked on writes, a
   blocking wait, or a background watch). Guard this hardest — both halves have
   regressed before.
+- Trace exists in the codebase as an experimental path. Keep it out of the
+  product-facing surface taxonomy and agent guidance unless the task is
+  explicitly about deciding or finishing traces.
 
 ## Map
 
@@ -34,11 +37,11 @@ consciously, not as a side effect):
 - `server/types.ts` — data model + `Store` interface; no runtime imports. A
   post is an ordered list of surfaces (`html` | `markdown` | `diff` | `terminal`
   | `image` | `mermaid` | `json` | `code`); a snippet is sugar for a single html surface.
-  `htmlPart` bridges the legacy snippet shape. Assets (uploaded blobs)
-  are a separate entity, referenced by `image` surfaces; `selectEvictions`
-  is the reference-aware LRU policy.
+  `htmlSurface` bridges the legacy snippet shape. Assets (uploaded blobs)
+  are a separate entity, referenced by `image` surfaces and the experimental
+  trace path; `selectEvictions` is the reference-aware LRU policy.
 - `server/public.ts` — the `sideshow/server` package export (`createApp`,
-  `JsonFileStore`, types) for embedding the app in a Node process.
+  `SqlStore`, `createSqliteStorage`, `JsonFileStore`, types) for embedding the app.
 - `server/sqlStore.ts` — `SqlStore`, the SQLite-backed `Store`. It takes a
   `SqlStorage` (the narrow SQL surface declared in `types.ts`, not the ambient
   Cloudflare global), so the SAME store runs on the Durable Object
@@ -53,7 +56,7 @@ consciously, not as a side effect):
 - `server/kits.ts` — opt-in style/behavior bundles for html surfaces (`issues`,
   `slides`). An html surface lists kit ids in `kits`; `renderHtmlPage` injects each
   kit's CSS/JS into the sandbox after the base. Runtime-agnostic; allowlisted in
-  `surfaceParts` and listed at `/api/kits`. Adding a kit is a registry entry +
+  `server/postSurfaces.ts` and listed at `/api/kits`. Adding a kit is a registry entry +
   a guide bullet — no new surface kind, no native renderer.
 - `server/richRender.ts` — server-side renderers for the rich kinds
   (`renderMarkdown`/`renderCode`/`renderDiff`/`renderTerminal` → `{body, css}`),
@@ -68,8 +71,8 @@ consciously, not as a side effect):
   `renderMermaidPage` is the one exception: mermaid needs a DOM, so it can't be
   server-rendered — instead it emits a self-rendering doc that loads mermaid from
   the CDN allowlist (so it uses the html-surface CSP, which permits the CDN). Image
-  and trace surfaces stay native because they have no HTML sink (the viewer renders
-  them with text nodes / `<img>` / JSX), and comments render as escaped Solid
+  and json surfaces stay native because they have no HTML sink; the experimental
+  trace path follows the same data-only rule. Comments render as escaped Solid
   text nodes. No agent markup is ever set as `innerHTML` in the trusted viewer
   origin.
 - `server/themes.ts` — theme registry (github/gruvbox/one), runtime-agnostic so
@@ -92,8 +95,8 @@ consciously, not as a side effect):
 ## Architecture invariants
 
 - `server/{app,events,mcpHttp,surfacePage,types}.ts` stay runtime-agnostic
-  (no `node:` imports); `tsconfig.workers.json` typechecks them against
-  workers types. Node wiring belongs in `server/index.ts` / `server/storage.ts`.
+  (and any other server file imported by Workers: no `node:` imports);
+  `tsconfig.workers.json` typechecks them. Node wiring belongs in `server/index.ts` / `server/storage.ts`.
 - Server/CLI TypeScript runs directly on Node ≥22.18 via type stripping:
   erasable syntax only (no enums, no parameter properties), `.ts` extensions
   in relative imports, no build step (`npm pack` compiles `dist/` for the
@@ -111,7 +114,7 @@ consciously, not as a side effect):
   server-rendered rich kinds (markdown/code/diff/terminal), and
   `renderMermaidPage` for the mermaid CDN doc; or (b) **keep it as data and
   render with Solid text nodes / element attributes**, which escape by
-  construction (image, trace, and comments — plain escaped text). String-building
+  construction (image, json, comments, and experimental trace data). String-building
   on the server is fine — a string is not a DOM sink; danger only starts when it
   reaches the DOM, which must happen at an opaque origin. When you add a surface
   kind, pick (a) or (b); never a third way. The iframes are sandboxed without
@@ -170,6 +173,9 @@ consciously, not as a side effect):
   `<html>`/`<body>` — `:host` plays `<body>`'s role; see `embed.tsx`). Build the
   bundle with `npm run build:embed` (→ `viewer/dist-embed/engine.js`, the
   `sideshow/viewer-embed` export); it is folded into `npm run build`.
+  Embed-host contract changes (`liveTransport`, `homeView`, `hideBrand`, slots,
+  `onReady`, theme mirroring, etc.) need `viewer/embed.d.ts` and focused embed
+  e2e coverage; self-hosted behavior must stay identical.
 
 ## Validation
 
@@ -178,12 +184,14 @@ npm test             # unit/API + store contract (node --test)
 npm run typecheck    # three tsc programs: node + workers + viewer
 npm run lint         # oxlint, warnings are errors
 npm run format:check # oxfmt
+npm run security:audit
 npm run test:e2e     # Playwright, chromium + webkit (separate CI job);
                      # builds the viewer first via e2e/globalSetup.ts
 ```
 
-The first four must pass before committing; pre-commit formats staged files
-(`npm run prepare` after a fresh clone).
+The first five must pass before committing; e2e should pass before merge for
+viewer/rendering changes. CI also gates PRs on changeset status and smoke-tests
+the packed CLI. Pre-commit formats staged files (`npm run prepare` after a fresh clone).
 
 Testing notes:
 
@@ -209,7 +217,7 @@ test.ts` covers the JSON→SQLite import.
   engine, the CLI help, and `guide/*.md` all use them now. Retired spellings stay
   as back-compat ONLY at the boundary: the legacy HTTP routes (`/api/surfaces`,
   `/api/snippets`), the `parts` request-body key, the `?part=` query key, the
-  `surface-created/updated/deleted` SSE events, and the deprecated MCP tool
+  `/s/:id` route alias, and the deprecated MCP tool
   aliases (`publish_surface`, etc.) — keep these byte-identical. The tenant DB is
   a **workspace** (`board` is being retired). Canonical glossary: sideshow-cloud
   `docs/glossary.md`.
