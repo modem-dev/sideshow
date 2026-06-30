@@ -200,32 +200,79 @@ document.addEventListener('keydown', function (e) {
 //
 // A plain h !== __lastH guard can't stop this: in a 2-cycle every value differs
 // from the one immediately before it. So we remember the previous height too and
-// drop a return to it *if it recurs faster than a human could* (< 250ms) — that's
-// the runaway. A genuine change (a <details> toggle, a textarea drag) recurs on a
-// human timescale and still passes through.
+// defer a return to it *if it recurs faster than a human could* (< 250ms) — that's
+// the runaway. The deferred pass keeps one trailing re-measure and reports the
+// taller height in the pair, so an ordinary font/image reflow can't leave the
+// frame permanently clipped.
 var __lastH = 0;
 var __prevH = 0;
 var __lastT = 0;
+var __seenH = 0;
+var __trailTimer = 0;
+var __trailH = 0;
+var __FLIP_MS = 250;
+var __TRAIL_MS = 350;
 function __now() {
   return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
 }
-function __report() {
-  var h = document.body
+function __measureHeight() {
+  return document.body
     ? document.body.scrollHeight
     : document.documentElement.scrollHeight;
-  if (h <= 0 || h === __lastH) return; // no content yet, or unchanged
-  var t = __now();
-  if (h === __prevH && t - __lastT < 250) return; // rapid A<->B flip: stop the loop
+}
+function __postHeight(h, t) {
   __prevH = __lastH;
   __lastH = h;
   __lastT = t;
   parent.postMessage({ __sideshow: true, type: 'resize', height: h }, '*');
+}
+function __clearTrailing() {
+  if (__trailTimer && typeof clearTimeout !== 'undefined') clearTimeout(__trailTimer);
+  __trailTimer = 0;
+  __trailH = 0;
+}
+function __flushTrailing() {
+  __trailTimer = 0;
+  var measured = __measureHeight();
+  if (measured > 0) __seenH = measured;
+  var target = Math.max(__trailH || 0, measured || 0);
+  __trailH = 0;
+  if (target <= 0 || target === __lastH) return;
+  __postHeight(target, __now());
+}
+function __scheduleTrailing(h, reset) {
+  __trailH = Math.max(__trailH || 0, h || 0, __lastH || 0);
+  if (__trailTimer) {
+    if (!reset) return;
+    if (typeof clearTimeout !== 'undefined') clearTimeout(__trailTimer);
+  }
+  __trailTimer = setTimeout(__flushTrailing, __TRAIL_MS);
+}
+function __report() {
+  var h = __measureHeight();
+  if (h <= 0) return; // no content yet
+  var changed = h !== __seenH;
+  __seenH = h;
+  if (h === __lastH) return; // unchanged
+  var t = __now();
+  if (h === __prevH && (__trailTimer || t - __lastT < __FLIP_MS)) {
+    __scheduleTrailing(h, true); // rapid A<->B flip: defer one settled report
+    return;
+  }
+  __clearTrailing();
+  __postHeight(h, t);
 }
 if (document.readyState === 'complete') __report();
 else window.addEventListener('load', function () { requestAnimationFrame(__report); });
 setTimeout(__report, 60);
 setTimeout(__report, 350);
 setTimeout(__report, 1500);
+setTimeout(__report, 3000);
+setTimeout(__report, 6000);
+setTimeout(__report, 10000);
+if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
+  document.fonts.ready.then(function () { __report(); });
+}
 if (window.ResizeObserver) {
   window.__ssRO = new ResizeObserver(__report);
   window.__ssRO.observe(document.documentElement);

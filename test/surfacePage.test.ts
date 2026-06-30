@@ -310,7 +310,26 @@ function loadResizeBridge() {
 
   const posted: number[] = [];
   const clock = { scrollHeight: 0, now: 0 };
+  type Timer = { id: number; due: number; fn: () => void; cancelled?: boolean };
+  const timers: Timer[] = [];
+  let nextTimer = 1;
   const noop = () => 0;
+  const runUntil = (ms: number) => {
+    while (true) {
+      let next: Timer | undefined;
+      for (const timer of timers) {
+        if (timer.cancelled || timer.due > ms) continue;
+        if (!next || timer.due < next.due || (timer.due === next.due && timer.id < next.id)) {
+          next = timer;
+        }
+      }
+      if (!next) break;
+      next.cancelled = true;
+      clock.now = next.due;
+      next.fn();
+    }
+    clock.now = ms;
+  };
   const ctx: Record<string, unknown> = {
     parent: {
       postMessage: (msg: { type?: string; height?: number }) => {
@@ -318,7 +337,15 @@ function loadResizeBridge() {
       },
     },
     performance: { now: () => clock.now },
-    setTimeout: noop, // ignore the deferred __report() warm-up calls
+    setTimeout: (fn: () => void, delay = 0) => {
+      const timer = { id: nextTimer++, due: clock.now + delay, fn };
+      timers.push(timer);
+      return timer.id;
+    },
+    clearTimeout: (id: number) => {
+      const timer = timers.find((candidate) => candidate.id === id);
+      if (timer) timer.cancelled = true;
+    },
     requestAnimationFrame: noop,
     document: {
       readyState: "loading", // take the load-listener branch, not an eval-time __report()
@@ -338,10 +365,15 @@ function loadResizeBridge() {
   return {
     posted,
     at(height: number, ms: number) {
+      runUntil(ms);
       clock.scrollHeight = height;
-      clock.now = ms;
       report();
     },
+    setHeight(height: number, ms: number) {
+      runUntil(ms);
+      clock.scrollHeight = height;
+    },
+    runUntil,
   };
 }
 
@@ -350,30 +382,86 @@ function loadResizeBridge() {
 // iframe to the reported height" feed back into the content's height, so reports
 // alternate A, B, A, B... forever. A plain `h !== lastH` guard can't stop it
 // (each value differs from the one before), and on a heavy surface the per-frame
-// relayout pegs a CPU core. The bridge must break the rapid 2-cycle while still
-// honoring a genuine change that happens to return to a prior height.
-test("resize bridge breaks a rapid 2-cycle but honors slow genuine changes", () => {
+// relayout pegs a CPU core. The bridge must break the rapid 2-cycle, but a
+// one-off A→B→A font/image reflow must still finish at the final A.
+test("resize bridge breaks a rapid 2-cycle and rests on the taller height", () => {
   const b = loadResizeBridge();
 
-  b.at(100, 0); // first measurement
-  b.at(200, 16); // genuine growth
+  b.at(100, 1600);
+  b.at(200, 1616);
   assert.deepEqual(b.posted, [100, 200]);
 
-  // The runaway: rapid flips back and forth, one per frame.
-  b.at(100, 32);
-  b.at(200, 48);
-  b.at(100, 64);
+  // Keep flipping for long enough that a simple "within 250ms" guard would start
+  // posting again. The active trailing debounce should keep suppressing until the
+  // pair goes quiet, then leave the already-posted taller height in place.
+  for (let i = 0; i < 40; i++) {
+    b.at(i % 2 === 0 ? 100 : 200, 1632 + i * 16);
+  }
+  b.runUntil(3000);
+
   assert.deepEqual(
     b.posted,
     [100, 200],
     "a rapid A<->B oscillation must stop after the first cycle",
   );
 
-  // A real change that lands on a previous height, seconds later, still resizes.
+  b.at(150, 5000);
+  assert.deepEqual(
+    b.posted,
+    [100, 200, 150],
+    "a later third height is a genuine resize, not stale oscillation state",
+  );
+});
+
+test("resize bridge defers a suppressed A→B→A reflow instead of losing the final height", () => {
+  const b = loadResizeBridge();
+
+  b.at(320, 1600);
+  b.at(180, 1616);
+  b.at(320, 1632);
+  assert.deepEqual(b.posted, [320, 180], "the rapid return is suppressed immediately");
+
+  b.runUntil(2100);
+  assert.deepEqual(
+    b.posted,
+    [320, 180, 320],
+    "the trailing re-measure reports the final taller height",
+  );
+});
+
+test("resize bridge allows a slow genuine return to an oscillation endpoint", () => {
+  const b = loadResizeBridge();
+
+  b.at(100, 1600);
+  b.at(200, 1616);
+  b.at(100, 1632);
+  b.runUntil(2100);
+  assert.deepEqual(b.posted, [100, 200], "the rapid return is suppressed");
+
   b.at(100, 5000);
   assert.deepEqual(
     b.posted,
     [100, 200, 100],
-    "a slow, genuine return to a prior height must still resize the frame",
+    "after the debounce window, the same lower endpoint can be a genuine resize",
   );
+});
+
+test("resize bridge late timers catch height growth after the 1500ms warm-up", () => {
+  const b = loadResizeBridge();
+
+  b.at(100, 0);
+  b.runUntil(1500);
+  b.setHeight(260, 2200); // no ResizeObserver fire: simulate a missed late settle
+  assert.deepEqual(b.posted, [100]);
+
+  b.runUntil(3000);
+  assert.deepEqual(b.posted, [100, 260], "the 3000ms safety timer reports growth");
+
+  b.setHeight(420, 4200); // after the first late safety net has already fired
+  b.runUntil(6000);
+  assert.deepEqual(b.posted, [100, 260, 420], "the 6000ms safety timer reports growth");
+
+  b.setHeight(640, 7500); // after both earlier late safety nets have fired
+  b.runUntil(10000);
+  assert.deepEqual(b.posted, [100, 260, 420, 640], "the 10000ms safety timer reports growth");
 });
