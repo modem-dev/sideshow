@@ -3,6 +3,7 @@
 // surface so hosts get types without depending on the viewer source.
 
 export type Route = { sessionId?: string | null; surfaceId?: string | null };
+export type LiveTransport = "sse" | "ws";
 
 export interface HostRouter {
   /** The route the engine should render. */
@@ -30,6 +31,11 @@ export interface SideshowHost {
    * Orthogonal to `layout`. Self-hosted drives the same flag via a window global.
    */
   readonly?: boolean;
+  /**
+   * Live-update transport. Defaults to SSE; embedders can opt into WebSocket
+   * when their host implements `/api/events` as a hibernatable socket.
+   */
+  liveTransport?: LiveTransport;
   /**
    * Whether this deployment can render a surface as a PNG (the /s/:id.png route).
    * That route needs Cloudflare Browser Rendering, so it exists only on a Workers

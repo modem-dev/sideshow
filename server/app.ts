@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { decodeBase64 } from "./base64.ts";
-import { EventBus } from "./events.ts";
+import { EventBus, type FeedEvent } from "./events.ts";
 import { kitSummaries } from "./kits.ts";
 import { registerMcp } from "./mcpHttp.ts";
 import {
@@ -33,6 +33,8 @@ import {
   type TraceStep,
 } from "./types.ts";
 import { validateSurfaces } from "./postSurfaces.ts";
+
+export type { FeedEvent } from "./events.ts";
 
 const MAX_SURFACE_BYTES = 2 * 1024 * 1024;
 const MAX_WAIT_SECONDS = 300;
@@ -157,6 +159,10 @@ export interface AppOptions {
   upgradeCommand?: string;
   // Test seam: replaces the npm-registry/GitHub lookup for the latest release.
   fetchLatestRelease?: () => Promise<LatestRelease | null>;
+  // Optional live-feed tap for hosts that provide their own transport (for
+  // example, a Cloudflare Durable Object WebSocket-hibernation wrapper). Receives
+  // every event; transport-specific session filtering stays with the host.
+  onEvent?: (event: FeedEvent) => void;
   // Max concurrently-held SSE (`/api/events`) + long-poll (`/api/comments?wait`)
   // connections before new ones are rejected with 503. Bounds a connection flood
   // on publicRead boards; defaults to DEFAULT_MAX_HOLD_CONNECTIONS.
@@ -413,10 +419,20 @@ export function createApp({
   version,
   upgradeCommand,
   fetchLatestRelease,
+  onEvent,
   maxHoldConnections = DEFAULT_MAX_HOLD_CONNECTIONS,
 }: AppOptions) {
   const app = new Hono();
   const bus = new EventBus();
+  if (onEvent) {
+    bus.subscribe((event) => {
+      try {
+        onEvent(event);
+      } catch (err) {
+        console.warn("[sideshow] onEvent listener failed", err);
+      }
+    });
+  }
 
   // Live count of held SSE + long-poll connections, gated by maxHoldConnections.
   // Each holder increments on entry and releases exactly once via a guarded

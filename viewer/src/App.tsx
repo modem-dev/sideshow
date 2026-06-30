@@ -117,7 +117,8 @@ export default function App() {
         setInitialLoaded(true);
         host().onReady?.();
       });
-    connect();
+    const disconnect = connect();
+    onCleanup(disconnect);
     checkVersion();
     void initTheme();
     const timer = setInterval(() => {

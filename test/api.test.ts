@@ -14,6 +14,7 @@ function makeApp(
     viewerHtml?: string;
     screenshots?: boolean;
     maxHoldConnections?: number;
+    onEvent?: Parameters<typeof createApp>[0]["onEvent"];
   },
 ) {
   const dir = mkdtempSync(join(tmpdir(), "sideshow-test-"));
@@ -58,6 +59,48 @@ test("publish without session auto-creates one", async () => {
   assert.equal(sessions.length, 1);
   assert.equal(sessions[0].agent, "pi");
   assert.equal(sessions[0].surfaceCount, 1);
+});
+
+test("onEvent receives published feed events", async () => {
+  const events: unknown[] = [];
+  const app = makeApp(undefined, { onEvent: (event) => events.push(event) });
+
+  const res = await app.request(
+    "/api/snippets",
+    json({ html: "<p>hi</p>", agent: "pi", title: "First" }),
+  );
+  assert.equal(res.status, 201);
+  const post = (await res.json()) as { id: string; sessionId: string; version: number };
+
+  assert.deepEqual(events, [
+    { type: "session-created", id: post.sessionId },
+    { type: "post-created", id: post.id, sessionId: post.sessionId, version: post.version },
+  ]);
+});
+
+test("onEvent errors do not fail writes", async () => {
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const app = makeApp(undefined, {
+      onEvent: () => {
+        throw new Error("fanout failed");
+      },
+    });
+
+    const res = await app.request(
+      "/api/snippets",
+      json({ html: "<p>hi</p>", agent: "pi", title: "First" }),
+    );
+    assert.equal(res.status, 201);
+    const post = (await res.json()) as { sessionId: string };
+    const posts = (await (
+      await app.request(`/api/sessions/${post.sessionId}/posts`)
+    ).json()) as unknown[];
+    assert.equal(posts.length, 1);
+  } finally {
+    console.warn = warn;
+  }
 });
 
 test("publish into an existing session groups snippets", async () => {

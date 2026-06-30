@@ -448,14 +448,63 @@ interface FeedEvent {
   surfaceId?: string | null;
 }
 
-export function connect() {
+const WS_HEARTBEAT_MS = 30_000;
+const WS_RECONNECT_MS = 1000;
+
+function eventsPath(): string {
   const route = host().router.get();
   const sessionId = route.sessionId ?? selected();
-  const eventsPath =
-    isReadonly() && publicReadMode() === "session" && sessionId
-      ? `/api/events?session=${encodeURIComponent(sessionId)}`
-      : "/api/events";
-  const es = new EventSource(appPath(eventsPath));
+  return isReadonly() && publicReadMode() === "session" && sessionId
+    ? `/api/events?session=${encodeURIComponent(sessionId)}`
+    : "/api/events";
+}
+
+function wsAppUrl(path: string): string {
+  const url = new URL(appPath(path), window.location.href);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.href;
+}
+
+async function handleFeedData(data: string) {
+  if (data === "pong") return;
+  const e = JSON.parse(data) as FeedEvent;
+  // activity the user isn't looking at — other session or hidden tab —
+  // marks the session unread, which also badges the tab title
+  const away = e.sessionId != null && (e.sessionId !== selected() || document.hidden);
+  if (e.type === "theme-changed") {
+    applyTheme(e.id);
+  } else if (e.type.startsWith("session-")) {
+    await refreshSessions();
+  } else if (e.type === "post-created" || e.type === "post-updated") {
+    if (away && e.sessionId) markUnread(e.sessionId);
+    if (e.sessionId === selected()) await upsertPost(e.id);
+    await refreshSessionsQuiet();
+  } else if (e.type === "post-deleted") {
+    const idx = posts.findIndex((s) => s.id === e.id);
+    if (idx >= 0) setPostsInternal(produce((arr) => arr.splice(idx, 1)));
+    await refreshSessionsQuiet();
+  } else if (e.type === "trace-updated") {
+    // the agent working is ambient, not an alert — refetch quietly, no badge
+    if (e.sessionId === selected()) await fetchTrace(e.sessionId);
+  } else if (e.type === "comment-created") {
+    if (away && e.sessionId) markUnread(e.sessionId);
+    if (e.sessionId === selected()) {
+      const query = e.surfaceId ? `surface=${e.surfaceId}` : `session=${e.sessionId}`;
+      const res = await api<{ comments: Comment[] }>(`/api/comments?${query}`);
+      mergeComments(res.comments);
+    }
+  } else if (e.type === "comment-deleted") {
+    setCommentsInternal((prev) => prev.filter((c) => c.id !== e.id));
+  }
+}
+
+export function connect(): () => void {
+  if (host().liveTransport === "ws") return connectWebSocket();
+  return connectSse();
+}
+
+function connectSse(): () => void {
+  const es = new EventSource(appPath(eventsPath()));
   let everConnected = false;
   es.onopen = async () => {
     setLiveInternal(true);
@@ -465,40 +514,63 @@ export function connect() {
     everConnected = true;
   };
   es.onerror = () => setLiveInternal(false);
-  es.onmessage = async (ev) => {
-    const e = JSON.parse(ev.data) as FeedEvent;
-    // activity the user isn't looking at — other session or hidden tab —
-    // marks the session unread, which also badges the tab title
-    const away = e.sessionId != null && (e.sessionId !== selected() || document.hidden);
-    if (e.type === "theme-changed") {
-      applyTheme(e.id);
-    } else if (e.type.startsWith("session-")) {
-      await refreshSessions();
-    } else if (e.type === "post-created" || e.type === "post-updated") {
-      if (away && e.sessionId) markUnread(e.sessionId);
-      if (e.sessionId === selected()) await upsertPost(e.id);
-      await refreshSessionsQuiet();
-    } else if (e.type === "post-deleted") {
-      const idx = posts.findIndex((s) => s.id === e.id);
-      if (idx >= 0) setPostsInternal(produce((arr) => arr.splice(idx, 1)));
-      await refreshSessionsQuiet();
-    } else if (e.type === "trace-updated") {
-      // the agent working is ambient, not an alert — refetch quietly, no badge
-      if (e.sessionId === selected()) await fetchTrace(e.sessionId);
-    } else if (e.type === "comment-created") {
-      if (away && e.sessionId) markUnread(e.sessionId);
-      if (e.sessionId === selected()) {
-        const query = e.surfaceId ? `surface=${e.surfaceId}` : `session=${e.sessionId}`;
-        const res = await api<{ comments: Comment[] }>(`/api/comments?${query}`);
-        mergeComments(res.comments);
-      }
-    } else if (e.type === "comment-deleted") {
-      setCommentsInternal((prev) => prev.filter((c) => c.id !== e.id));
-    }
+  es.onmessage = (ev) => void handleFeedData(ev.data);
+  return () => {
+    es.close();
+    setLiveInternal(false);
   };
 }
 
-// Re-fetch the selected session's posts and comments after an SSE
+function connectWebSocket(): () => void {
+  const url = wsAppUrl(eventsPath());
+  let everConnected = false;
+  let closed = false;
+  let ws: WebSocket | undefined;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let reconnect: ReturnType<typeof setTimeout> | undefined;
+
+  const clearHeartbeat = () => {
+    clearInterval(heartbeat);
+    heartbeat = undefined;
+  };
+
+  const open = () => {
+    if (closed) return;
+    ws = new WebSocket(url);
+
+    ws.onopen = async () => {
+      setLiveInternal(true);
+      clearHeartbeat();
+      heartbeat = setInterval(() => {
+        if (ws?.readyState === WebSocket.OPEN) ws.send("ping");
+      }, WS_HEARTBEAT_MS);
+      // events that fired during a gap are gone for good — refetch so the
+      // board can't silently go stale while still looking live
+      if (everConnected) await resyncSelected();
+      everConnected = true;
+    };
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === "string") void handleFeedData(ev.data);
+    };
+    ws.onerror = () => setLiveInternal(false);
+    ws.onclose = () => {
+      setLiveInternal(false);
+      clearHeartbeat();
+      if (!closed) reconnect = setTimeout(open, WS_RECONNECT_MS);
+    };
+  };
+
+  open();
+  return () => {
+    closed = true;
+    clearTimeout(reconnect);
+    clearHeartbeat();
+    ws?.close();
+    setLiveInternal(false);
+  };
+}
+
+// Re-fetch the selected session's posts and comments after a live-feed
 // reconnect; posts reconcile by id and comments dedupe by id.
 async function resyncSelected() {
   const before = selected();

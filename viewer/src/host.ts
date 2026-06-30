@@ -12,6 +12,7 @@
 import type { ThemeTokens } from "../../server/theme-tokens.ts";
 
 export type Route = { sessionId?: string | null; surfaceId?: string | null };
+export type LiveTransport = "sse" | "ws";
 
 export interface HostRouter {
   // The current route the engine should render.
@@ -39,6 +40,9 @@ export interface SideshowHost {
   // connect action). Orthogonal to `layout` — a host can have either without the
   // other. Self-hosted drives the same flag via window.__SIDESHOW_READONLY__.
   readonly?: boolean;
+  // Live-update transport. Self-hosted defaults to SSE; embedders can opt into
+  // WebSocket when their host implements `/api/events` as a hibernatable socket.
+  liveTransport?: LiveTransport;
   // Whether this deployment can render a surface as a PNG (the /s/:id.png route).
   // That route is served only by a Cloudflare Worker with the Browser Rendering
   // binding; a plain Node server (local dev, `npm start`) has no way to drive a
