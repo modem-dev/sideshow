@@ -213,12 +213,22 @@ async function fetchLatestFromRegistry(): Promise<LatestRelease | null> {
 
 const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 
+const indexSurfaces = (parts: Surface[]) => parts.map((p, index) => ({ ...p, index }));
+
+const postView = (s: Post) => ({
+  ...s,
+  surfaces: indexSurfaces(s.surfaces),
+  history: s.history.map((h) => ({ ...h, surfaces: indexSurfaces(h.surfaces) })),
+});
+
 // html surfaces carry arbitrary markup the viewer renders via a sandboxed iframe,
 // so the card list never needs their bodies — strip them to an id+kind marker.
 // diff/markdown/etc. surfaces are structured data the viewer can render inline,
 // so keep them whole.
 const stripParts = (parts: Surface[]) =>
-  parts.map((p) => (p.kind === "html" ? { id: p.id, kind: "html" } : p));
+  parts.map((p, index) =>
+    p.kind === "html" ? { id: p.id, kind: "html", index } : { ...p, index },
+  );
 
 const surfaceMeta = (s: Post) => {
   const surfaces = stripParts(s.surfaces);
@@ -1276,7 +1286,7 @@ export function createApp({
   const getPost = async (c: any) => {
     const post = await store.getPost(c.req.param("id"));
     if (!post) return c.json({ error: "post not found" }, 404);
-    return c.json(post);
+    return c.json(postView(post));
   };
   app.get("/api/surfaces/:id", getPost); // legacy alias
   app.get("/api/posts/:id", getPost);

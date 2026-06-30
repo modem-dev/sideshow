@@ -2280,6 +2280,67 @@ test("GET /api/sessions/:id/posts lists lean surfaces with ids and omitted html 
   assert.deepEqual(list[0].parts, list[0].surfaces, "legacy parts aliases surfaces");
 });
 
+test("read responses expose derived surface indexes and renumber after edits", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Indexed",
+        surfaces: [
+          { kind: "html", html: "<p>first</p>" },
+          { kind: "markdown", markdown: "# second" },
+          { kind: "terminal", text: "third" },
+        ],
+      }),
+    )
+  ).json()) as any;
+  await app.request(`/api/posts/${created.id}`, {
+    ...json({ title: "Indexed v2" }),
+    method: "PUT",
+  });
+
+  const detail = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.deepEqual(
+    detail.surfaces.map((p: any) => ({ index: p.index, kind: p.kind })),
+    [
+      { index: 0, kind: "html" },
+      { index: 1, kind: "markdown" },
+      { index: 2, kind: "terminal" },
+    ],
+  );
+  assert.deepEqual(
+    detail.history[0].surfaces.map((p: any) => ({ index: p.index, kind: p.kind })),
+    [
+      { index: 0, kind: "html" },
+      { index: 1, kind: "markdown" },
+      { index: 2, kind: "terminal" },
+    ],
+  );
+
+  const list = (await (
+    await app.request(`/api/sessions/${created.sessionId}/posts`)
+  ).json()) as any[];
+  assert.deepEqual(
+    list[0].surfaces.map((p: any) => ({ index: p.index, kind: p.kind })),
+    [
+      { index: 0, kind: "html" },
+      { index: 1, kind: "markdown" },
+      { index: 2, kind: "terminal" },
+    ],
+  );
+
+  await app.request(`/api/posts/${created.id}/surfaces/0`, { method: "DELETE" });
+  const renumbered = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  assert.deepEqual(
+    renumbered.surfaces.map((p: any) => ({ index: p.index, kind: p.kind })),
+    [
+      { index: 0, kind: "markdown" },
+      { index: 1, kind: "terminal" },
+    ],
+  );
+});
+
 test("GET /session/:id/p/:postId serves the viewer shell", async () => {
   const app = makeApp();
   const created = (await (
