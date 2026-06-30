@@ -33,6 +33,7 @@ import {
   type TraceStep,
 } from "./types.ts";
 import { validateSurfaces } from "./postSurfaces.ts";
+import { lintSurfaces } from "./surfaceLint.ts";
 
 export type { FeedEvent } from "./events.ts";
 
@@ -581,7 +582,8 @@ export function createApp({
     agent?: string;
     cwd?: string;
   }): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    | { surface: Post; userFeedback?: Feedback[]; warnings?: string[] }
+    | { error: string; status: 400 | 404 | 413 }
   > {
     if (input.parts.length === 0) {
       return { error: "a post needs at least one surface", status: 400 };
@@ -611,7 +613,12 @@ export function createApp({
     });
     if (!surface) return { error: "session not found", status: 404 };
     bus.broadcast({ type: "post-created", id: surface.id, sessionId, version: 1 });
-    return { surface, userFeedback: await collectFeedback(sessionId) };
+    const warnings = lintSurfaces(input.parts);
+    return {
+      surface,
+      userFeedback: await collectFeedback(sessionId),
+      ...(warnings.length && { warnings }),
+    };
   }
 
   // Store an uploaded blob. Like publishSurface, an explicit session is
@@ -654,7 +661,8 @@ export function createApp({
     id: string,
     patch: { parts?: Surface[]; title?: string },
   ): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    | { surface: Post; userFeedback?: Feedback[]; warnings?: string[] }
+    | { error: string; status: 400 | 404 | 413 }
   > {
     if (patch.parts) {
       if (patch.parts.length === 0) {
@@ -673,7 +681,12 @@ export function createApp({
       sessionId: surface.sessionId,
       version: surface.version,
     });
-    return { surface, userFeedback: await collectFeedback(surface.sessionId) };
+    const warnings = patch.parts ? lintSurfaces(patch.parts) : [];
+    return {
+      surface,
+      userFeedback: await collectFeedback(surface.sessionId),
+      ...(warnings.length && { warnings }),
+    };
   }
 
   // --- per-surface flow functions (append / replace / remove / reorder) ---
@@ -686,7 +699,8 @@ export function createApp({
     surface: Surface,
     pos?: { before?: string; after?: string },
   ): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    | { surface: Post; userFeedback?: Feedback[]; warnings?: string[] }
+    | { error: string; status: 400 | 404 | 413 }
   > {
     const existing = await store.getPost(id);
     if (!existing) return { error: "post not found", status: 404 };
@@ -710,7 +724,8 @@ export function createApp({
     target: string,
     replacement: { surface?: Surface; content?: string; kits?: unknown },
   ): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    | { surface: Post; userFeedback?: Feedback[]; warnings?: string[] }
+    | { error: string; status: 400 | 404 | 413 }
   > {
     const existing = await store.getPost(id);
     if (!existing) return { error: "post not found", status: 404 };
@@ -754,7 +769,8 @@ export function createApp({
     id: string,
     target: string,
   ): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    | { surface: Post; userFeedback?: Feedback[]; warnings?: string[] }
+    | { error: string; status: 400 | 404 | 413 }
   > {
     const existing = await store.getPost(id);
     if (!existing) return { error: "post not found", status: 404 };
@@ -771,7 +787,8 @@ export function createApp({
     id: string,
     order: (string | number)[],
   ): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    | { surface: Post; userFeedback?: Feedback[]; warnings?: string[] }
+    | { error: string; status: 400 | 404 | 413 }
   > {
     const existing = await store.getPost(id);
     if (!existing) return { error: "post not found", status: 404 };
@@ -1321,6 +1338,7 @@ export function createApp({
       {
         ...writeResult(result.surface),
         ...(result.userFeedback && { userFeedback: result.userFeedback }),
+        ...(result.warnings && { warnings: result.warnings }),
       },
       201,
     );
@@ -1355,6 +1373,7 @@ export function createApp({
     return c.json({
       ...writeResult(result.surface),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
+      ...(result.warnings && { warnings: result.warnings }),
     });
   };
   app.put("/api/surfaces/:id", revise);
@@ -1420,6 +1439,7 @@ export function createApp({
     return c.json({
       ...writeResult(result.surface),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
+      ...(result.warnings && { warnings: result.warnings }),
     });
   });
 
@@ -1442,6 +1462,7 @@ export function createApp({
     return c.json({
       ...writeResult(result.surface),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
+      ...(result.warnings && { warnings: result.warnings }),
     });
   });
 
@@ -1468,6 +1489,7 @@ export function createApp({
     return c.json({
       ...writeResult(result.surface),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
+      ...(result.warnings && { warnings: result.warnings }),
     });
   });
 
@@ -1479,6 +1501,7 @@ export function createApp({
     return c.json({
       ...writeResult(result.surface),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
+      ...(result.warnings && { warnings: result.warnings }),
     });
   });
 
@@ -1493,6 +1516,7 @@ export function createApp({
     return c.json({
       ...writeResult(result.surface),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
+      ...(result.warnings && { warnings: result.warnings }),
     });
   });
 

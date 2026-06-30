@@ -61,6 +61,45 @@ test("publish without session auto-creates one", async () => {
   assert.equal(sessions[0].surfaceCount, 1);
 });
 
+test("publishing an html surface that hardcodes colors returns a warning", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/snippets",
+    json({ html: '<div style="background:#ffffff;color:#57606a">note</div>' }),
+  );
+  assert.equal(res.status, 201);
+  const out = (await res.json()) as any;
+  assert.ok(Array.isArray(out.warnings), "response should carry a warnings array");
+  assert.match(out.warnings[0], /hardcodes colors/);
+  assert.match(out.warnings[0], /--color-\* theme tokens/);
+});
+
+test("a token-driven html surface publishes with no warnings", async () => {
+  const app = makeApp();
+  const res = await app.request(
+    "/api/snippets",
+    json({ html: '<div style="background:var(--color-background-primary)">ok</div>' }),
+  );
+  assert.equal(res.status, 201);
+  const out = (await res.json()) as any;
+  assert.equal(out.warnings, undefined);
+});
+
+test("revising into hardcoded colors warns too", async () => {
+  const app = makeApp();
+  const first = (await (
+    await app.request("/api/snippets", json({ html: "<p>clean</p>" }))
+  ).json()) as any;
+  assert.equal(first.warnings, undefined);
+  const res = await app.request(`/api/posts/${first.id}`, {
+    ...json({ surfaces: [{ kind: "html", html: '<div style="color:#111">x</div>' }] }),
+    method: "PUT",
+  });
+  assert.equal(res.status, 200);
+  const out = (await res.json()) as any;
+  assert.match(out.warnings?.[0] ?? "", /hardcodes colors/);
+});
+
 test("onEvent receives published feed events", async () => {
   const events: unknown[] = [];
   const app = makeApp(undefined, { onEvent: (event) => events.push(event) });
