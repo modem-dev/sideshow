@@ -147,11 +147,12 @@ test.describe("with the OS in dark mode", () => {
     await expect(page.locator(".card iframe[src]")).toHaveAttribute("src", /mode=light/);
   });
 
-  // The opaque html part forces `color-scheme` (so its UA scrollbars/controls
-  // match), but a markdown part's frame is transparent so the themed card shows
-  // through — forcing `color-scheme:dark` there would paint an opaque UA canvas
-  // behind it. Its tokens are still pinned dark; only color-scheme stays unset.
-  test("a transparent markdown frame is pinned dark but keeps no forced color-scheme", async ({
+  // A markdown part's frame is a sandboxed opaque-origin iframe, which defaults
+  // to `color-scheme: normal` (light): in dark mode the UA paints a WHITE canvas
+  // behind the transparent body and the dark-mode text washes out. So it pins
+  // `color-scheme` to the resolved scheme — like the html part — and the canvas
+  // tracks the dark card instead of going white.
+  test("a transparent markdown frame is pinned to the dark color-scheme", async ({
     page,
     server,
   }) => {
@@ -167,10 +168,10 @@ test.describe("with the OS in dark mode", () => {
     await expect
       .poll(() => frame.locator("body").evaluate((el) => getComputedStyle(el).color))
       .toBe("rgb(230, 237, 243)");
-    // but the root color-scheme is NOT forced, so the UA canvas stays transparent
+    // and color-scheme is pinned dark, so the UA canvas is dark, not white
     await expect
       .poll(() => frame.locator("html").evaluate((el) => getComputedStyle(el).colorScheme))
-      .not.toBe("dark");
+      .toBe("dark");
   });
 });
 
