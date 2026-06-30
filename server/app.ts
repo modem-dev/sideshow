@@ -214,24 +214,28 @@ async function fetchLatestFromRegistry(): Promise<LatestRelease | null> {
 const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 
 // html surfaces carry arbitrary markup the viewer renders via a sandboxed iframe,
-// so the card list never needs their bodies — strip them to a kind marker.
-// diff surfaces are structured data the viewer renders inline, so keep them whole.
-const stripHtmlBodies = (surfaces: Surface[]): Surface[] =>
-  surfaces.map((surface) => (surface.kind === "html" ? { kind: "html", html: "" } : surface));
+// so the card list never needs their bodies — strip them to an id+kind marker.
+// diff/markdown/etc. surfaces are structured data the viewer can render inline,
+// so keep them whole.
+const stripParts = (parts: Surface[]) =>
+  parts.map((p) => (p.kind === "html" ? { id: p.id, kind: "html" } : p));
 
-const postMeta = (post: Post) => ({
-  id: post.id,
-  sessionId: post.sessionId,
-  title: post.title,
-  createdAt: post.createdAt,
-  updatedAt: post.updatedAt,
-  version: post.version,
-  // Legacy wire name: session list responses still expose `parts` for older clients.
-  parts: stripHtmlBodies(post.surfaces),
-});
+const surfaceMeta = (s: Post) => {
+  const surfaces = stripParts(s.surfaces);
+  return {
+    id: s.id,
+    sessionId: s.sessionId,
+    title: s.title,
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+    version: s.version,
+    surfaces,
+    parts: surfaces,
+  };
+};
 
 // Cap inline preview fields so /api/surfaces/recent stays cheap while still
-// carrying a real clipped preview. Unlike stripHtmlBodies (which empties html
+// carrying a real clipped preview. Unlike stripParts (which omits html bodies
 // for the card list), this TRUNCATES large inline payloads so a feed card can render an
 // honest preview. Assets stay by-reference (assetId). When a field is clipped we
 // set `truncated:true` on that part so a client can offer a "view full post"

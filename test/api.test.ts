@@ -2248,6 +2248,38 @@ test("GET /api/sessions/:id/posts mirrors /surfaces", async () => {
   assert.equal(viaPosts.length, 1);
 });
 
+test("GET /api/sessions/:id/posts lists lean surfaces with ids and omitted html bodies", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Listed",
+        surfaces: [
+          { kind: "html", html: "<p>heavy</p>" },
+          { kind: "markdown", markdown: "# shipped" },
+        ],
+      }),
+    )
+  ).json()) as any;
+
+  const list = (await (
+    await app.request(`/api/sessions/${created.sessionId}/posts`)
+  ).json()) as any[];
+  assert.equal(list.length, 1);
+  assert.ok(Array.isArray(list[0].surfaces), "canonical key is surfaces");
+  assert.deepEqual(
+    list[0].surfaces.map((p: any) => ({ id: typeof p.id, kind: p.kind })),
+    [
+      { id: "string", kind: "html" },
+      { id: "string", kind: "markdown" },
+    ],
+  );
+  assert.ok(!("html" in list[0].surfaces[0]), "elided html body key is absent");
+  assert.equal(list[0].surfaces[1].markdown, "# shipped");
+  assert.deepEqual(list[0].parts, list[0].surfaces, "legacy parts aliases surfaces");
+});
+
 test("GET /session/:id/p/:postId serves the viewer shell", async () => {
   const app = makeApp();
   const created = (await (
