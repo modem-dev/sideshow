@@ -2436,6 +2436,8 @@ test("publish_post / update_post / list_posts MCP tools accept surfaces", async 
   const rows = JSON.parse(listed.result.content[0].text);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].id, payload.id);
+  assert.equal(rows[0].kinds, undefined);
+  assert.deepEqual(rows[0].surfaces, [{ id: upPayload.surfaces[0].id, kind: "html", index: 0 }]);
 });
 
 test("reply_to_user MCP tool accepts postId (and legacy surfaceId)", async () => {
