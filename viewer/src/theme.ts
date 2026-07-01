@@ -78,7 +78,9 @@ darkQuery?.addEventListener("change", (e) => {
 // them across the shadow boundary. Optional on the contract — the trivial
 // self-hosted host omits onThemeChange, so this no-ops there.
 function emitThemeTokens() {
-  host().onThemeChange?.(themeTokens(themeById(activeThemeState()), resolvedMode()));
+  const theme = activeThemeState();
+  const mode = resolvedMode();
+  host().onThemeChange?.(themeTokens(themeById(theme), mode), { theme, mode });
 }
 
 const STYLE_ID = "ss-theme-vars";

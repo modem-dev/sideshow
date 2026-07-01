@@ -36,7 +36,7 @@ const embedHtml = (sessionId: string) => `<!doctype html>
       navigate() {},
       subscribe() { return () => {}; },
     },
-    onThemeChange(tokens) { window.__themeCalls++; window.__tokens = tokens; },
+    onThemeChange(tokens, meta) { window.__themeCalls++; window.__tokens = tokens; window.__meta = meta; },
   });
 </script></body></html>`;
 
@@ -69,11 +69,15 @@ test("embedded engine pushes the resolved palette to the host on mount and on th
   await expect.poll(() => page.evaluate(() => window.__tokens?.["--accent"])).toBe("#0969da");
   const callsAfterMount = await page.evaluate(() => window.__themeCalls);
   expect(callsAfterMount).toBeGreaterThan(0);
+  // The same push names the resolved theme + scheme behind those tokens, so a
+  // host can reproduce them out-of-band via /s/:id?theme=&mode=.
+  expect(await page.evaluate(() => window.__meta)).toEqual({ theme: "github", mode: "light" });
 
   // Switching the theme via the engine's own picker pushes the new palette —
   // no host-side scraping involved.
   await page.locator("#themeSel").selectOption("gruvbox");
   await expect.poll(() => page.evaluate(() => window.__tokens?.["--bg"])).toBe("#f9f5d7");
+  await expect.poll(() => page.evaluate(() => window.__meta?.theme)).toBe("gruvbox");
   expect(await page.evaluate(() => window.__themeCalls)).toBeGreaterThan(callsAfterMount);
 });
 
@@ -81,5 +85,6 @@ declare global {
   interface Window {
     __themeCalls: number;
     __tokens?: Record<string, string>;
+    __meta?: { theme: string; mode: "light" | "dark" };
   }
 }

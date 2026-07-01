@@ -10,6 +10,7 @@
 // the embedder's host before <App/> renders.
 
 import type { ThemeTokens } from "../../server/theme-tokens.ts";
+import type { Mode } from "../../server/themes.ts";
 
 export type Route = { sessionId?: string | null; surfaceId?: string | null };
 export type LiveTransport = "sse" | "ws";
@@ -71,7 +72,13 @@ export interface SideshowHost {
   // router.navigate: the engine owns the themes and TELLS the host its colors,
   // so an embedder can mirror them onto its own chrome without reaching across
   // the shadow boundary. Optional — the trivial self-hosted host omits it.
-  onThemeChange?(tokens: ThemeTokens): void;
+  //
+  // `meta` names the resolved theme + scheme behind those tokens. A host that
+  // re-renders surfaces out-of-band (e.g. server-side preview frames it can't
+  // theme from the token values alone) needs the identifiers to reproduce the
+  // exact look via `/s/:id?theme=&mode=`; a host that only paints from the tokens
+  // can ignore it. Additive — the tokens argument is unchanged.
+  onThemeChange?(tokens: ThemeTokens, meta: { theme: string; mode: Mode }): void;
   // The engine calls this once, after its first session-list fetch resolves and
   // the initial board (a session, or the empty-board onboarding) has been
   // decided — i.e. the moment the engine knows what to show. An embedding host

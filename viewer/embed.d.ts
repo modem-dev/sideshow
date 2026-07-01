@@ -66,8 +66,14 @@ export interface SideshowHost {
    * `router.navigate`. A host mirrors the tokens onto its own chrome instead of
    * scraping computed styles across the shadow boundary. Optional — the trivial
    * self-hosted host omits it.
+   *
+   * `meta` names the resolved theme + scheme behind those tokens. A host that
+   * re-renders surfaces out-of-band (e.g. server-side preview frames it can't
+   * theme from the token values alone) needs the identifiers to reproduce the
+   * exact look via `/s/:id?theme=&mode=`; a host that only paints from the tokens
+   * can ignore it. Additive — the tokens argument is unchanged.
    */
-  onThemeChange?(tokens: ThemeTokens): void;
+  onThemeChange?(tokens: ThemeTokens, meta: { theme: string; mode: "light" | "dark" }): void;
   /**
    * Called once, after the engine's first session-list fetch resolves and the
    * initial board (a session, or the empty-board onboarding) is decided — the
