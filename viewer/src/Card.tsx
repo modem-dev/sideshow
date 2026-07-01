@@ -261,7 +261,15 @@ export function Card(props: { post: Post; standalone?: boolean }) {
   // becomes the target.  createEffect tracks scrollTarget(); onMount covers
   // the initial render (card ref isn't assigned when the effect first runs).
   const scrollIfTarget = () => {
-    if (!card || scrollTarget() !== props.post.id) return;
+    if (!card) return;
+    if (scrollTarget() !== props.post.id) {
+      // The target moved to another post (live auto-follow while a pin from a
+      // deep link or an earlier post is still armed): cancel ours so two pins
+      // never fight over the scroll position. scrollTarget() returning to null
+      // is the claiming card's own reset — not a move — so leave the pin alone.
+      if (scrollTarget() !== null) stopPoll?.();
+      return;
+    }
     setScrollTarget(null);
     stopPoll?.();
     stopPoll = pollScrollIntoView(card, props.post.id);
