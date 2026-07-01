@@ -79,6 +79,8 @@ const post = (url: string, body: unknown) =>
     body: JSON.stringify(body),
   }).then((r) => r.json() as Promise<any>);
 
+const surfaceKinds = (out: any) => out.surfaces.map((s: any) => s.kind);
+
 // --- version ---
 
 for (const flag of ["--version", "-V", "version"]) {
@@ -519,7 +521,7 @@ function cli(server: { url: string; session: { id: string } }, ...args: string[]
 
 // --- publish (html + combined surfaces) -----------------------------------
 
-test("publish posts an html file and prints id + url + kinds", async () => {
+test("publish posts an html file and prints id + url + surface metadata", async () => {
   const server = await serveSession();
   try {
     const file = tmpFile("card.html", "<p>hello</p>");
@@ -528,7 +530,7 @@ test("publish posts an html file and prints id + url + kinds", async () => {
     const out = JSON.parse(stdout);
     assert.equal(out.title, "Card");
     assert.equal(out.sessionId, server.session.id);
-    assert.deepEqual(out.kinds, ["html"]);
+    assert.deepEqual(surfaceKinds(out), ["html"]);
     assert.equal(out.url, `${server.url}/s/${out.id}`);
     assert.equal(out.version, 1);
   } finally {
@@ -549,7 +551,7 @@ test("publish reads html from stdin with '-'", async () => {
     );
     assert.equal(code, 0);
     const out = JSON.parse(stdout);
-    assert.deepEqual(out.kinds, ["html"]);
+    assert.deepEqual(surfaceKinds(out), ["html"]);
     const full = (await fetch(`${server.url}/api/surfaces/${out.id}`).then((r) => r.json())) as any;
     assert.equal(full.surfaces[0].html, "<p>piped</p>");
   } finally {
@@ -581,7 +583,7 @@ test("publish combines html with --md, --code, --terminal, --mermaid surfaces in
     assert.equal(exit, 0);
     const out = JSON.parse(stdout);
     // Surfaces appear in the order their flags were passed on the command line.
-    assert.deepEqual(out.kinds, ["html", "markdown", "code", "terminal", "mermaid"]);
+    assert.deepEqual(surfaceKinds(out), ["html", "markdown", "code", "terminal", "mermaid"]);
   } finally {
     await server.close();
   }
@@ -602,8 +604,8 @@ test("publish surface order follows flag order, not a fixed sequence", async () 
     assert.equal(b.code, 0);
     const outA = JSON.parse(a.stdout);
     const outB = JSON.parse(b.stdout);
-    assert.deepEqual(outA.kinds, ["html", "code", "mermaid", "markdown"]);
-    assert.deepEqual(outB.kinds, ["html", "markdown", "mermaid", "code"]);
+    assert.deepEqual(surfaceKinds(outA), ["html", "code", "mermaid", "markdown"]);
+    assert.deepEqual(surfaceKinds(outB), ["html", "markdown", "mermaid", "code"]);
   } finally {
     await server.close();
   }
@@ -626,7 +628,7 @@ test("publish surfaces with --terminal before --md produces terminal-then-markdo
     );
     assert.equal(exit, 0);
     const out = JSON.parse(stdout);
-    assert.deepEqual(out.kinds, ["html", "terminal", "markdown"]);
+    assert.deepEqual(surfaceKinds(out), ["html", "terminal", "markdown"]);
   } finally {
     await server.close();
   }
@@ -653,7 +655,7 @@ test("publish repeats a surface flag to add several of the same kind, in order",
     assert.equal(exit, 0);
     const out = JSON.parse(stdout);
     // Two diff surfaces appear, with the code surface between them in argv order.
-    assert.deepEqual(out.kinds, ["html", "diff", "code", "diff"]);
+    assert.deepEqual(surfaceKinds(out), ["html", "diff", "code", "diff"]);
     const full = (await fetch(`${server.url}/api/surfaces/${out.id}`).then((r) => r.json())) as any;
     const diffs = full.surfaces.filter((s: any) => s.kind === "diff");
     assert.equal(diffs.length, 2);
@@ -673,7 +675,7 @@ test("publish --code infers the language from the filename", async () => {
     const code = tmpFile("app.py", "print('hi')");
     const { stdout } = await cli(server, "publish", html, "--code", code);
     const out = JSON.parse(stdout);
-    assert.deepEqual(out.kinds, ["html", "code"]);
+    assert.deepEqual(surfaceKinds(out), ["html", "code"]);
     const full = (await fetch(`${server.url}/api/surfaces/${out.id}`).then((r) => r.json())) as any;
     const codeSurface = full.surfaces.find((s: any) => s.kind === "code");
     assert.equal(codeSurface.language, "python");
@@ -703,7 +705,7 @@ test("publish --diff with --layout split carries the layout on the diff surface"
     const patch = tmpFile("p.patch", "--- a/f.txt\n+++ b/f.txt\n@@ -1 +1 @@\n-old\n+new\n");
     const { stdout } = await cli(server, "publish", html, "--diff", patch, "--layout", "split");
     const out = JSON.parse(stdout);
-    assert.deepEqual(out.kinds, ["html", "diff"]);
+    assert.deepEqual(surfaceKinds(out), ["html", "diff"]);
     const full = (await fetch(`${server.url}/api/surfaces/${out.id}`).then((r) => r.json())) as any;
     assert.equal(full.surfaces.find((s: any) => s.kind === "diff").layout, "split");
   } finally {
@@ -719,7 +721,7 @@ test("diff publishes a diff-only post from a patch", async () => {
     const patch = tmpFile("p.patch", "--- a/f.txt\n+++ b/f.txt\n@@ -1 +1 @@\n-old\n+new\n");
     const { code, stdout } = await cli(server, "diff", patch, "--title", "Fix");
     assert.equal(code, 0);
-    assert.deepEqual(JSON.parse(stdout).kinds, ["diff"]);
+    assert.deepEqual(surfaceKinds(JSON.parse(stdout)), ["diff"]);
   } finally {
     await server.close();
   }
@@ -731,7 +733,7 @@ test("markdown publishes a markdown-only post", async () => {
     const md = tmpFile("m.md", "# hello\n\nbody");
     const { code, stdout } = await cli(server, "markdown", md);
     assert.equal(code, 0);
-    assert.deepEqual(JSON.parse(stdout).kinds, ["markdown"]);
+    assert.deepEqual(surfaceKinds(JSON.parse(stdout)), ["markdown"]);
   } finally {
     await server.close();
   }
@@ -826,7 +828,7 @@ test("mermaid publishes a mermaid-only post", async () => {
     const m = tmpFile("d.mmd", "graph TD; A-->B");
     const { code, stdout } = await cli(server, "mermaid", m);
     assert.equal(code, 0);
-    assert.deepEqual(JSON.parse(stdout).kinds, ["mermaid"]);
+    assert.deepEqual(surfaceKinds(JSON.parse(stdout)), ["mermaid"]);
   } finally {
     await server.close();
   }
@@ -842,7 +844,7 @@ test("trace publishes a trace asset post", async () => {
     const { code, stdout } = await cli(server, "trace", trace, "--title", "Trace");
     assert.equal(code, 0);
     const out = JSON.parse(stdout);
-    assert.deepEqual(out.kinds, ["trace"]);
+    assert.deepEqual(surfaceKinds(out), ["trace"]);
     const full = (await fetch(`${server.url}/api/posts/${out.id}`).then((r) => r.json())) as any;
     assert.equal(full.surfaces[0].kind, "trace");
     assert.ok(full.surfaces[0].assetId);
@@ -896,7 +898,7 @@ test("surface add appends a markdown surface to an existing post", async () => {
     const { code, stdout } = await cli(server, "surface", "add", id, "--md", md);
     assert.equal(code, 0);
     const out = JSON.parse(stdout);
-    assert.deepEqual(out.kinds, ["html", "markdown"]);
+    assert.deepEqual(surfaceKinds(out), ["html", "markdown"]);
 
     const full = (await fetch(`${server.url}/api/posts/${id}`).then((r) => r.json())) as any;
     assert.equal(full.surfaces[1].markdown, "# appended");
@@ -961,7 +963,7 @@ test("surface remove deletes a surface by index", async () => {
     const { code, stdout } = await cli(server, "surface", "remove", id, "1");
     assert.equal(code, 0);
     const out = JSON.parse(stdout);
-    assert.deepEqual(out.kinds, ["html"]);
+    assert.deepEqual(surfaceKinds(out), ["html"]);
   } finally {
     await server.close();
   }
@@ -1244,7 +1246,7 @@ test("image uploads bytes and publishes an image post", async () => {
     const { code, stdout } = await cli(server, "image", png, "--title", "Shot", "--caption", "hi");
     assert.equal(code, 0);
     const out = JSON.parse(stdout);
-    assert.deepEqual(out.kinds, ["image"]);
+    assert.deepEqual(surfaceKinds(out), ["image"]);
     const full = (await fetch(`${server.url}/api/surfaces/${out.id}`).then((r) => r.json())) as any;
     assert.equal(full.surfaces[0].caption, "hi");
     assert.ok(full.surfaces[0].assetId);

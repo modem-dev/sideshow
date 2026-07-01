@@ -78,6 +78,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         id: result.post.id,
         sessionId: result.post.sessionId,
         version: result.post.version,
+        surfaces: result.post.surfaces.map((p, index) => ({ id: p.id, kind: p.kind, index })),
         url: `${origin}/${seg}/${result.post.id}`,
         ...(result.userFeedback && { userFeedback: result.userFeedback }),
       },

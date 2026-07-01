@@ -394,7 +394,6 @@ const writeResult = (s: Post) => ({
   updatedAt: s.updatedAt,
   version: s.version,
   surfaces: s.surfaces.map((p, index) => ({ id: p.id, kind: p.kind, index })),
-  kinds: s.surfaces.map((p) => p.kind),
 });
 
 export interface CommentWait {

@@ -171,7 +171,7 @@ test("publishes a combined html+diff surface; /s server-renders both parts opaqu
   assert.equal(res.status, 201);
   const surface = (await res.json()) as any;
   // the write response is lean — surface ids + kinds + indexes, no part bodies echoed back
-  assert.deepEqual(surface.kinds, ["html", "diff"]);
+  assert.equal(surface.kinds, undefined);
   assert.equal(surface.parts, undefined);
   assert.deepEqual(
     surface.surfaces.map((p: any) => ({ id: typeof p.id, kind: p.kind, index: p.index })),
@@ -200,7 +200,7 @@ test("publishes a combined html+diff surface; /s server-renders both parts opaqu
       method: "PUT",
     })
   ).json()) as any;
-  assert.deepEqual(updated.kinds, ["html", "diff"]);
+  assert.equal(updated.kinds, undefined);
   assert.deepEqual(
     updated.surfaces.map((p: any) => ({ id: typeof p.id, kind: p.kind, index: p.index })),
     [
@@ -486,7 +486,10 @@ test("publishes a markdown part; /s server-renders it to sandboxed html", async 
   );
   assert.equal(res.status, 201);
   const surface = (await res.json()) as any;
-  assert.deepEqual(surface.kinds, ["markdown"]);
+  assert.deepEqual(
+    surface.surfaces.map((s: any) => s.kind),
+    ["markdown"],
+  );
 
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
   assert.equal(full.surfaces[0].kind, "markdown");
@@ -562,7 +565,10 @@ test("publishes a mermaid part; /s emits a self-rendering CDN doc", async () => 
   );
   assert.equal(res.status, 201);
   const surface = (await res.json()) as any;
-  assert.deepEqual(surface.kinds, ["mermaid"]);
+  assert.deepEqual(
+    surface.surfaces.map((s: any) => s.kind),
+    ["mermaid"],
+  );
 
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
   assert.equal(full.surfaces[0].kind, "mermaid");
@@ -592,7 +598,10 @@ test("publishes a json part; round-trips data and 404s on /s", async () => {
   );
   assert.equal(res.status, 201);
   const surface = (await res.json()) as any;
-  assert.deepEqual(surface.kinds, ["json"]);
+  assert.deepEqual(
+    surface.surfaces.map((s: any) => s.kind),
+    ["json"],
+  );
 
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
   assert.equal(full.surfaces[0].kind, "json");
@@ -630,7 +639,10 @@ test("publishes a code part; round-trips code/lang/title and 404s on /s", async 
   );
   assert.equal(res.status, 201);
   const surface = (await res.json()) as any;
-  assert.deepEqual(surface.kinds, ["code"]);
+  assert.deepEqual(
+    surface.surfaces.map((s: any) => s.kind),
+    ["code"],
+  );
 
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
   assert.equal(full.surfaces[0].kind, "code");
@@ -2092,7 +2104,10 @@ test("POST /api/posts accepts a surfaces body and aliases /api/surfaces reads", 
   assert.equal(res.status, 201);
   const created = (await res.json()) as any;
   assert.ok(created.id && created.sessionId);
-  assert.deepEqual(created.kinds, ["html"]);
+  assert.deepEqual(
+    created.surfaces.map((s: any) => s.kind),
+    ["html"],
+  );
 
   // GET /api/posts/:id is identical to GET /api/surfaces/:id
   const viaPosts = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
@@ -2379,6 +2394,11 @@ test("publish_post / update_post / list_posts MCP tools accept surfaces", async 
   ).json()) as any;
   const payload = JSON.parse(published.result.content[0].text);
   assert.ok(payload.id && payload.sessionId);
+  assert.equal(payload.kinds, undefined);
+  assert.deepEqual(
+    payload.surfaces.map((s: any) => s.kind),
+    ["diff"],
+  );
   // new tools emit the canonical /p/ path
   assert.ok(payload.url.includes(`/p/${payload.id}`));
   const full = (await (await app.request(`/api/posts/${payload.id}`)).json()) as any;
@@ -2396,6 +2416,11 @@ test("publish_post / update_post / list_posts MCP tools accept surfaces", async 
   ).json()) as any;
   const upPayload = JSON.parse(updated.result.content[0].text);
   assert.equal(upPayload.version, 2);
+  assert.equal(upPayload.kinds, undefined);
+  assert.deepEqual(
+    upPayload.surfaces.map((s: any) => s.kind),
+    ["html"],
+  );
   assert.ok(upPayload.url.includes(`/p/${payload.id}`));
 
   // list_posts scoped to the session
@@ -2803,7 +2828,10 @@ test("POST /api/posts/:id/surfaces appends a surface", async () => {
   );
   assert.equal(res.status, 200);
   const updated = (await res.json()) as any;
-  assert.deepEqual(updated.kinds, ["html", "markdown"]);
+  assert.deepEqual(
+    updated.surfaces.map((s: any) => s.kind),
+    ["html", "markdown"],
+  );
 
   const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
   assert.equal(full.surfaces.length, 2);
