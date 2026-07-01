@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { coerceParts } from "../server/mcpHttp.ts";
+import { coerceSurfaces, validateSurfaces } from "../server/postSurfaces.ts";
 import {
   collectAssetIds,
   type EvictionCandidate,
@@ -8,7 +8,6 @@ import {
   selectEvictions,
   type Surface,
 } from "../server/types.ts";
-import { validateSurfaces } from "../server/postSurfaces.ts";
 
 // --- selectEvictions ---
 
@@ -54,7 +53,7 @@ test("selectEvictions falls back to referenced assets only as a last resort", ()
 // --- collectAssetIds ---
 
 test("collectAssetIds gathers image and trace asset ids, ignoring html/diff", () => {
-  const parts: Surface[] = [
+  const surfaces: Surface[] = [
     { kind: "html", html: "<img src=/a/raw>" }, // raw-url embeds are invisible here
     { kind: "diff", patch: "x" },
     { kind: "image", assetId: "img1" },
@@ -62,7 +61,7 @@ test("collectAssetIds gathers image and trace asset ids, ignoring html/diff", ()
     { kind: "trace", steps: [{ label: "inline only" }] }, // no assetId -> nothing
   ];
   const out = new Set<string>();
-  collectAssetIds(parts, out);
+  collectAssetIds(surfaces, out);
   assert.deepEqual([...out].sort(), ["img1", "tr1"]);
 });
 
@@ -76,9 +75,9 @@ test("surfacesByteLength counts image/trace surfaces without throwing", () => {
   assert.ok(n > 0);
 });
 
-// --- SurfacePart validation/coercion ---
+// --- Surface validation/coercion ---
 
-test("validateSurfaces accepts all supported part kinds", async () => {
+test("validateSurfaces accepts all supported surface kinds", async () => {
   const result = await validateSurfaces([
     { kind: "html", html: "<p>x</p>" },
     { kind: "html", html: "<div class=tree></div>", kits: ["issues"] },
@@ -98,7 +97,7 @@ test("validateSurfaces accepts all supported part kinds", async () => {
   assert.equal(result.ok, true);
   if (result.ok)
     assert.deepEqual(
-      result.parts.map((p) => p.kind),
+      result.surfaces.map((p) => p.kind),
       [
         "html",
         "html",
@@ -118,8 +117,8 @@ test("validateSurfaces accepts all supported part kinds", async () => {
     );
 });
 
-test("validateSurfaces rejects malformed parts", async () => {
-  for (const parts of [
+test("validateSurfaces rejects malformed surfaces", async () => {
+  for (const surfaces of [
     [{ kind: "html", html: 1 }],
     [{ kind: "html", html: "<p>x</p>", kits: ["nope"] }], // unknown kit id (strict)
     [{ kind: "diff" }],
@@ -131,8 +130,8 @@ test("validateSurfaces rejects malformed parts", async () => {
     [{ kind: "code" }], // missing code
     [{ kind: "unknown" }],
   ]) {
-    const result = await validateSurfaces(parts);
-    assert.equal(result.ok, false, JSON.stringify(parts));
+    const result = await validateSurfaces(surfaces);
+    assert.equal(result.ok, false, JSON.stringify(surfaces));
   }
 });
 
@@ -206,47 +205,47 @@ test("validateSurfaces rejects invalid mermaid with a parse error (supported typ
       false,
       `mermaid ${JSON.stringify(mermaid).slice(0, 40)} should be rejected`,
     );
-    if (!result.ok) assert.match(result.error, /mermaid part failed to parse/);
+    if (!result.ok) assert.match(result.error, /mermaid surface failed to parse/);
   }
 });
 
-test("coerceParts drops an invalid mermaid part but keeps a valid one", async () => {
-  const parts = await coerceParts([
+test("coerceSurfaces drops an invalid mermaid surface but keeps a valid one", async () => {
+  const surfaces = await coerceSurfaces([
     { kind: "mermaid", mermaid: 'pie title Pets\n  "Dogs" : 386' },
     { kind: "mermaid", mermaid: "pie\n  !!broken!!" }, // dropped (parse error)
     { kind: "html", html: "<p>kept</p>" },
   ]);
-  assert.equal(parts.length, 2);
-  assert.equal(parts[0].kind, "mermaid");
-  assert.equal(parts[1].kind, "html");
+  assert.equal(surfaces.length, 2);
+  assert.equal(surfaces[0].kind, "mermaid");
+  assert.equal(surfaces[1].kind, "html");
 });
 
-test("coerceParts drops a diff patch with no content but keeps a valid one", async () => {
-  const parts = await coerceParts([
+test("coerceSurfaces drops a diff patch with no content but keeps a valid one", async () => {
+  const surfaces = await coerceSurfaces([
     { kind: "diff", patch: "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b" },
     { kind: "diff", patch: "not a patch" }, // dropped (no content)
     { kind: "html", html: "<p>kept</p>" },
   ]);
-  assert.equal(parts.length, 2);
-  assert.equal(parts[0].kind, "diff");
-  assert.equal(parts[1].kind, "html");
+  assert.equal(surfaces.length, 2);
+  assert.equal(surfaces[0].kind, "diff");
+  assert.equal(surfaces[1].kind, "html");
 });
 
-test("coerceParts keeps valid image parts and drops ones without an assetId", async () => {
-  const parts = await coerceParts([
+test("coerceSurfaces keeps valid image surfaces and drops ones without an assetId", async () => {
+  const surfaces = await coerceSurfaces([
     { kind: "image", assetId: "x", alt: "a", caption: "c" },
     { kind: "image" }, // no assetId -> dropped
   ]);
-  assert.deepEqual(parts, [{ kind: "image", assetId: "x", alt: "a", caption: "c" }]);
+  assert.deepEqual(surfaces, [{ kind: "image", assetId: "x", alt: "a", caption: "c" }]);
 });
 
-test("coerceParts accepts trace by steps, by assetId, or both; drops empty/malformed", async () => {
-  const parts = await coerceParts([
+test("coerceSurfaces accepts trace by steps, by assetId, or both; drops empty/malformed", async () => {
+  const surfaces = await coerceSurfaces([
     { kind: "trace", steps: [{ label: "ok" }, { detail: "no label" }], title: "T" },
     { kind: "trace", assetId: "file1" },
     { kind: "trace" }, // neither steps nor assetId -> dropped
   ]);
-  assert.deepEqual(parts, [
+  assert.deepEqual(surfaces, [
     { kind: "trace", steps: [{ label: "ok" }], title: "T" },
     { kind: "trace", assetId: "file1" },
   ]);

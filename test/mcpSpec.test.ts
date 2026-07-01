@@ -3,7 +3,16 @@ import { test } from "node:test";
 import { z } from "zod";
 import { HTTP_MCP_TOOLS, STDIO_MCP_INPUT_SCHEMAS } from "../server/mcpSpec.ts";
 import { validateSurfaces } from "../server/postSurfaces.ts";
-import { SURFACE_KINDS, type Surface } from "../server/types.ts";
+import {
+  isSandboxedSurfaceKind,
+  isSurfaceKind,
+  SANDBOXED_SURFACE_KINDS,
+  SURFACE_CONTENT_FIELDS,
+  SURFACE_FRAME_CLASSES,
+  SURFACE_KIND_METADATA,
+  SURFACE_KINDS,
+  type Surface,
+} from "../server/types.ts";
 
 // This suite is the guard against the regression where `json` and `code`
 // surfaces shipped to CLI/REST but were never added to the MCP tool schemas —
@@ -72,4 +81,23 @@ test("the runtime validator accepts a minimal example of every kind", async () =
     const result = await validateSurfaces([EXAMPLES[kind]]);
     assert.ok(result.ok, `validator rejected kind "${kind}": ${result.ok ? "" : result.error}`);
   }
+});
+
+test("surface-kind metadata covers every kind and drives derived helpers", () => {
+  assert.deepEqual(Object.keys(SURFACE_KIND_METADATA).sort(), [...SURFACE_KINDS].sort());
+  for (const kind of SURFACE_KINDS) {
+    assert.equal(isSurfaceKind(kind), true);
+    assert.equal(isSandboxedSurfaceKind(kind), SANDBOXED_SURFACE_KINDS.includes(kind));
+    if (SURFACE_KIND_METADATA[kind].sandboxed) {
+      assert.ok(isSandboxedSurfaceKind(kind));
+    }
+  }
+  assert.equal(isSurfaceKind("bogus"), false);
+  assert.equal(isSurfaceKind("toString"), false);
+  assert.equal(isSandboxedSurfaceKind("bogus"), false);
+  assert.equal(SURFACE_CONTENT_FIELDS.html, "html");
+  assert.equal(SURFACE_CONTENT_FIELDS.diff, "patch");
+  assert.equal(SURFACE_CONTENT_FIELDS.json, "data");
+  assert.equal(SURFACE_FRAME_CLASSES.markdown, "mdframe");
+  assert.equal(SURFACE_FRAME_CLASSES.html, undefined);
 });

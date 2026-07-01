@@ -64,6 +64,7 @@ export interface McpDeps {
 // Coerce loosely-typed tool args into a validated Surface[]. Unknown kinds
 // and empty surfaces are dropped rather than rejected, so a slightly-off call
 // still publishes what it can.
+// Deprecated alias retained for older deep imports that used the legacy name.
 export const coerceParts = coerceSurfaces;
 
 export function registerMcp(app: Hono, deps: McpDeps) {
@@ -93,8 +94,8 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         const blocks = name === "publish_post" ? (args.surfaces ?? args.parts) : args.parts;
         const surfaces =
           name === "publish_snippet"
-            ? await coerceParts([htmlSurface(String(args.html ?? ""), args.kits)])
-            : await coerceParts(blocks);
+            ? await coerceSurfaces([htmlSurface(String(args.html ?? ""), args.kits)])
+            : await coerceSurfaces(blocks);
         if (surfaces.length === 0) {
           throw new Error("a post needs at least one surface");
         }
@@ -116,10 +117,10 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         };
         if (name === "update_snippet") {
           if (typeof args.html === "string")
-            patch.surfaces = await coerceParts([htmlSurface(args.html, args.kits)]);
+            patch.surfaces = await coerceSurfaces([htmlSurface(args.html, args.kits)]);
         } else {
           const blocks = name === "update_post" ? (args.surfaces ?? args.parts) : args.parts;
-          if (blocks !== undefined) patch.surfaces = await coerceParts(blocks);
+          if (blocks !== undefined) patch.surfaces = await coerceSurfaces(blocks);
         }
         const result = await deps.revisePost(String(args.id ?? ""), patch);
         if ("error" in result) throw new Error(result.error);
@@ -210,7 +211,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       case "get_design_guide":
         return deps.guide;
       case "add_surface": {
-        const surfaces = await coerceParts([args.surface]);
+        const surfaces = await coerceSurfaces([args.surface]);
         if (surfaces.length === 0) throw new Error("invalid surface");
         const result = await deps.appendPostSurface(String(args.postId ?? ""), surfaces[0], {
           before: typeof args.before === "string" ? args.before : undefined,
@@ -222,7 +223,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       case "edit_surface": {
         let surface: Surface | undefined;
         if (args.surface !== undefined) {
-          const surfaces = await coerceParts([args.surface]);
+          const surfaces = await coerceSurfaces([args.surface]);
           if (surfaces.length === 0) throw new Error("invalid surface");
           surface = surfaces[0];
         }

@@ -31,6 +31,7 @@ import {
   type CommentAnchor,
   type DiffSurface,
   htmlSurface,
+  isSandboxedSurfaceKind,
   type MarkdownSurface,
   MAX_ASSET_BYTES,
   surfacesByteLength,
@@ -38,6 +39,7 @@ import {
   type Store,
   type Post,
   type Surface,
+  SURFACE_CONTENT_FIELDS,
   type TerminalSurface,
   type TraceStep,
 } from "./types.ts";
@@ -310,7 +312,7 @@ export function createApp({
   // Rendered-document cache for /s/:id rich surfaces. Rendering a markdown/code/
   // diff surface runs shiki / @pierre-diffs SSR, which is non-trivial (a big diff
   // is tens of ms + tens of KB), so memoize the finished document string. The
-  // key pins everything the output depends on — post id, part index, the
+  // key pins everything the output depends on — post id, surface index, the
   // RESOLVED version number, theme, mode — and a version's content is immutable,
   // so a hit is always correct (a post edit bumps the version → a new key).
   // Bounded + FIFO-evicted: a dropped entry costs a re-render, never
@@ -382,19 +384,6 @@ export function createApp({
     return feedback.length > 0 ? feedback.map(feedbackView) : undefined;
   }
 
-  // Maps a surface kind to its primary content field — used by content-only
-  // updates (PATCH with `content`) to slot a raw string into the right field
-  // while preserving extra fields (language, cols, layout, etc.).
-  const CONTENT_FIELD: Record<string, string> = {
-    html: "html",
-    markdown: "markdown",
-    mermaid: "mermaid",
-    diff: "patch",
-    terminal: "text",
-    code: "code",
-    json: "data",
-  };
-
   // Find a surface's index by id (first match) or 0-based numeric index.
   function findSurfaceIndex(surfaces: Surface[], target: string): number {
     const byId = surfaces.findIndex((s) => s.id === target);
@@ -408,7 +397,7 @@ export function createApp({
   // extra fields. Returns null if the kind has no content field or JSON parse
   // fails. The caller handles error reporting.
   function applyContent(surface: Surface, content: string, kits?: unknown): Surface | null {
-    const field = CONTENT_FIELD[surface.kind];
+    const field = SURFACE_CONTENT_FIELDS[surface.kind];
     if (!field) return null;
     let value: unknown = content;
     if (surface.kind === "json") {
@@ -601,7 +590,7 @@ export function createApp({
     // The validator strips the id field (zod schemas don't declare it), so
     // re-apply the target's id after validation to preserve surface identity.
     const surfaces = [...existing.surfaces];
-    surfaces[idx] = { ...parsed.parts[0], id: existing.surfaces[idx].id };
+    surfaces[idx] = { ...parsed.surfaces[0], id: existing.surfaces[idx].id };
     return revisePost(id, { surfaces });
   }
 
@@ -1002,7 +991,7 @@ export function createApp({
     return c.json(sessions.map((s) => sessionRowView(s, counts.get(s.id) ?? 0)));
   });
 
-  // --- recent surfaces (post-grained feed source) ---
+  // --- recent posts (post-grained feed source) ---
   //
   // The N most-recently-updated posts across ALL sessions, newest first — one
   // row per post (post-grained), distinct from the session-grained GET
@@ -1128,7 +1117,7 @@ export function createApp({
     }
     const parsed = await validateSurfaces(blocks);
     if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-    return publish(c, body, parsed.parts);
+    return publish(c, body, parsed.surfaces);
   };
   app.post("/api/posts", publishPost); // canonical
   app.post("/api/surfaces", publishPost);
@@ -1143,7 +1132,7 @@ export function createApp({
     }
     const parsed = await validateSurfaces([htmlSurface(body.html, body.kits)]);
     if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-    return publish(c, body, parsed.parts);
+    return publish(c, body, parsed.surfaces);
   });
 
   async function publish(c: any, body: any, surfaces: Surface[]) {
@@ -1180,11 +1169,11 @@ export function createApp({
       }
       const parsed = await validateSurfaces(blocks);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-      surfaces = parsed.parts;
+      surfaces = parsed.surfaces;
     } else if (typeof body.html === "string") {
       const parsed = await validateSurfaces([htmlSurface(body.html, body.kits)]);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-      surfaces = parsed.parts;
+      surfaces = parsed.surfaces;
     }
     const result = await revisePost(c.req.param("id"), {
       surfaces,
@@ -1249,7 +1238,7 @@ export function createApp({
       const parsed = await validateSurfaces([updated]);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
       surfaces = [...existing.surfaces];
-      surfaces[targetIdx] = { ...parsed.parts[0], id: existing.surfaces[targetIdx].id };
+      surfaces[targetIdx] = { ...parsed.surfaces[0], id: existing.surfaces[targetIdx].id };
     }
     const result = await revisePost(c.req.param("id"), {
       surfaces,
@@ -1273,7 +1262,7 @@ export function createApp({
     }
     const parsed = await validateSurfaces([body.surface]);
     if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-    const result = await appendPostSurface(c.req.param("id"), parsed.parts[0], {
+    const result = await appendPostSurface(c.req.param("id"), parsed.surfaces[0], {
       before: body.before,
       after: body.after,
     });
@@ -1296,7 +1285,7 @@ export function createApp({
     if (body.surface !== undefined) {
       const parsed = await validateSurfaces([body.surface]);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-      surface = parsed.parts[0];
+      surface = parsed.surfaces[0];
     }
     const result = await replacePostSurface(c.req.param("id"), c.req.param("target"), {
       surface,
@@ -1450,8 +1439,9 @@ export function createApp({
   const renderPostPage = async (c: any) => {
     const post = await store.getPost(c.req.param("id"));
     if (!post) return c.text("Post not found", 404);
-    const partParam = c.req.query("surface") ?? c.req.query("part");
-    if (partParam == null) return c.html(configuredViewerHtml(c, { post }));
+    // `part` is the legacy query key; `surface` is canonical.
+    const surfaceParam = c.req.query("surface") ?? c.req.query("part");
+    if (surfaceParam == null) return c.html(configuredViewerHtml(c, { post }));
 
     const ver = c.req.query("ver");
     let title = post.title;
@@ -1464,12 +1454,11 @@ export function createApp({
       surfaces = old.surfaces;
       version = old.version;
     }
-    const idx = Number(partParam ?? 0);
-    const part = surfaces[idx];
+    const idx = Number(surfaceParam ?? 0);
+    const surface = surfaces[idx];
     // Only the kinds that become HTML are served here. Image/trace/json render
     // natively in the viewer and must not be reachable as a document.
-    const SANDBOXED = ["html", "markdown", "code", "diff", "terminal", "mermaid"];
-    if (!part || !SANDBOXED.includes(part.kind)) {
+    if (!surface || !isSandboxedSurfaceKind(surface.kind)) {
       return c.text("No renderable surface at that index", 404);
     }
     c.header("X-Content-Type-Options", "nosniff");
@@ -1505,20 +1494,27 @@ export function createApp({
     else c.header("Cache-Control", "private, no-cache");
 
     const doc = await cachedRender(cacheKey, async () => {
-      if (part.kind === "html") {
-        return renderHtmlPage({ title, html: part.html, origin, theme, mode, kits: part.kits });
+      if (surface.kind === "html") {
+        return renderHtmlPage({
+          title,
+          html: surface.html,
+          origin,
+          theme,
+          mode,
+          kits: surface.kits,
+        });
       }
-      if (part.kind === "mermaid") {
-        return renderMermaidPage({ mermaid: part.mermaid, origin, theme, mode });
+      if (surface.kind === "mermaid") {
+        return renderMermaidPage({ mermaid: surface.mermaid, origin, theme, mode });
       }
       const rendered =
-        part.kind === "markdown"
-          ? await renderMarkdown(part as MarkdownSurface, { theme: themeId, mode })
-          : part.kind === "code"
-            ? await renderCode(part as CodeSurface, { theme: themeId, mode })
-            : part.kind === "terminal"
-              ? renderTerminal(part as TerminalSurface)
-              : await renderDiff(part as DiffSurface, { theme: themeId, mode }).catch((e) => ({
+        surface.kind === "markdown"
+          ? await renderMarkdown(surface as MarkdownSurface, { theme: themeId, mode })
+          : surface.kind === "code"
+            ? await renderCode(surface as CodeSurface, { theme: themeId, mode })
+            : surface.kind === "terminal"
+              ? renderTerminal(surface as TerminalSurface)
+              : await renderDiff(surface as DiffSurface, { theme: themeId, mode }).catch((e) => ({
                   body: `<div class="rich-error">Couldn’t render diff — ${escapeHtml(
                     e instanceof Error ? e.message : "render error",
                   )}</div>`,

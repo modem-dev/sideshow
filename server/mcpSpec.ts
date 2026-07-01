@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { KIT_IDS } from "./kits.ts";
-import { SURFACE_KINDS, type SurfaceKind } from "./types.ts";
+import { SURFACE_KIND_LIST, SURFACE_KINDS, type SurfaceKind } from "./types.ts";
 
 export const MCP_SERVER_INFO = { name: "sideshow", version: "0.1.0" };
 
@@ -155,10 +155,8 @@ const MCP_SURFACES_JSON_SCHEMA = {
 } as const;
 
 export const MCP_TOOL_DESCRIPTIONS = {
-  publishPostHttp:
-    "Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id, view URL, sessionId, and the new surface ids (use them to target a surface for later edits without a get_post round-trip) — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
-  publishPostStdio:
-    "Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id, view URL, and the new surface ids (use them to target a surface for later edits without a get_post round-trip). On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+  publishPostHttp: `Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (${SURFACE_KIND_LIST}). Returns the post id, view URL, sessionId, and the new surface ids (use them to target a surface for later edits without a get_post round-trip) — pass sessionId as \`session\` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.`,
+  publishPostStdio: `Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (${SURFACE_KIND_LIST}). Returns the post id, view URL, and the new surface ids (use them to target a surface for later edits without a get_post round-trip). On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.`,
   updatePost:
     "Revise a post in place (same card, new version). Prefer this over publishing a near-duplicate. Pass the full replacement surfaces array. Returns the new surface ids (use them to target a surface for later edits without a get_post round-trip). If the result includes userFeedback, read it.",
   listPostsHttp:
@@ -167,10 +165,8 @@ export const MCP_TOOL_DESCRIPTIONS = {
     "List posts in this conversation's session. Returns lean post rows with surfaces as `{id, kind, index}` metadata (no surface bodies).",
   getPost:
     "Fetch a single post by id — returns the full post object including surfaces (with their ids and 0-based indexes), version, and history. Use this to recover surface ids (or indexes) for per-surface operations (edit_surface, remove_surface, reorder_surfaces) after a context compaction, or to inspect a post's current state before editing.",
-  publishSurfaceHttp:
-    "Deprecated alias of publish_post — Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id, view URL, and sessionId — pass sessionId as `session` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
-  publishSurfaceStdio:
-    "Deprecated alias of publish_post — Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (html, markdown, mermaid, diff, image, trace, terminal, json, code). Returns the post id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.",
+  publishSurfaceHttp: `Deprecated alias of publish_post — Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (${SURFACE_KIND_LIST}). Returns the post id, view URL, and sessionId — pass sessionId as \`session\` on later calls. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.`,
+  publishSurfaceStdio: `Deprecated alias of publish_post — Publish a post to the user's sideshow workspace. A post is an ordered list of surfaces (${SURFACE_KIND_LIST}). Returns the post id and view URL. On your first publish, pass sessionTitle naming the task. If the result includes userFeedback, those are new comments from the user. Call get_design_guide first if you have not this session.`,
   updateSurface:
     "Deprecated alias of update_post — Revise a post in place (same card, new version). Prefer this over publishing a near-duplicate. Pass the full replacement surfaces array. If the result includes userFeedback, read it.",
   publishSnippet:
@@ -445,7 +441,7 @@ const traceStepSchema = z.object({
   ts: z.string().optional().describe(d.traceTs),
 });
 
-const mcpPartSchema = z
+const mcpSurfaceSchema = z
   .object({
     kind: z.enum(PART_KIND_ENUM),
     html: z.string().optional().describe(d.surfaceHtml),
@@ -478,12 +474,12 @@ const mcpPartSchema = z
 export const STDIO_MCP_INPUT_SCHEMAS = {
   publishPost: {
     title: z.string().describe(d.title),
-    surfaces: z.array(mcpPartSchema).describe(MCP_SURFACES_DESCRIPTION),
+    surfaces: z.array(mcpSurfaceSchema).describe(MCP_SURFACES_DESCRIPTION),
     sessionTitle: z.string().optional().describe(d.stdioSessionTitle),
   },
   updatePost: {
     id: z.string().describe(d.surfaceId),
-    surfaces: z.array(mcpPartSchema).optional().describe(d.replacementParts),
+    surfaces: z.array(mcpSurfaceSchema).optional().describe(d.replacementParts),
     title: z.string().optional().describe(d.replacementTitle),
   },
   getPost: {
@@ -491,12 +487,12 @@ export const STDIO_MCP_INPUT_SCHEMAS = {
   },
   publishSurface: {
     title: z.string().describe(d.title),
-    parts: z.array(mcpPartSchema).describe(MCP_SURFACES_DESCRIPTION),
+    parts: z.array(mcpSurfaceSchema).describe(MCP_SURFACES_DESCRIPTION),
     sessionTitle: z.string().optional().describe(d.stdioSessionTitle),
   },
   updateSurface: {
     id: z.string().describe(d.surfaceId),
-    parts: z.array(mcpPartSchema).optional().describe(d.replacementParts),
+    parts: z.array(mcpSurfaceSchema).optional().describe(d.replacementParts),
     title: z.string().optional().describe(d.replacementTitle),
   },
   publishSnippet: {
@@ -535,14 +531,14 @@ export const STDIO_MCP_INPUT_SCHEMAS = {
   },
   addSurface: {
     postId: z.string().describe(d.surfaceId),
-    surface: mcpPartSchema.describe("Surface to append"),
+    surface: mcpSurfaceSchema.describe("Surface to append"),
     before: z.string().optional().describe(d.surfaceTarget),
     after: z.string().optional().describe(d.surfaceTarget),
   },
   editSurface: {
     postId: z.string().describe(d.surfaceId),
     target: z.string().describe(d.surfaceTarget),
-    surface: mcpPartSchema.optional().describe("Full replacement surface"),
+    surface: mcpSurfaceSchema.optional().describe("Full replacement surface"),
     content: z
       .string()
       .optional()

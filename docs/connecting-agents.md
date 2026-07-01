@@ -94,6 +94,6 @@ shows the same steps. The plugin lives in [`../plugin/`](../plugin/).
 `/agent-howto` is the current operational playbook for agents: publishing,
 feedback, CLI/MCP/curl choices, and gotchas. The contract at `/guide` is the
 lower-level design reference: fragment-only HTML, theme CSS variables, dark mode
-rules, and when to reach for each part kind. Agents should fetch the instructions
+rules, and when to reach for each surface kind. Agents should fetch the instructions
 first, then fetch the guide once before their first publish (`sideshow guide`,
 `get_design_guide`, or `curl -s …/guide`).

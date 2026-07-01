@@ -2,9 +2,11 @@ import { z } from "zod";
 import { processFile, parsePatchFiles } from "@pierre/diffs";
 import { parse as parseMermaid } from "@mermaid-js/parser";
 import { isKnownKit, KIT_IDS } from "./kits.ts";
-import type { Surface } from "./types.ts";
+import { isSurfaceKind, type Surface, type SurfaceKind } from "./types.ts";
 
-export interface SurfacePartParseResult {
+export interface SurfaceParseResult {
+  surfaces: Surface[];
+  // Deprecated compatibility alias for older deep imports.
   parts: Surface[];
   errors: string[];
 }
@@ -82,14 +84,14 @@ const filteredArray = <T>(schema: z.ZodType<T, z.ZodTypeDef, any>) =>
 const strictKitId = z.string().refine(isKnownKit, (id) => ({
   message: `unknown kit "${id}" — known: ${KIT_IDS.join(", ")}`,
 }));
-const strictHtmlPart = z.object({
+const strictHtmlSurface = z.object({
   kind: z.literal("html"),
   html: requiredString("html"),
   kits: z.array(strictKitId).optional(),
 });
 // Loose mode keeps only known kit ids and omits the field entirely when none
 // remain — so a junk `kits` never lingers as an empty or undefined key.
-const looseHtmlPart = z
+const looseHtmlSurface = z
   .object({
     kind: z.literal("html"),
     html: requiredString("html"),
@@ -100,29 +102,29 @@ const looseHtmlPart = z
     return { kind: "html" as const, html: p.html, ...(kits.length > 0 ? { kits } : {}) };
   });
 
-const strictMarkdownPart = z.object({
+const strictMarkdownSurface = z.object({
   kind: z.literal("markdown"),
   markdown: requiredString("markdown"),
 });
 // Loose mode drops a blank markdown surface rather than publishing an empty card.
-const looseMarkdownPart = z
+const looseMarkdownSurface = z
   .object({ kind: z.literal("markdown"), markdown: z.string() })
   .refine((p) => p.markdown.trim().length > 0, {
     message: 'markdown surface requires non-empty "markdown"',
   });
 
-const strictMermaidPart = z.object({
+const strictMermaidSurface = z.object({
   kind: z.literal("mermaid"),
   mermaid: requiredString("mermaid"),
 });
 // Loose mode drops a blank mermaid surface rather than publishing an empty card.
-const looseMermaidPart = z
+const looseMermaidSurface = z
   .object({ kind: z.literal("mermaid"), mermaid: z.string() })
   .refine((p) => p.mermaid.trim().length > 0, {
     message: 'mermaid surface requires non-empty "mermaid"',
   });
 
-const strictDiffPart = z
+const strictDiffSurface = z
   .object({
     kind: z.literal("diff"),
     patch: z.string().optional(),
@@ -132,7 +134,7 @@ const strictDiffPart = z
   .refine((p) => !!p.patch || (p.files?.length ?? 0) > 0, {
     message: 'diff surface requires string "patch" or non-empty "files"',
   });
-const looseDiffPart = z
+const looseDiffSurface = z
   .object({
     kind: z.literal("diff"),
     patch: optionalLooseString,
@@ -143,20 +145,20 @@ const looseDiffPart = z
     message: 'diff surface requires string "patch" or non-empty "files"',
   });
 
-const strictImagePart = z.object({
+const strictImageSurface = z.object({
   kind: z.literal("image"),
   assetId: requiredString("assetId"),
   alt: z.string().optional(),
   caption: z.string().optional(),
 });
-const looseImagePart = z.object({
+const looseImageSurface = z.object({
   kind: z.literal("image"),
   assetId: z.string(),
   alt: optionalLooseString,
   caption: optionalLooseString,
 });
 
-const strictTracePart = z
+const strictTraceSurface = z
   .object({
     kind: z.literal("trace"),
     steps: z.array(strictTraceStep).optional(),
@@ -166,7 +168,7 @@ const strictTracePart = z
   .refine((p) => !!p.assetId || (p.steps?.length ?? 0) > 0, {
     message: 'trace surface requires "assetId" or non-empty "steps"',
   });
-const looseTracePart = z
+const looseTraceSurface = z
   .object({
     kind: z.literal("trace"),
     steps: filteredArray(looseTraceStep).optional(),
@@ -177,13 +179,13 @@ const looseTracePart = z
     message: 'trace surface requires "assetId" or non-empty "steps"',
   });
 
-const strictTerminalPart = z.object({
+const strictTerminalSurface = z.object({
   kind: z.literal("terminal"),
   text: requiredString("text"),
   cols: z.number().optional(),
   title: z.string().optional(),
 });
-const looseTerminalPart = z.object({
+const looseTerminalSurface = z.object({
   kind: z.literal("terminal"),
   text: z.string(),
   cols: optionalLooseNumber,
@@ -195,7 +197,7 @@ const looseTerminalPart = z.object({
 // drops the surface if `data` is absent. The transform fixes zod's inference:
 // z.unknown() marks the key optional, but data is always present after the
 // refine, so the output type must be { kind: "json"; data: unknown }.
-const strictJsonPart = z
+const strictJsonSurface = z
   .object({
     kind: z.literal("json"),
     data: z.unknown(),
@@ -204,7 +206,7 @@ const strictJsonPart = z
     message: 'json surface requires "data"',
   })
   .transform((p) => ({ kind: "json" as const, data: p.data }));
-const looseJsonPart = z
+const looseJsonSurface = z
   .object({
     kind: z.literal("json"),
     data: z.unknown(),
@@ -214,14 +216,14 @@ const looseJsonPart = z
   })
   .transform((p) => ({ kind: "json" as const, data: p.data }));
 
-const strictCodePart = z.object({
+const strictCodeSurface = z.object({
   kind: z.literal("code"),
   code: requiredString("code"),
   language: z.string().optional(),
   title: z.string().optional(),
   lineStart: z.number().int().min(1).optional(),
 });
-const looseCodePart = z.object({
+const looseCodeSurface = z.object({
   kind: z.literal("code"),
   code: z.string(),
   language: optionalLooseString,
@@ -229,56 +231,72 @@ const looseCodePart = z.object({
   lineStart: optionalLooseNumber,
 });
 
-const looseSurfacePart = z.union([
-  looseHtmlPart,
-  looseMarkdownPart,
-  looseMermaidPart,
-  looseDiffPart,
-  looseImagePart,
-  looseTracePart,
-  looseTerminalPart,
-  looseJsonPart,
-  looseCodePart,
+const looseSurfaceSchema = z.union([
+  looseHtmlSurface,
+  looseMarkdownSurface,
+  looseMermaidSurface,
+  looseDiffSurface,
+  looseImageSurface,
+  looseTraceSurface,
+  looseTerminalSurface,
+  looseJsonSurface,
+  looseCodeSurface,
 ]);
 
-// Runtime SurfacePart parser shared by REST and MCP. REST uses strict mode to
+const strictSurfaceSchemas = {
+  html: strictHtmlSurface,
+  markdown: strictMarkdownSurface,
+  mermaid: strictMermaidSurface,
+  diff: strictDiffSurface,
+  image: strictImageSurface,
+  trace: strictTraceSurface,
+  terminal: strictTerminalSurface,
+  json: strictJsonSurface,
+  code: strictCodeSurface,
+} satisfies Record<SurfaceKind, z.ZodType<Surface, z.ZodTypeDef, any>>;
+
+// Runtime surface parser shared by REST and MCP. REST uses strict mode to
 // reject malformed input before it reaches storage; MCP uses tolerant mode so
-// slightly-off tool calls still publish whatever valid parts they contain.
+// slightly-off tool calls still publish whatever valid surfaces they contain.
 // Async because mermaid validation awaits the parser (@mermaid-js/parser).
-async function parseSurfaceParts(
+async function parseSurfaceList(
   raw: unknown,
   opts: { strict?: boolean } = {},
-): Promise<SurfacePartParseResult> {
-  if (!Array.isArray(raw)) return { parts: [], errors: ["parts must be an array"] };
+): Promise<SurfaceParseResult> {
+  if (!Array.isArray(raw)) return surfaceResult([], ["surfaces must be an array"]);
 
   if (opts.strict === true) {
-    const results = await Promise.all(raw.map((part, i) => parseStrictPart(part, i)));
-    return {
-      parts: results.flatMap((r) => (r.part ? [r.part] : [])),
-      errors: results.flatMap((r) => r.errors),
-    };
+    const results = await Promise.all(raw.map((surface, i) => parseStrictSurface(surface, i)));
+    return surfaceResult(
+      results.flatMap((r) => (r.surface ? [r.surface] : [])),
+      results.flatMap((r) => r.errors),
+    );
   }
 
-  const parts: Surface[] = [];
-  for (const part of raw) {
-    const parsed = looseSurfacePart.safeParse(part);
+  const surfaces: Surface[] = [];
+  for (const surface of raw) {
+    const parsed = looseSurfaceSchema.safeParse(surface);
     if (!parsed.success) continue;
     if ((await validateSemantics(parsed.data as Surface)).length === 0)
-      parts.push(parsed.data as Surface);
+      surfaces.push(parsed.data as Surface);
   }
-  return { parts, errors: [] };
+  return surfaceResult(surfaces, []);
+}
+
+function surfaceResult(surfaces: Surface[], errors: string[]): SurfaceParseResult {
+  return { surfaces, parts: surfaces, errors };
 }
 
 export const coerceSurfaces = (raw: unknown): Promise<Surface[]> =>
-  parseSurfaceParts(raw).then((r) => r.parts);
+  parseSurfaceList(raw).then((r) => r.surfaces);
 
 export async function validateSurfaces(
   raw: unknown,
-): Promise<{ ok: true; parts: Surface[] } | { ok: false; error: string }> {
-  const result = await parseSurfaceParts(raw, { strict: true });
+): Promise<{ ok: true; surfaces: Surface[]; parts: Surface[] } | { ok: false; error: string }> {
+  const result = await parseSurfaceList(raw, { strict: true });
   return result.errors.length > 0
     ? { ok: false, error: result.errors.join("; ") }
-    : { ok: true, parts: result.parts };
+    : { ok: true, surfaces: result.surfaces, parts: result.surfaces };
 }
 
 // Renderability checks that run after the structural zod parse succeeds. Strict
@@ -310,10 +328,10 @@ function mermaidDiagramType(src: string): string | null {
   return null;
 }
 
-async function validateSemantics(part: Surface): Promise<string[]> {
-  if (part.kind === "diff" && part.patch) {
+async function validateSemantics(surface: Surface): Promise<string[]> {
+  if (surface.kind === "diff" && surface.patch) {
     try {
-      if (!diffPatchHasContent(part.patch))
+      if (!diffPatchHasContent(surface.patch))
         return [
           'diff surface "patch" did not parse to any file — expected a unified/git patch with --- /+++ headers and @@ hunks',
         ];
@@ -323,69 +341,48 @@ async function validateSemantics(part: Surface): Promise<string[]> {
       ];
     }
   }
-  if (part.kind === "mermaid") {
-    const diagramType = mermaidDiagramType(part.mermaid);
+  if (surface.kind === "mermaid") {
+    const diagramType = mermaidDiagramType(surface.mermaid);
     if (!diagramType)
-      return ['mermaid part has no diagram type (first line should be e.g. "flowchart TD")'];
+      return ['mermaid surface has no diagram type (first line should be e.g. "flowchart TD")'];
     try {
-      await parseMermaid(diagramType as never, part.mermaid);
+      await parseMermaid(diagramType as never, surface.mermaid);
     } catch (e) {
       // Unsupported diagram types (flowchart, sequence, etc. — still on Jison)
       // skip validation; the viewer's graceful fallback handles render failures.
       if (e instanceof Error && /unknown diagram type/i.test(e.message)) return [];
       const msg = e instanceof Error ? (e.message.split("\n")[0] ?? "parse error") : "parse error";
-      return [`mermaid part failed to parse: ${msg}`];
+      return [`mermaid surface failed to parse: ${msg}`];
     }
   }
   return [];
 }
 
-async function parseStrictPart(
+async function parseStrictSurface(
   raw: unknown,
   index: number,
-): Promise<{ part: Surface | null; errors: string[] }> {
-  const path = `parts[${index}]`;
+): Promise<{ surface: Surface | null; errors: string[] }> {
+  const path = `surfaces[${index}]`;
   if (!raw || typeof raw !== "object")
-    return { part: null, errors: [`${path}: must be an object`] };
+    return { surface: null, errors: [`${path}: must be an object`] };
 
   const kind = (raw as { kind?: unknown }).kind;
   const schema = schemaForKind(kind);
-  if (!schema) return { part: null, errors: [`${path}: unknown part kind`] };
+  if (!schema) return { surface: null, errors: [`${path}: unknown surface kind`] };
 
   const parsed = schema.safeParse(raw);
-  if (!parsed.success) return { part: null, errors: formatZodErrors(parsed.error, path) };
+  if (!parsed.success) return { surface: null, errors: formatZodErrors(parsed.error, path) };
   const semantic = await validateSemantics(parsed.data);
   return semantic.length > 0
-    ? { part: null, errors: semantic.map((m) => `${path}: ${m}`) }
-    : { part: parsed.data, errors: [] };
+    ? { surface: null, errors: semantic.map((m) => `${path}: ${m}`) }
+    : { surface: parsed.data, errors: [] };
 }
 
 function schemaForKind(kind: unknown): z.ZodType<Surface, z.ZodTypeDef, any> | null {
-  switch (kind) {
-    case "html":
-      return strictHtmlPart;
-    case "markdown":
-      return strictMarkdownPart;
-    case "mermaid":
-      return strictMermaidPart;
-    case "diff":
-      return strictDiffPart;
-    case "image":
-      return strictImagePart;
-    case "trace":
-      return strictTracePart;
-    case "terminal":
-      return strictTerminalPart;
-    case "json":
-      return strictJsonPart;
-    case "code":
-      return strictCodePart;
-    default:
-      return null;
-  }
+  return isSurfaceKind(kind) ? strictSurfaceSchemas[kind] : null;
 }
 
-function formatZodErrors(error: z.ZodError, prefix = "parts"): string[] {
+function formatZodErrors(error: z.ZodError, prefix = "surfaces"): string[] {
   return error.issues.map((issue) => {
     const suffix = issue.path.length > 0 ? `.${issue.path.join(".")}` : "";
     return `${prefix}${suffix}: ${issue.message}`;

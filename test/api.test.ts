@@ -157,7 +157,7 @@ test("publish into unknown session 404s instead of silently creating", async () 
   assert.equal(res.status, 404);
 });
 
-test("publishes a combined html+diff surface; /s server-renders both parts opaque-sandboxed", async () => {
+test("publishes a combined html+diff surface; /s server-renders both surfaces opaque-sandboxed", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/surfaces",
@@ -212,10 +212,10 @@ test("publishes a combined html+diff surface; /s server-renders both parts opaqu
   assert.ok(!("html" in updated.surfaces[0]), "updated html body is not echoed");
   assert.ok(!("patch" in updated.surfaces[1]), "updated diff body is not echoed");
 
-  // /s renders the html part...
+  // /s renders the html surface...
   const part0 = await app.request(`/s/${surface.id}?part=0`);
   assert.ok((await part0.text()).includes("<p>diagram</p>"));
-  // ...and now also server-renders the diff part (no viewer round-trip): the
+  // ...and now also server-renders the diff surface (no viewer round-trip): the
   // @pierre/diffs SSR output wraps each file in a <diffs-container>.
   const part1 = await app.request(`/s/${surface.id}?part=1`);
   assert.equal(part1.status, 200);
@@ -310,7 +310,7 @@ test("GET /s/:id emits absolute token-free canonical and preview image URLs", as
   }
 });
 
-test("GET /s/:id?part=0 still serves an opaque sandboxed part document", async () => {
+test("GET /s/:id?part=0 still serves an opaque sandboxed surface document", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/snippets",
@@ -376,7 +376,7 @@ test("/s served versioned + themed is cacheable; an unpinned load is not", async
   assert.match(bare.headers.get("cache-control") ?? "", /no-cache/);
 });
 
-test("a snippet's kits ride the html part and inject the kit CSS/JS at /s", async () => {
+test("a snippet's kits ride the html surface and inject the kit CSS/JS at /s", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/snippets",
@@ -385,7 +385,7 @@ test("a snippet's kits ride the html part and inject the kit CSS/JS at /s", asyn
   assert.equal(res.status, 201);
   const surface = (await res.json()) as any;
 
-  // the kits persist on the stored html part
+  // the kits persist on the stored html surface
   const full = (await (await app.request(`/api/surfaces/${surface.id}`)).json()) as any;
   assert.deepEqual(full.surfaces[0].kits, ["slides"]);
 
@@ -428,7 +428,7 @@ test("GET /api/kits advertises the available kits without the css payload", asyn
   }
 });
 
-test("REST surface routes reject malformed parts before storage", async () => {
+test("REST surface routes reject malformed surfaces before storage", async () => {
   const app = makeApp();
 
   const badCreate = await app.request("/api/surfaces", json({ parts: [{ kind: "image" }] }));
@@ -453,7 +453,7 @@ test("REST surface routes reject malformed parts before storage", async () => {
   assert.equal(unchanged.surfaces[0].html, "<p>x</p>");
 });
 
-test("publish_surface MCP tool round-trips a diff part", async () => {
+test("publish_surface MCP tool round-trips a diff surface", async () => {
   const app = makeApp();
   const list = (await (await app.request("/mcp", mcpCall(1, "tools/list"))).json()) as any;
   const names = list.result.tools.map((t: any) => t.name);
@@ -479,7 +479,7 @@ test("publish_surface MCP tool round-trips a diff part", async () => {
   assert.equal(full.surfaces[0].patch, "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-x\n+y");
 });
 
-test("publishes a markdown part; /s server-renders it to sandboxed html", async () => {
+test("publishes a markdown surface; /s server-renders it to sandboxed html", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/surfaces",
@@ -505,7 +505,7 @@ test("publishes a markdown part; /s server-renders it to sandboxed html", async 
   assert.match(doc.headers.get("content-security-policy") ?? "", /\bsandbox\b/);
 });
 
-test("publish_surface MCP tool keeps markdown parts and drops empty ones", async () => {
+test("publish_surface MCP tool keeps markdown surfaces and drops empty ones", async () => {
   const app = makeApp();
   const published = (await (
     await app.request(
@@ -529,7 +529,7 @@ test("publish_surface MCP tool keeps markdown parts and drops empty ones", async
   assert.equal(full.surfaces[0].markdown, "real prose");
 });
 
-test("publish_surface MCP tool round-trips a terminal part", async () => {
+test("publish_surface MCP tool round-trips a terminal surface", async () => {
   const app = makeApp();
   const published = (await (
     await app.request(
@@ -558,7 +558,7 @@ test("publish_surface MCP tool round-trips a terminal part", async () => {
   assert.ok((await doc.text()).includes("term-body"));
 });
 
-test("publishes a mermaid part; /s emits a self-rendering CDN doc", async () => {
+test("publishes a mermaid surface; /s emits a self-rendering CDN doc", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/surfaces",
@@ -585,7 +585,7 @@ test("publishes a mermaid part; /s emits a self-rendering CDN doc", async () => 
   assert.match(doc.headers.get("content-security-policy") ?? "", /\bsandbox\b/);
 });
 
-test("publishes a json part; round-trips data and 404s on /s", async () => {
+test("publishes a json surface; round-trips data and 404s on /s", async () => {
   const app = makeApp();
   const data = {
     name: "sideshow",
@@ -611,7 +611,7 @@ test("publishes a json part; round-trips data and 404s on /s", async () => {
   assert.equal((await app.request(`/s/${surface.id}?part=0`)).status, 404);
 });
 
-test("json part with null data is valid (null is a JSON value)", async () => {
+test("json surface with null data is valid (null is a JSON value)", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/surfaces",
@@ -623,13 +623,13 @@ test("json part with null data is valid (null is a JSON value)", async () => {
   assert.equal(full.surfaces[0].data, null);
 });
 
-test("json part without data key is rejected", async () => {
+test("json surface without data key is rejected", async () => {
   const app = makeApp();
   const res = await app.request("/api/surfaces", json({ title: "Bad", parts: [{ kind: "json" }] }));
   assert.equal(res.status, 400);
 });
 
-test("publishes a code part; round-trips code/lang/title and 404s on /s", async () => {
+test("publishes a code surface; round-trips code/lang/title and 404s on /s", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/surfaces",
@@ -658,7 +658,7 @@ test("publishes a code part; round-trips code/lang/title and 404s on /s", async 
   assert.ok(body.includes("a.ts"));
 });
 
-test("code part without code is rejected", async () => {
+test("code surface without code is rejected", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/surfaces",
@@ -667,7 +667,7 @@ test("code part without code is rejected", async () => {
   assert.equal(res.status, 400);
 });
 
-test("code part with lineStart round-trips", async () => {
+test("code surface with lineStart round-trips", async () => {
   const app = makeApp();
   const res = await app.request(
     "/api/surfaces",
@@ -690,7 +690,7 @@ test("code part with lineStart round-trips", async () => {
   assert.equal(full.surfaces[0].lineStart, 80);
 });
 
-test("publish_surface MCP tool keeps mermaid parts and drops empty ones", async () => {
+test("publish_surface MCP tool keeps mermaid surfaces and drops empty ones", async () => {
   const app = makeApp();
   const published = (await (
     await app.request(

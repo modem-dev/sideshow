@@ -238,7 +238,7 @@ async function waitFor(pred: () => boolean, timeoutMs = 10_000) {
   }
 }
 
-test("publish --kit puts the (deduped) kit ids on the html part", async () => {
+test("publish --kit puts the (deduped) kit ids on the html surface", async () => {
   const server = await serveApp();
   try {
     const dir = mkdtempSync(join(tmpdir(), "sideshow-kit-"));

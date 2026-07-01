@@ -24,6 +24,7 @@ import {
   postLink,
   postImageLink,
 } from "./api.ts";
+import { isSandboxedSurfaceKind, SURFACE_FRAME_CLASSES } from "../../server/types.ts";
 import { CommentIcon, ImageIcon, LinkIcon, OpenIcon, PinIcon, TrashIcon } from "./icons.tsx";
 import { ImageSurface } from "./ImageSurface.tsx";
 import { JsonSurface } from "./JsonSurface.tsx";
@@ -40,23 +41,6 @@ import {
   toast,
   type ViewComment,
 } from "./state.ts";
-
-// Surface kinds that become HTML and so render inside a sandboxed iframe served
-// from /s/:id — author html plus the server-rendered rich kinds (markdown/code/
-// diff/terminal) and the self-rendering mermaid doc. image/trace/json are data
-// the viewer renders natively (text nodes / <img> / JSX), never an iframe.
-const SANDBOXED_KINDS = new Set(["html", "markdown", "code", "diff", "terminal", "mermaid"]);
-
-// A per-kind class on each surface iframe — purely a stable styling/selector
-// hook (sizing comes from the bare `iframe` rule); html surfaces carry none,
-// matching the generic `.card iframe` they always used.
-const FRAME_CLASS: Record<string, string> = {
-  markdown: "mdframe",
-  code: "codeframe",
-  diff: "diffframe",
-  terminal: "termframe",
-  mermaid: "mermaidframe",
-};
 
 // Card registry keyed by post id: the "new post" pill scrolls to the
 // card element, and each card tracks its sandboxed-surface iframes so the
@@ -326,7 +310,7 @@ export function Card(props: { post: Post; standalone?: boolean }) {
                   </div>
                 }
               >
-                <Match when={SANDBOXED_KINDS.has(surface.kind)}>
+                <Match when={isSandboxedSurfaceKind(surface.kind)}>
                   <iframe
                     ref={(el) => {
                       surfaceFrames.set(i(), el);
@@ -337,7 +321,7 @@ export function Card(props: { post: Post; standalone?: boolean }) {
                       });
                     }}
                     sandbox="allow-scripts"
-                    class={FRAME_CLASS[surface.kind]}
+                    class={SURFACE_FRAME_CLASSES[surface.kind]}
                     title={
                       props.post.surfaces.length > 1
                         ? `${props.post.title} (surface ${i() + 1})`

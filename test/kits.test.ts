@@ -55,7 +55,7 @@ test("isKnownKit gates on the registry", () => {
 
 // --- renderHtmlPage ---
 
-test("renderHtmlPage injects kit css/js only when the part opts in", () => {
+test("renderHtmlPage injects kit css/js only when the surface opts in", () => {
   const bare = renderHtmlPage({ title: "t", html: "<p>x</p>", origin: "http://x" });
   assert.doesNotMatch(bare, /\.deck-ctl/);
   assert.doesNotMatch(bare, /querySelector\('\.deck'\)/);
@@ -86,13 +86,13 @@ test("kitSummaries advertises each kit without leaking the css/js payload", () =
 
 // --- validation: strict (REST) rejects, loose (MCP) filters ---
 
-test("validateSurfaces accepts an html part with known kits", async () => {
+test("validateSurfaces accepts an html surface with known kits", async () => {
   const r = await validateSurfaces([
     { kind: "html", html: "<p>x</p>", kits: ["issues", "slides"] },
   ]);
   assert.equal(r.ok, true);
   if (r.ok)
-    assert.deepEqual(r.parts[0], { kind: "html", html: "<p>x</p>", kits: ["issues", "slides"] });
+    assert.deepEqual(r.surfaces[0], { kind: "html", html: "<p>x</p>", kits: ["issues", "slides"] });
 });
 
 test("validateSurfaces rejects an unknown kit id with the valid set", async () => {
@@ -101,14 +101,14 @@ test("validateSurfaces rejects an unknown kit id with the valid set", async () =
   if (!r.ok) assert.match(r.error, /unknown kit "bogus".*issues/);
 });
 
-test("coerceSurfaces filters unknown kits rather than dropping the part", async () => {
-  const parts = await coerceSurfaces([
+test("coerceSurfaces filters unknown kits rather than dropping the surface", async () => {
+  const surfaces = await coerceSurfaces([
     { kind: "html", html: "<p>x</p>", kits: ["issues", "bogus"] },
   ]);
-  assert.deepEqual(parts, [{ kind: "html", html: "<p>x</p>", kits: ["issues"] }]);
+  assert.deepEqual(surfaces, [{ kind: "html", html: "<p>x</p>", kits: ["issues"] }]);
 });
 
 test("coerceSurfaces drops an all-unknown kits field entirely", async () => {
-  const parts = await coerceSurfaces([{ kind: "html", html: "<p>x</p>", kits: ["nope"] }]);
-  assert.deepEqual(parts, [{ kind: "html", html: "<p>x</p>" }]);
+  const surfaces = await coerceSurfaces([{ kind: "html", html: "<p>x</p>", kits: ["nope"] }]);
+  assert.deepEqual(surfaces, [{ kind: "html", html: "<p>x</p>" }]);
 });

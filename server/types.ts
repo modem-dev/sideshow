@@ -14,10 +14,10 @@ export interface Session {
 
 // A post is an ordered list of surfaces. Each surface declares its own kind;
 // the post itself is kind-agnostic. An `html` surface is arbitrary agent
-// markup (rendered sandboxed in an iframe); `diff`, `image`, `trace`,
-// `markdown`, `terminal`, and `mermaid` surfaces are structured data rendered by
-// the trusted viewer. A snippet is just a post with one html surface; a
-// diagram-with-its-diff is `[html, diff]`.
+// markup rendered in an opaque-origin iframe. Rich text/code kinds are structured
+// data rendered into sandboxed documents; image/trace/json stay as data rendered
+// natively by the trusted viewer. A snippet is just a post with one html surface;
+// a diagram-with-its-diff is `[html, diff]`.
 // The canonical, ordered list of every surface kind — the single source of
 // truth. `SurfaceKind` derives from it, and the MCP tool schemas (mcpSpec.ts)
 // build their `kind` enums from it, so a kind can't be added to the model
@@ -39,6 +39,67 @@ export const SURFACE_KINDS = [
 ] as const;
 export type SurfaceKind = (typeof SURFACE_KINDS)[number];
 
+export type SurfaceContentField =
+  | "html"
+  | "markdown"
+  | "mermaid"
+  | "patch"
+  | "text"
+  | "data"
+  | "code";
+
+export interface SurfaceKindMetadata {
+  // Primary inline content slot used by content-only edits and feed previews.
+  // Kinds without one are either by-reference assets or structured timelines.
+  contentField?: SurfaceContentField;
+  // Kinds served as opaque-origin HTML documents from /s/:id?part=N.
+  sandboxed: boolean;
+  // Stable iframe selector hook for sandboxed kinds that need kind-specific CSS.
+  frameClass?: string;
+}
+
+export const SURFACE_KIND_METADATA = {
+  html: { contentField: "html", sandboxed: true },
+  diff: { contentField: "patch", sandboxed: true, frameClass: "diffframe" },
+  image: { sandboxed: false },
+  trace: { sandboxed: false },
+  markdown: { contentField: "markdown", sandboxed: true, frameClass: "mdframe" },
+  terminal: { contentField: "text", sandboxed: true, frameClass: "termframe" },
+  mermaid: { contentField: "mermaid", sandboxed: true, frameClass: "mermaidframe" },
+  json: { contentField: "data", sandboxed: false },
+  code: { contentField: "code", sandboxed: true, frameClass: "codeframe" },
+} as const satisfies Record<SurfaceKind, SurfaceKindMetadata>;
+
+export const SURFACE_KIND_LIST = SURFACE_KINDS.join(", ");
+export const SANDBOXED_SURFACE_KINDS = SURFACE_KINDS.filter(
+  (kind) => SURFACE_KIND_METADATA[kind].sandboxed,
+);
+export const NATIVE_SURFACE_KINDS = SURFACE_KINDS.filter(
+  (kind) => !SURFACE_KIND_METADATA[kind].sandboxed,
+);
+export const SURFACE_CONTENT_FIELDS = Object.fromEntries(
+  SURFACE_KINDS.flatMap((kind) => {
+    const meta = SURFACE_KIND_METADATA[kind];
+    const field = "contentField" in meta ? meta.contentField : undefined;
+    return field ? [[kind, field]] : [];
+  }),
+) as Partial<Record<SurfaceKind, SurfaceContentField>>;
+export const SURFACE_FRAME_CLASSES = Object.fromEntries(
+  SURFACE_KINDS.flatMap((kind) => {
+    const meta = SURFACE_KIND_METADATA[kind];
+    const frameClass = "frameClass" in meta ? meta.frameClass : undefined;
+    return frameClass ? [[kind, frameClass]] : [];
+  }),
+) as Partial<Record<SurfaceKind, string>>;
+
+export function isSurfaceKind(kind: unknown): kind is SurfaceKind {
+  return typeof kind === "string" && Object.hasOwn(SURFACE_KIND_METADATA, kind);
+}
+
+export function isSandboxedSurfaceKind(kind: unknown): kind is SurfaceKind {
+  return isSurfaceKind(kind) && SURFACE_KIND_METADATA[kind].sandboxed;
+}
+
 export interface HtmlSurface {
   kind: "html";
   html: string;
@@ -47,22 +108,19 @@ export interface HtmlSurface {
   kits?: string[];
 }
 
-// A markdown surface is prose the trusted viewer renders — explanations, plans,
-// tradeoff write-ups. Unlike an html surface it is NOT sandboxed: the viewer
-// renders it to HTML in its own origin, so raw HTML embedded in the source is
-// escaped, not executed (see MarkdownPart.tsx). Agents wanting live markup use
-// an html surface instead.
+// A markdown surface is prose — explanations, plans, tradeoff write-ups. The
+// server renders it to HTML with raw HTML escaped, then serves that HTML as a
+// sandboxed rich surface document. Agents wanting live markup use an html surface
+// instead.
 export interface MarkdownSurface {
   kind: "markdown";
   markdown: string;
 }
 
-// A mermaid surface is diagram source (flowchart, sequence, ERD, gantt, …) the
-// trusted viewer renders to SVG with the mermaid library. Like markdown it is
-// NOT sandboxed: mermaid renders in the viewer's own origin with
-// securityLevel 'strict', sanitizing the SVG and disabling scripts/HTML labels
-// (see MermaidPart.tsx). Agents wanting hand-drawn vector art use an html surface
-// with inline <svg> instead.
+// A mermaid surface is diagram source (flowchart, sequence, ERD, gantt, …).
+// Mermaid needs a DOM, so /s/:id serves a sandboxed self-rendering document that
+// loads mermaid from the CDN allowlist. Agents wanting hand-drawn vector art use
+// an html surface with inline <svg> instead.
 export interface MermaidSurface {
   kind: "mermaid";
   mermaid: string;

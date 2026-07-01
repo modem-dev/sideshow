@@ -34,7 +34,7 @@ function cspDirectives(doc: string): Record<string, string[]> {
   return out;
 }
 
-// The CDN allowlist html parts may load from. This is a deliberate, fixed set —
+// The CDN allowlist html surfaces may load from. This is a deliberate, fixed set —
 // the test pins it so widening it (a new origin, a wildcard) is a conscious edit
 // that updates this list, never an accident.
 const ALLOWED_CDNS = [
@@ -90,10 +90,10 @@ test("the document title is HTML-escaped so a crafted title can't break out", ()
   assert.ok(!page.includes("<title></title><script>alert(1)"), "title must not break out");
 });
 
-test("the part html is embedded verbatim — the sandbox, not escaping, is the guard", () => {
+test("the surface html is embedded verbatim — the sandbox, not escaping, is the guard", () => {
   const body = `<div class="card"><button onclick="x()">go</button></div>`;
   const page = renderHtmlPage({ title: "t", html: body, origin: ORIGIN });
-  assert.ok(page.includes(body), "trusted part markup must pass through unaltered");
+  assert.ok(page.includes(body), "trusted surface markup must pass through unaltered");
 });
 
 test("the host bridge globals and resize reporter are present in every page", () => {
@@ -125,7 +125,7 @@ test("theme tokens are injected and resolve unknown/absent themes to the default
   );
 });
 
-test("a pinned mode forces color-scheme into both html parts and transparent rich frames", () => {
+test("a pinned mode forces color-scheme into both html surfaces and transparent rich frames", () => {
   const gh = renderHtmlPage({ title: "t", html: "<p>x</p>", origin: ORIGIN, mode: "dark" });
   // the document's used color-scheme is forced so the UA canvas/scrollbars/
   // controls follow it, overriding the static `color-scheme: light dark` default
@@ -268,11 +268,11 @@ test("renderSandboxedPart embeds the body and css inside the sandbox doc", () =>
   assert.ok(doc.includes(`<base href="${ORIGIN}/">`), "base href pins the origin");
   // the resize/openLink bridge ships in the frame so it can self-size
   assert.ok(doc.includes("postMessage"), "bridge is present");
-  // chrome theme vars are injected (viewerThemeCss) so the part matches the viewer
+  // chrome theme vars are injected (viewerThemeCss) so the surface matches the viewer
   assert.ok(doc.includes("--bg:"), "theme vars are injected");
 });
 
-test("renderSandboxedPart uses a tighter CSP than html parts: no connect-src, no CDN", () => {
+test("renderSandboxedPart uses a tighter CSP than html surfaces: no connect-src, no CDN", () => {
   const d = cspDirectives(renderSandboxedPart({ body: "x", css: "", origin: ORIGIN }));
   assert.deepEqual(d["default-src"], ["'none'"], "locked-down default");
   // script-src is EXACTLY the inline bridge — no CDN sources leak in
@@ -283,18 +283,18 @@ test("renderSandboxedPart uses a tighter CSP than html parts: no connect-src, no
   assert.ok(d["img-src"]?.includes(ORIGIN), "origin allowed for images");
 });
 
-test("html parts keep their CDN allowlist (rich-part tightening did not leak)", () => {
+test("html surfaces keep their CDN allowlist (rich-surface tightening did not leak)", () => {
   const html = cspDirectives(renderHtmlPage({ title: "t", html: "<b>x</b>", origin: ORIGIN }));
   const rich = cspDirectives(renderSandboxedPart({ body: "x", css: "", origin: ORIGIN }));
-  // rich parts lock script-src to the inline bridge alone; html parts add the
+  // rich surfaces lock script-src to the inline bridge alone; html surfaces add the
   // CDN sources on top, so html's source list is strictly larger. (Asserting on
   // the count rather than a host literal keeps this off the URL-substring path.)
   assert.deepEqual(rich["script-src"], ["'unsafe-inline'"], "rich = inline bridge only");
   assert.ok(
     html["script-src"].length > rich["script-src"].length,
-    "html parts keep extra (CDN) script sources",
+    "html surfaces keep extra (CDN) script sources",
   );
-  assert.ok("connect-src" in html, "html parts still have connect-src");
+  assert.ok("connect-src" in html, "html surfaces still have connect-src");
 });
 
 test("the board origin is never a connect/script source — img/media only", () => {
@@ -330,7 +330,7 @@ test("escapeHtml neutralizes markup metacharacters", () => {
   assert.equal(escapeHtml("a & b"), "a &amp; b");
 });
 
-// Pull the real resize bridge out of a rendered sandboxed part and run it in a
+// Pull the real resize bridge out of a rendered sandboxed surface and run it in a
 // vm with a fake DOM, so we exercise the SHIPPED code (not a copy). The driver
 // feeds the height the content "reports" at a given clock time and captures what
 // the bridge posts to the parent.
