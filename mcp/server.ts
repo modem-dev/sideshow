@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { mcpPostListRowView } from "../server/apiViews.ts";
+import { feedbackView, mcpPostListRowView } from "../server/apiViews.ts";
 import {
   MCP_INSTRUCTIONS,
   MCP_SERVER_INFO,
@@ -198,14 +198,7 @@ server.registerTool(
       return text({ comments: [], note: "no user feedback yet — continue, or wait again later" });
     }
     return text({
-      comments: result.comments.map((c: any) => ({
-        postId: c.postId,
-        postTitle: c.postTitle,
-        surfaceId: c.postId,
-        surfaceTitle: c.postTitle,
-        text: c.text,
-        at: c.createdAt,
-      })),
+      comments: result.comments.map(feedbackView),
     });
   },
 );
