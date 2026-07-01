@@ -60,10 +60,22 @@ const ISSUES_CSS = `
 // slides: a stepped deck. Author `.deck` with `.slide` children; the JS shows
 // one at a time and injects prev/dots/counter/next controls. Arrow keys and
 // PageUp/Down navigate (plain keys only — the host owns the meta/alt combos).
+//
+// The slides are GRID-STACKED (every `.slide` in the same `1/1` cell), not
+// swapped with display:none or overlaid with position:absolute. That keeps them
+// in normal flow — so the deck (and the document) sizes to the TALLEST slide and
+// the height the surface reports stays stable — while still letting them overlap
+// so inactive slides can cross-fade under the active one. An absolute overlay
+// would grow scrollHeight without growing the measured box, and the frame's
+// ResizeObserver (which watches the box, not scrollHeight) would go blind to it
+// and clip the deck; grid-stacking avoids that trap. Inactive slides stay laid
+// out (so they keep sizing the track) but are visibility:hidden — out of the tab
+// order and the a11y tree — until they become `.on`.
 const SLIDES_CSS = `
-.deck{display:block}
-.deck>.slide{display:none}
-.deck>.slide.on{display:block;min-height:140px}
+.deck{display:grid;min-height:140px}
+.deck>.slide{grid-area:1/1;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .3s ease,visibility 0s linear .3s}
+.deck>.slide.on{opacity:1;visibility:visible;pointer-events:auto;transition:opacity .3s ease}
+@media (prefers-reduced-motion:reduce){.deck>.slide{transition:none}}
 .deck>.slide h2{font:500 22px/1.3 var(--font-sans);margin:0 0 14px}
 .deck-ctl{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:18px;padding-top:14px;border-top:1px solid var(--color-border-secondary)}
 .deck-dots{display:inline-flex;gap:7px}
@@ -110,7 +122,7 @@ export const KITS: Kit[] = [
   {
     id: "slides",
     label: "Slides",
-    summary: "a stepped deck with prev/next controls and a counter",
+    summary: "a stepped, cross-fading deck with prev/next controls and a counter",
     classes: "deck · slide (+ injected controls)",
     css: SLIDES_CSS,
     js: SLIDES_JS,

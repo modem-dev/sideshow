@@ -36,6 +36,17 @@ test("only behavior kits ship js", () => {
   assert.equal(kitAssets(["issues"]).js, "");
 });
 
+test("slides kit grid-stacks in normal flow (measurable height), never an absolute overlay", () => {
+  // A cross-fade deck must overlap its slides IN FLOW (grid-stack) so the deck
+  // sizes to the tallest slide and the frame's box-watching ResizeObserver can
+  // see it. An absolute overlay grows scrollHeight without growing the box, so
+  // the frame goes blind and clips the deck — the exact regression this guards.
+  const { css } = kitAssets(["slides"]);
+  assert.match(css, /\.deck\{[^}]*display:grid/); // container grid-stacks
+  assert.match(css, /\.deck>\.slide\{[^}]*grid-area:1\/1/); // children share one cell
+  assert.doesNotMatch(css, /\.deck>\.slide[^}]*position:absolute/); // never out of flow
+});
+
 test("isKnownKit gates on the registry", () => {
   assert.ok(isKnownKit("issues"));
   assert.ok(!isKnownKit("issue"));

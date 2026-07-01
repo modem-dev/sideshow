@@ -211,8 +211,17 @@ is yours.
   height automatically.
 - `<style>` and `<script>` tags are allowed. Scripts run inside a sandboxed
   iframe with no access to the host page.
-- **Never use `position: fixed`** — the iframe sizes to content height and
-  fixed elements break that. Use normal-flow layout.
+- **Keep content in normal flow.** The frame measures your content's height from
+  the document box, so anything taken out of flow is invisible to the sizer and
+  can leave the surface clipped — or frozen at the wrong height after load.
+  - Never use `position: fixed`.
+  - Don't stack `position: absolute` layers over a fixed-`height`/`min-height`
+    box (the usual cross-fade-deck mistake): the overlay grows `scrollHeight` but
+    not the measured box, so the frame won't follow it.
+  - To **overlap** elements (e.g. a cross-fading slide deck), grid-stack them in
+    normal flow instead — `display: grid` on the container, `grid-area: 1 / 1` on
+    each child: they overlap, but the container still sizes to the tallest child.
+    (The `slides` kit does exactly this — reach for it before hand-rolling a deck.)
 
 ## Built-in kit — a head start, not a straitjacket
 
@@ -266,8 +275,9 @@ theme tokens, so kit output re-themes with the workspace.
   and text (`.dim`/`.faint`/`.mono`/`.title`) helpers. Composes an issue/PR/CI
   tree — nest a `.tree` inside a `.tree` to indent — or a status board, from
   generic primitives.
-- **`slides`** — author a `.deck` with `.slide` children; the kit shows one at a
-  time and injects prev/dots/counter/next controls. Arrow keys and PageUp/Down
+- **`slides`** — author a `.deck` with `.slide` children; the kit cross-fades one
+  at a time (grid-stacked in normal flow, so the frame always sizes to the tallest
+  slide) and injects prev/dots/counter/next controls. Arrow keys and PageUp/Down
   navigate.
 
 ```sh
