@@ -139,11 +139,15 @@ test("a pinned mode forces color-scheme into both html parts and transparent ric
   );
   assert.ok(gh.includes("--c-teal-bg: rgba(31, 169, 150, 0.18)"), "kit teal accent pinned to dark");
 
-  // light pins the other way; absent mode keeps the OS-driven media query
+  // light pins the other way; absent mode keeps OS-driven theme vars and opts the
+  // document into both UA color schemes so the browser can resolve the system mode.
   const light = renderHtmlPage({ title: "t", html: "<p>x</p>", origin: ORIGIN, mode: "light" });
   assert.ok(/:root\{color-scheme:light\}/.test(light), "color-scheme must be pinned to light");
   const auto = renderHtmlPage({ title: "t", html: "<p>x</p>", origin: ORIGIN });
-  assert.ok(!auto.includes("color-scheme:dark"), "no mode → no forced scheme");
+  assert.ok(
+    /:root\{color-scheme:light dark\}/.test(auto),
+    "no mode → browser resolves light/dark from the OS",
+  );
   assert.ok(auto.includes("@media (prefers-color-scheme: dark)"), "no mode → OS media query kept");
 
   // rich/comment frames pin the same way, color-scheme INCLUDED. A sandboxed
@@ -164,7 +168,8 @@ test("a pinned mode forces color-scheme into both html parts and transparent ric
     rich.includes(`--text: ${dark.text}`),
     "rich frame carries the pinned dark chrome vars",
   );
-  // light pins light; an unpinned (no-mode) frame leaves the scheme to the OS.
+  // light pins light; an unpinned (no-mode) frame opts into both schemes so the
+  // browser resolves the user's system mode instead of defaulting the canvas to light.
   assert.ok(
     /:root\{color-scheme:light\}/.test(
       renderSandboxedPart({ body: "x", css: "", origin: ORIGIN, mode: "light" }),
@@ -172,8 +177,10 @@ test("a pinned mode forces color-scheme into both html parts and transparent ric
     "light mode pins color-scheme:light",
   );
   assert.ok(
-    !/:root\{color-scheme:/.test(renderSandboxedPart({ body: "x", css: "", origin: ORIGIN })),
-    "no mode → scheme left to the OS (the @media query may still mention prefers-color-scheme)",
+    /:root\{color-scheme:light dark\}/.test(
+      renderSandboxedPart({ body: "x", css: "", origin: ORIGIN }),
+    ),
+    "no mode → browser resolves light/dark from the OS",
   );
 });
 
@@ -232,6 +239,20 @@ test("a mermaid page pins mermaid's derived colors to the scheme so the whole di
     assert.equal(dv[k], theme.dark.text, `${k} pinned to text (dark)`);
     assert.equal(lv[k], theme.light.text, `${k} pinned to text (light)`);
   }
+});
+
+test("a no-mode mermaid page chooses the user's system scheme in the iframe", () => {
+  const auto = renderMermaidPage({ mermaid: "graph TD; A-->B", origin: ORIGIN, theme: "github" });
+  assert.ok(
+    auto.includes("matchMedia('(prefers-color-scheme: dark)')"),
+    "direct no-mode mermaid load should read the browser's system scheme",
+  );
+  assert.ok(auto.includes('"darkMode":true'), "auto loader embeds dark mermaid variables");
+  assert.ok(auto.includes('"darkMode":false'), "auto loader embeds light mermaid variables");
+  assert.ok(
+    /:root\{color-scheme:light dark\}/.test(auto),
+    "the document itself opts into system light/dark",
+  );
 });
 
 test("renderSandboxedPart embeds the body and css inside the sandbox doc", () => {

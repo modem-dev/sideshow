@@ -121,6 +121,19 @@ test("renderDiff: an empty patch and no files throws No diff content", async () 
   await assert.rejects(() => renderDiff({ kind: "diff", patch: "" }), /No diff content/);
 });
 
+test("renderDiff: absent mode keeps the diff in system color-scheme", async () => {
+  const diff: DiffSurface = {
+    kind: "diff",
+    files: [{ filename: "f.ts", before: "const x = 1", after: "const x = 2" }],
+  };
+  const { body } = await renderDiff(diff);
+  assert.match(body, /color-scheme:\s*light dark/);
+  assert.doesNotMatch(
+    body.match(/<style data-theme-css="">[\s\S]*?<\/style>/)?.[0] ?? "",
+    /color-scheme:\s*(?:light|dark);/,
+  );
+});
+
 test("renderTerminal: ANSI codes are converted and a window bar is rendered", async () => {
   const term: TerminalSurface = {
     kind: "terminal",

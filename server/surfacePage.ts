@@ -31,12 +31,11 @@ const KIT_ACCENTS_DARK: Record<string, string> = {
 };
 const kitAccentCss = (mode?: Mode): string => schemeCss(KIT_ACCENTS_LIGHT, KIT_ACCENTS_DARK, mode);
 
-// When a scheme is pinned, force the document's used color-scheme to match so
-// the UA-painted canvas, scrollbars, and native form controls follow it too
-// (the token vars alone don't drive those). Overrides the static
-// `color-scheme: light dark` default the kit/base CSS sets. Empty when the
-// scheme is left to the OS, preserving the media-query behavior unchanged.
-const colorSchemeCss = (mode?: Mode): string => (mode ? `:root{color-scheme:${mode}}` : "");
+// Force the document's used color-scheme so the UA-painted canvas, scrollbars,
+// and native form controls follow the same scheme as the theme vars (the vars
+// alone don't drive those). Pinned frames get a single scheme; unpinned/direct
+// loads opt into both schemes so the browser can resolve the user's system mode.
+const colorSchemeCss = (mode?: Mode): string => `:root{color-scheme:${mode ?? "light dark"}}`;
 
 // Origins html surfaces may load external resources from. Mirrors the allowlist
 // agents already know from Claude's inline widget surface.
@@ -357,7 +356,8 @@ ${doc.body}
 // own DOMPurify (securityLevel 'strict') runs first; the opaque origin is the
 // second boundary. Theme colors are baked into the diagram at render time, so —
 // like shiki's flip — they're PINNED to the chrome-resolved mode the viewer
-// passed (mermaid can't do a media-query flip); absent mode defaults to light.
+// passed. On a direct no-mode load, the iframe's own JS chooses the user's
+// system scheme before mermaid renders.
 
 const MERMAID_CSS = `
 body { margin: 0; padding: 14px 16px; background: transparent; text-align: center; }
@@ -475,21 +475,33 @@ export function renderMermaidPage(doc: {
 }): string {
   const theme =
     typeof doc.theme === "string" || doc.theme == null ? themeById(doc.theme) : doc.theme;
-  const palette = doc.mode === "dark" ? theme.dark : theme.light;
-  const { themeVariables, themeCSS } = mermaidThemeVars(palette, doc.mode);
+  const enc = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
+  const pinned = doc.mode
+    ? mermaidThemeVars(doc.mode === "dark" ? theme.dark : theme.light, doc.mode)
+    : null;
+  const light = pinned ? null : mermaidThemeVars(theme.light, "light");
+  const dark = pinned ? null : mermaidThemeVars(theme.dark, "dark");
+  const autoTheme = pinned
+    ? ""
+    : `const __mql = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+const __systemDark = !!(__mql && __mql.matches);
+const themeVariables = __systemDark ? ${enc(dark!.themeVariables)} : ${enc(light!.themeVariables)};
+const themeCSS = __systemDark ? ${enc(dark!.themeCSS)} : ${enc(light!.themeCSS)};`;
+  const themeConfig = pinned
+    ? `themeVariables: ${enc(pinned.themeVariables)},\n  themeCSS: ${enc(pinned.themeCSS)},`
+    : `themeVariables,\n  themeCSS,`;
   // Embed source + theme as JS literals; escape `<` so a `</script>` in the
   // diagram source can't break out of the module script.
-  const enc = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
   const loader = `
 import mermaid from ${enc(MERMAID_CDN)};
 const src = ${enc(doc.mermaid ?? "")};
+${autoTheme}
 mermaid.initialize({
   startOnLoad: false,
   securityLevel: 'strict',
   suppressErrorRendering: true,
   theme: 'base',
-  themeVariables: ${enc(themeVariables)},
-  themeCSS: ${enc(themeCSS)},
+  ${themeConfig}
 });
 const el = document.getElementById('m');
 try {

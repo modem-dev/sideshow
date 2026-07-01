@@ -395,7 +395,7 @@ export async function renderDiff(
   const options = {
     diffStyle: part.layout ?? "unified",
     theme: { dark: shiki.dark, light: shiki.light },
-    themeType: opts.mode === "dark" ? "dark" : "light",
+    themeType: opts.mode ?? "system",
     preferredHighlighter: "shiki-js",
   } as const;
   const rendered = await Promise.all(
