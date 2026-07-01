@@ -3,6 +3,15 @@ import { bodyLimit } from "hono/body-limit";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { decodeBase64 } from "./base64.ts";
+import {
+  feedbackView,
+  postDetailView,
+  postWriteView,
+  recentPostRowView,
+  sessionPostListRowView,
+  sessionRowView,
+  type Feedback,
+} from "./apiViews.ts";
 import { EventBus, type FeedEvent } from "./events.ts";
 import { kitSummaries } from "./kits.ts";
 import { registerMcp } from "./mcpHttp.ts";
@@ -35,6 +44,7 @@ import {
 import { validateSurfaces } from "./postSurfaces.ts";
 
 export type { FeedEvent } from "./events.ts";
+export type { Feedback } from "./apiViews.ts";
 
 const MAX_SURFACE_BYTES = 2 * 1024 * 1024;
 const MAX_WAIT_SECONDS = 300;
@@ -213,148 +223,6 @@ async function fetchLatestFromRegistry(): Promise<LatestRelease | null> {
 
 const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 
-const indexSurfaces = (parts: Surface[]) => parts.map((p, index) => ({ ...p, index }));
-
-const postView = (s: Post) => ({
-  ...s,
-  surfaces: indexSurfaces(s.surfaces),
-  history: s.history.map((h) => ({ ...h, surfaces: indexSurfaces(h.surfaces) })),
-});
-
-// html surfaces carry arbitrary markup the viewer renders via a sandboxed iframe,
-// so the card list never needs their bodies — strip them to an id+kind marker.
-// diff/markdown/etc. surfaces are structured data the viewer can render inline,
-// so keep them whole.
-const stripParts = (parts: Surface[]) =>
-  parts.map((p, index) =>
-    p.kind === "html" ? { id: p.id, kind: "html", index } : { ...p, index },
-  );
-
-const surfaceMeta = (s: Post) => {
-  const surfaces = stripParts(s.surfaces);
-  return {
-    id: s.id,
-    sessionId: s.sessionId,
-    title: s.title,
-    createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
-    version: s.version,
-    surfaces,
-    parts: surfaces,
-  };
-};
-
-// Cap inline preview fields so /api/surfaces/recent stays cheap while still
-// carrying a real clipped preview. Unlike stripParts (which omits html bodies
-// for the card list), this TRUNCATES large inline payloads so a feed card can render an
-// honest preview. Assets stay by-reference (assetId). When a field is clipped we
-// set `truncated:true` on that part so a client can offer a "view full post"
-// affordance honestly.
-const PART_TEXT_CAP = 8_000; // chars; ~a screenful, enough for a clipped preview
-const TRACE_STEP_PREVIEW_LIMIT = 25;
-type CappedSurface = Surface & { truncated?: true };
-function capText(text: string): { value: string; truncated: boolean } {
-  return text.length > PART_TEXT_CAP
-    ? { value: text.slice(0, PART_TEXT_CAP), truncated: true }
-    : { value: text, truncated: false };
-}
-function capParts(parts: Surface[]): CappedSurface[] {
-  return parts.map((p): CappedSurface => {
-    switch (p.kind) {
-      case "html": {
-        const { value, truncated } = capText(p.html);
-        return truncated ? { ...p, html: value, truncated: true } : p;
-      }
-      case "markdown": {
-        const { value, truncated } = capText(p.markdown);
-        return truncated ? { ...p, markdown: value, truncated: true } : p;
-      }
-      case "mermaid": {
-        const { value, truncated } = capText(p.mermaid);
-        return truncated ? { ...p, mermaid: value, truncated: true } : p;
-      }
-      case "code": {
-        const { value, truncated } = capText(p.code);
-        return truncated ? { ...p, code: value, truncated: true } : p;
-      }
-      case "terminal": {
-        const { value, truncated } = capText(p.text);
-        return truncated ? { ...p, text: value, truncated: true } : p;
-      }
-      case "diff": {
-        let truncated = false;
-        const next: CappedSurface = { ...p };
-        if (p.patch !== undefined) {
-          const capped = capText(p.patch);
-          next.patch = capped.value;
-          truncated ||= capped.truncated;
-        }
-        if (p.files !== undefined) {
-          next.files = p.files.map((file) => {
-            const before = capText(file.before);
-            const after = capText(file.after);
-            const filename = capText(file.filename);
-            const language = file.language ? capText(file.language) : undefined;
-            truncated ||= before.truncated || after.truncated || filename.truncated;
-            if (language) truncated ||= language.truncated;
-            return {
-              ...file,
-              filename: filename.value,
-              before: before.value,
-              after: after.value,
-              ...(language && { language: language.value }),
-            };
-          });
-        }
-        return truncated ? { ...next, truncated: true } : p;
-      }
-      case "image": {
-        const alt = p.alt ? capText(p.alt) : undefined;
-        const caption = p.caption ? capText(p.caption) : undefined;
-        const truncated = !!alt?.truncated || !!caption?.truncated;
-        return truncated
-          ? {
-              ...p,
-              ...(alt && { alt: alt.value }),
-              ...(caption && { caption: caption.value }),
-              truncated: true,
-            }
-          : p;
-      }
-      case "trace": {
-        let truncated = false;
-        const title = p.title ? capText(p.title) : undefined;
-        if (title?.truncated) truncated = true;
-        const steps = p.steps?.slice(0, TRACE_STEP_PREVIEW_LIMIT).map((step) => {
-          const label = capText(step.label);
-          const kind = step.kind ? capText(step.kind) : undefined;
-          const detail = step.detail ? capText(step.detail) : undefined;
-          const ts = step.ts ? capText(step.ts) : undefined;
-          truncated ||=
-            label.truncated || !!kind?.truncated || !!detail?.truncated || !!ts?.truncated;
-          return {
-            label: label.value,
-            ...(kind && { kind: kind.value }),
-            ...(detail && { detail: detail.value }),
-            ...(ts && { ts: ts.value }),
-          };
-        });
-        if ((p.steps?.length ?? 0) > TRACE_STEP_PREVIEW_LIMIT) truncated = true;
-        return truncated
-          ? { ...p, ...(title && { title: title.value }), ...(steps && { steps }), truncated: true }
-          : p;
-      }
-      case "json": {
-        const serialized = JSON.stringify(p.data);
-        const { value, truncated } = capText(serialized);
-        return truncated ? { ...p, data: value, truncated: true } : p;
-      }
-      default:
-        return p;
-    }
-  });
-}
-
 function parseRecentLimit(raw: string | undefined): number {
   const parsed = Number(raw ?? "20");
   const limit = Number.isFinite(parsed) && parsed !== 0 ? Math.trunc(parsed) : 20;
@@ -372,6 +240,7 @@ function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
   // /api/sessions (NOT public on a session-scoped workspace), not like the
   // per-surface /api/surfaces/:id reads below.
   if (path === "/api/surfaces/recent") return false;
+  if (path === "/api/posts/recent") return false;
   if (path.startsWith("/api/surfaces/")) return true;
   if (path.startsWith("/api/posts/")) return true;
   if (path.startsWith("/api/snippets/")) return true;
@@ -383,19 +252,6 @@ function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
   return false;
 }
 
-// Response to an agent's own write: it already holds the surfaces it just sent,
-// so echo only the identifiers (a diff patch can be large — never send it
-// back). Reads (the post list and GET /api/surfaces/:id) carry the surfaces.
-const writeResult = (s: Post) => ({
-  id: s.id,
-  sessionId: s.sessionId,
-  title: s.title,
-  createdAt: s.createdAt,
-  updatedAt: s.updatedAt,
-  version: s.version,
-  surfaces: s.surfaces.map((p, index) => ({ id: p.id, kind: p.kind, index })),
-});
-
 export interface CommentWait {
   sessionId?: string;
   surfaceId?: string;
@@ -403,23 +259,6 @@ export interface CommentWait {
   afterSeq?: number;
   waitSeconds: number;
 }
-
-export interface Feedback {
-  surfaceId: string | null;
-  surfaceTitle: string | null;
-  text: string;
-  at: string;
-  anchor?: CommentAnchor;
-}
-
-// Lean comment shape attached to agent-facing responses.
-const feedbackView = (c: Comment): Feedback => ({
-  surfaceId: c.postId,
-  surfaceTitle: c.postTitle,
-  text: c.text,
-  at: c.createdAt,
-  ...(c.anchor && { anchor: c.anchor }),
-});
 
 export function createApp({
   store,
@@ -1160,7 +999,7 @@ export function createApp({
     const [sessions, surfaces] = await Promise.all([store.listSessions(), store.listPosts()]);
     const counts = new Map<string, number>();
     for (const s of surfaces) counts.set(s.sessionId, (counts.get(s.sessionId) ?? 0) + 1);
-    return c.json(sessions.map((s) => ({ ...s, surfaceCount: counts.get(s.id) ?? 0 })));
+    return c.json(sessions.map((s) => sessionRowView(s, counts.get(s.id) ?? 0)));
   });
 
   // --- recent surfaces (post-grained feed source) ---
@@ -1169,14 +1008,15 @@ export function createApp({
   // row per post (post-grained), distinct from the session-grained GET
   // /api/sessions. This is the source a cross-session "latest posts" feed needs
   // (Org Home, a per-workspace Home): each item carries its session id/title +
-  // agent for the feed card, the post's part kinds, and capped part previews.
+  // agent for the feed card, canonical surfaces, legacy partKinds, and capped
+  // previews.
   //
-  // Previews are bounded by capParts (large inline text clipped to PART_TEXT_CAP
-  // with truncated:true); images travel as plain assetId refs (served at /a/:id),
+  // Previews are bounded by recentPostRowView (large inline text clipped with
+  // truncated:true); images travel as plain assetId refs (served at /a/:id),
   // so the response stays cheap. Same auth as /api/sessions — see
   // isPublicReadAllowed, which intentionally does NOT expose this path on a
   // session-scoped publicRead workspace.
-  app.get("/api/surfaces/recent", async (c) => {
+  const listRecentPosts = async (c: any) => {
     const limit = parseRecentLimit(c.req.query("limit"));
     const posts = await store.listRecentPosts(limit);
     // Resolve each post's session once (agent + session title for the feed card).
@@ -1185,24 +1025,10 @@ export function createApp({
       if (!sessions.has(p.sessionId))
         sessions.set(p.sessionId, await store.getSession(p.sessionId));
     }
-    return c.json(
-      posts.map((p) => {
-        const s = sessions.get(p.sessionId);
-        return {
-          id: p.id,
-          sessionId: p.sessionId,
-          sessionTitle: s?.title ?? null,
-          agent: s?.agent ?? null,
-          title: p.title,
-          createdAt: p.createdAt,
-          updatedAt: p.updatedAt,
-          version: p.version,
-          partKinds: p.surfaces.map((x) => x.kind),
-          parts: capParts(p.surfaces),
-        };
-      }),
-    );
-  });
+    return c.json(posts.map((p) => recentPostRowView(p, sessions.get(p.sessionId))));
+  };
+  app.get("/api/surfaces/recent", listRecentPosts);
+  app.get("/api/posts/recent", listRecentPosts);
 
   app.post("/api/sessions", async (c) => {
     const body = await c.req.json().catch(() => ({}));
@@ -1237,7 +1063,7 @@ export function createApp({
     const session = await store.getSession(c.req.param("id"));
     if (!session) return c.json({ error: "session not found" }, 404);
     const posts = await store.listPosts(session.id);
-    return c.json(posts.map(postMeta));
+    return c.json(posts.map(sessionPostListRowView));
   };
   app.get("/api/sessions/:id/surfaces", listSessionPosts); // legacy alias
   app.get("/api/sessions/:id/posts", listSessionPosts);
@@ -1285,7 +1111,7 @@ export function createApp({
   const getPost = async (c: any) => {
     const post = await store.getPost(c.req.param("id"));
     if (!post) return c.json({ error: "post not found" }, 404);
-    return c.json(postView(post));
+    return c.json(postDetailView(post));
   };
   app.get("/api/surfaces/:id", getPost); // legacy alias
   app.get("/api/posts/:id", getPost);
@@ -1332,7 +1158,7 @@ export function createApp({
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json(
       {
-        ...writeResult(result.post),
+        ...postWriteView(result.post),
         ...(result.userFeedback && { userFeedback: result.userFeedback }),
       },
       201,
@@ -1366,7 +1192,7 @@ export function createApp({
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.post),
+      ...postWriteView(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   };
@@ -1431,7 +1257,7 @@ export function createApp({
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.post),
+      ...postWriteView(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   });
@@ -1453,7 +1279,7 @@ export function createApp({
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.post),
+      ...postWriteView(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   });
@@ -1479,7 +1305,7 @@ export function createApp({
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.post),
+      ...postWriteView(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   });
@@ -1490,7 +1316,7 @@ export function createApp({
     const result = await removePostSurface(c.req.param("id"), c.req.param("target"));
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.post),
+      ...postWriteView(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   });
@@ -1504,7 +1330,7 @@ export function createApp({
     const result = await reorderPostSurfaces(c.req.param("id"), body.order);
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.post),
+      ...postWriteView(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   });

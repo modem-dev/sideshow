@@ -80,7 +80,11 @@ test("GET /api/surfaces/recent returns posts newest-first across sessions", asyn
   assert.equal(top.agent, "amp");
   assert.equal(top.title, "third");
   assert.deepEqual(top.partKinds, ["html"]);
-  assert.ok(Array.isArray(top.parts));
+  assert.ok(Array.isArray(top.surfaces));
+  assert.deepEqual(top.surfaces, [
+    { id: top.surfaces[0].id, kind: "html", html: "<p>3</p>", index: 0 },
+  ]);
+  assert.deepEqual(top.parts, top.surfaces);
 
   const middle = feed[1];
   assert.equal(middle.sessionId, b.id);
@@ -155,7 +159,12 @@ test("GET /api/surfaces/recent caps oversized text parts and flags truncation", 
   });
 
   const feed = (await (await app.request("/api/surfaces/recent")).json()) as any[];
-  const parts = feed[0].parts;
+  assert.deepEqual(feed[0].parts, feed[0].surfaces);
+  assert.deepEqual(
+    feed[0].surfaces.map((p: any) => p.index),
+    [0, 1, 2, 3, 4],
+  );
+  const parts = feed[0].surfaces;
 
   const html = parts.find((p: any) => p.kind === "html");
   assert.equal(html.html.length, 8_000); // PART_TEXT_CAP
@@ -205,10 +214,26 @@ test("GET /api/surfaces/recent leaves image parts as plain assetId refs", async 
   });
 
   const feed = (await (await app.request("/api/surfaces/recent")).json()) as any[];
-  const img = feed[0].parts.find((p: any) => p.kind === "image");
+  assert.deepEqual(feed[0].parts, feed[0].surfaces);
+  const img = feed[0].surfaces.find((p: any) => p.kind === "image");
   assert.equal(img.assetId, upload.id);
   assert.equal(img.alt, "a shot");
+  assert.equal(img.index, 0);
   assert.equal(img.truncated, undefined);
+});
+
+test("GET /api/posts/recent aliases /api/surfaces/recent with identical auth", async () => {
+  const app = makeApp();
+  const s = await createSession(app, "amp", "Session");
+  await publish(app, { session: s.id, parts: [{ kind: "html", html: "<p>x</p>" }] });
+
+  const viaSurfaces = (await (await app.request("/api/surfaces/recent")).json()) as any[];
+  const viaPosts = (await (await app.request("/api/posts/recent")).json()) as any[];
+  assert.deepEqual(viaPosts, viaSurfaces);
+
+  const guarded = makeApp("secret", { publicRead: "session" });
+  assert.equal((await guarded.request("/api/surfaces/recent")).status, 401);
+  assert.equal((await guarded.request("/api/posts/recent")).status, 401);
 });
 
 test("GET /api/surfaces/recent is auth-gated exactly like /api/sessions", async () => {

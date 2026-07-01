@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { mcpPostListRowView } from "../server/apiViews.ts";
 import {
   MCP_INSTRUCTIONS,
   MCP_SERVER_INFO,
@@ -95,7 +96,8 @@ server.registerTool(
   { description: MCP_TOOL_DESCRIPTIONS.listPostsStdio, inputSchema: {} },
   async () => {
     if (!sessionId) return text([]);
-    return text(JSON.parse(await api(`/api/sessions/${sessionId}/posts`)));
+    const rows = JSON.parse(await api(`/api/sessions/${sessionId}/posts`));
+    return text(rows.map(mcpPostListRowView));
   },
 );
 
@@ -197,6 +199,8 @@ server.registerTool(
     }
     return text({
       comments: result.comments.map((c: any) => ({
+        postId: c.postId,
+        postTitle: c.postTitle,
         surfaceId: c.postId,
         surfaceTitle: c.postTitle,
         text: c.text,
@@ -228,7 +232,8 @@ server.registerTool(
   { description: MCP_TOOL_DESCRIPTIONS.listSurfacesStdio, inputSchema: {} },
   async () => {
     if (!sessionId) return text([]);
-    return text(JSON.parse(await api(`/api/sessions/${sessionId}/surfaces`)));
+    const rows = JSON.parse(await api(`/api/sessions/${sessionId}/surfaces`));
+    return text(rows.map(mcpPostListRowView));
   },
 );
 

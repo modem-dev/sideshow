@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import type { CommentWait, Feedback } from "./app.ts";
+import { feedbackView, mcpPostListRowView, postDetailView, postWriteView } from "./apiViews.ts";
 import { decodeBase64 } from "./base64.ts";
 import {
   type Asset,
@@ -75,10 +76,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
   ) =>
     JSON.stringify(
       {
-        id: result.post.id,
-        sessionId: result.post.sessionId,
-        version: result.post.version,
-        surfaces: result.post.surfaces.map((p, index) => ({ id: p.id, kind: p.kind, index })),
+        ...postWriteView(result.post),
         url: `${origin}/${seg}/${result.post.id}`,
         ...(result.userFeedback && { userFeedback: result.userFeedback }),
       },
@@ -143,13 +141,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         }
         return JSON.stringify(
           {
-            comments: result.comments.map((c) => ({
-              surfaceId: c.postId,
-              surfaceTitle: c.postTitle,
-              text: c.text,
-              at: c.createdAt,
-              ...(c.anchor && { anchor: c.anchor }),
-            })),
+            comments: result.comments.map(feedbackView),
             lastSeq: result.lastSeq,
           },
           null,
@@ -180,23 +172,12 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         const posts = await deps.store.listPosts(
           typeof args.session === "string" ? args.session : undefined,
         );
-        return JSON.stringify(
-          posts.map((s) => ({
-            id: s.id,
-            sessionId: s.sessionId,
-            title: s.title,
-            version: s.version,
-            updatedAt: s.updatedAt,
-            surfaces: s.surfaces.map((p, index) => ({ id: p.id, kind: p.kind, index })),
-          })),
-          null,
-          2,
-        );
+        return JSON.stringify(posts.map(mcpPostListRowView), null, 2);
       }
       case "get_post": {
         const post = await deps.store.getPost(String(args.id ?? ""));
         if (!post) throw new Error("post not found");
-        return JSON.stringify(post, null, 2);
+        return JSON.stringify(postDetailView(post), null, 2);
       }
       case "upload_asset": {
         if (typeof args.data !== "string" || args.data.length === 0) {

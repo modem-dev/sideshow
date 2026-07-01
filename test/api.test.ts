@@ -58,6 +58,7 @@ test("publish without session auto-creates one", async () => {
   const sessions = (await (await app.request("/api/sessions")).json()) as any;
   assert.equal(sessions.length, 1);
   assert.equal(sessions[0].agent, "pi");
+  assert.equal(sessions[0].postCount, 1);
   assert.equal(sessions[0].surfaceCount, 1);
 });
 
@@ -1368,6 +1369,10 @@ test("mcp endpoint: initialize, tools/list, publish round trip", async () => {
   ).json()) as any;
   const fb = JSON.parse(feedback.result.content[0].text);
   assert.equal(fb.comments.length, 1);
+  assert.equal(fb.comments[0].postId, payload.id);
+  assert.equal(fb.comments[0].postTitle, "Via MCP");
+  assert.equal(fb.comments[0].surfaceId, payload.id);
+  assert.equal(fb.comments[0].surfaceTitle, "Via MCP");
   assert.equal(fb.comments[0].text, "nice");
   assert.ok(fb.lastSeq > 0);
 });
@@ -1580,6 +1585,9 @@ test("agent writes piggyback unseen user comments, delivered once", async () => 
     updated.userFeedback.map((f: any) => f.text),
     ["wrong color", "also add a key"],
   );
+  assert.equal(updated.userFeedback[0].postId, s.id);
+  assert.equal(updated.userFeedback[0].postTitle, "Doc");
+  assert.equal(updated.userFeedback[0].surfaceId, s.id);
   assert.equal(updated.userFeedback[0].surfaceTitle, "Doc");
 
   // delivered once — the next write is clean
@@ -2437,7 +2445,9 @@ test("publish_post / update_post / list_posts MCP tools accept surfaces", async 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].id, payload.id);
   assert.equal(rows[0].kinds, undefined);
+  assert.equal(rows[0].parts, undefined);
   assert.deepEqual(rows[0].surfaces, [{ id: upPayload.surfaces[0].id, kind: "html", index: 0 }]);
+  assert.deepEqual(Object.keys(rows[0].surfaces[0]).sort(), ["id", "index", "kind"]);
 });
 
 test("reply_to_user MCP tool accepts postId (and legacy surfaceId)", async () => {
@@ -3233,7 +3243,7 @@ test("mcp tools/list includes the new per-surface tools", async () => {
   assert.ok(names.includes("reorder_surfaces"));
 });
 
-test("mcp get_post fetches a single post with surface ids via HTTP MCP", async () => {
+test("mcp get_post fetches full indexed post detail via HTTP MCP", async () => {
   const app = makeApp();
   const pub = (await (
     await app.request(
@@ -3251,6 +3261,16 @@ test("mcp get_post fetches a single post with surface ids via HTTP MCP", async (
     )
   ).json()) as any;
   const postId = JSON.parse(pub.result.content[0].text).id;
+  await app.request(`/api/posts/${postId}`, {
+    ...json({
+      title: "GetPost v2",
+      surfaces: [
+        { kind: "html", html: "<p>a2</p>" },
+        { kind: "markdown", markdown: "# b2" },
+      ],
+    }),
+    method: "PUT",
+  });
 
   const res = (await (
     await app.request(
@@ -3264,12 +3284,24 @@ test("mcp get_post fetches a single post with surface ids via HTTP MCP", async (
   assert.equal(res.result.isError, undefined);
   const post = JSON.parse(res.result.content[0].text);
   assert.equal(post.id, postId);
-  assert.equal(post.title, "GetPost");
+  assert.equal(post.title, "GetPost v2");
   assert.equal(post.surfaces.length, 2);
   assert.equal(post.surfaces[0].kind, "html");
+  assert.equal(post.surfaces[0].index, 0);
+  assert.equal(post.surfaces[0].html, "<p>a2</p>");
   assert.equal(post.surfaces[1].kind, "markdown");
+  assert.equal(post.surfaces[1].index, 1);
+  assert.equal(post.surfaces[1].markdown, "# b2");
   assert.ok(post.surfaces[0].id, "surface ids are present");
   assert.ok(post.surfaces[1].id);
+  assert.deepEqual(
+    post.history[0].surfaces.map((s: any) => ({ kind: s.kind, index: s.index })),
+    [
+      { kind: "html", index: 0 },
+      { kind: "markdown", index: 1 },
+    ],
+  );
+  assert.equal(post.history[0].surfaces[0].html, "<p>a</p>");
 });
 
 test("mcp tools/list includes get_post", async () => {
