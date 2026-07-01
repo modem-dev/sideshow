@@ -79,7 +79,24 @@ export function frameForSource(source: unknown): { id: string; iframe: HTMLIFram
 const MIN_FRAME_H = 24;
 const MAX_FRAME_H = 4000;
 export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unknown): void {
-  iframe.style.height = Math.min(Math.max(Number(reportedHeight), MIN_FRAME_H), MAX_FRAME_H) + "px";
+  const next = Math.min(Math.max(Number(reportedHeight), MIN_FRAME_H), MAX_FRAME_H);
+  const prev = iframe.getBoundingClientRect();
+  iframe.style.height = next + "px";
+  // Manual scroll anchoring. Surface heights arrive whenever the sandboxed
+  // document gets around to reporting them — seconds or minutes after load on
+  // a slow network. When a frame that lies entirely ABOVE the scroll viewport
+  // grows, everything the user is looking at shifts down by the same amount
+  // (WebKit has no native scroll anchoring, and Chrome's is suppressed at
+  // scrollTop 0 or when the grower itself is the anchor node), so compensate
+  // scrollTop by the delta — the view stays put, however late the resize
+  // lands. A frame intersecting the viewport instead grows visibly downward,
+  // which is native anchoring's behaviour too — no compensation. The scroller
+  // sets `overflow-anchor: none` so Chrome can't double-compensate.
+  const delta = next - prev.height;
+  if (!delta || prev.height === 0) return; // no change, or hidden/unlaid-out
+  const scroller = iframe.closest("main, #standalone");
+  if (!(scroller instanceof HTMLElement)) return;
+  if (prev.bottom <= scroller.getBoundingClientRect().top) scroller.scrollTop += delta;
 }
 
 // While a deep-link scroll poll is active, IntersectionObserver callbacks on
@@ -139,39 +156,80 @@ function pollScrollIntoView(el: HTMLElement, postId: string): () => void {
     return () => {};
   }
 
+  // Two mechanisms keep the deep-linked card in place. applyFrameHeight owns
+  // the steady state: once the target sits at the viewport top, every frame
+  // above it is above the viewport, so late resizes are compensated there —
+  // forever, no matter when they land. This pin owns the messy start, when the
+  // stream is still collapsed and unsized cards above the target are *inside*
+  // the viewport (compensation must not fire for visible growth): it re-runs
+  // scrollIntoView whenever the stream's height changes. Crucially it is ended
+  // by the USER, not by a settle timer — any wheel/touch/pointer/key input
+  // hands control back instantly, so a stalled surface can never hold the
+  // scroll position hostage, and there is no quiet-window to lose to a
+  // CDN-loaded surface that resizes 10s+ after its frame loads.
+  const PIN_MAX_MS = 30_000;
   deepLinkScrolling = true;
   const started = performance.now();
+  const scope = (el.closest("#stream") as HTMLElement | null) ?? el.parentElement ?? el;
+  const inputHost = (el.closest("main") as HTMLElement | null) ?? scope;
   let lastTop: number | null = null;
   let stableChecks = 0;
   let stopped = false;
+  let urlWritten = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const finish = () => {
-    deepLinkScrolling = false;
+  const scroll = () => el.scrollIntoView({ behavior: "instant", block: "start" });
+
+  const writeUrl = () => {
+    if (urlWritten) return;
+    urlWritten = true;
     focusPost(postId);
   };
 
+  // The pin: re-anchor on any stream height change (frames report through the
+  // bridge at arbitrary times, so this is observation-driven, not polled).
+  const observer = window.ResizeObserver
+    ? new ResizeObserver(() => {
+        if (!stopped) scroll();
+      })
+    : undefined;
+  observer?.observe(scope);
+
+  const inputEvents = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+  const disarm = () => stop(true);
+  for (const type of inputEvents) inputHost.addEventListener(type, disarm, { passive: true });
+  const maxTimer = setTimeout(disarm, PIN_MAX_MS);
+
+  function stop(write: boolean) {
+    if (stopped) return;
+    stopped = true;
+    if (timer !== undefined) clearTimeout(timer);
+    clearTimeout(maxTimer);
+    observer?.disconnect();
+    for (const type of inputEvents) inputHost.removeEventListener(type, disarm);
+    deepLinkScrolling = false;
+    if (write) writeUrl();
+  }
+
+  // Initial settle loop: scroll until the position stabilises, then write the
+  // URL (stable for 3 consecutive checks → done; hard cap at 5 s). The pin
+  // above stays armed afterwards — only user input or PIN_MAX_MS ends it.
   const tick = () => {
     if (stopped) return;
-    el.scrollIntoView({ behavior: "instant", block: "start" });
-    const top = el.getBoundingClientRect().top;
-    if (lastTop !== null && Math.abs(top - lastTop) <= 5) stableChecks += 1;
+    scroll();
+    const t = el.getBoundingClientRect().top;
+    if (lastTop !== null && Math.abs(t - lastTop) <= 5) stableChecks += 1;
     else stableChecks = 0;
-    lastTop = top;
-    // Stable for 3 consecutive checks → done; hard cap at 5 s.
+    lastTop = t;
     if (stableChecks >= 3 || performance.now() - started >= 5000) {
-      finish();
+      writeUrl();
       return;
     }
     timer = setTimeout(tick, 50);
   };
 
   tick();
-  return () => {
-    stopped = true;
-    if (timer !== undefined) clearTimeout(timer);
-    deepLinkScrolling = false;
-  };
+  return () => stop(false);
 }
 
 export function Card(props: { post: Post; standalone?: boolean }) {

@@ -425,6 +425,11 @@ main {
   flex: 1;
   overflow-y: auto;
   min-width: 0;
+  /* The engine does its own scroll anchoring (applyFrameHeight compensates
+     scrollTop when a surface above the viewport resizes) — identical across
+     browsers and shadow-DOM embeds. Disable the native kind so Chrome can't
+     double-compensate. */
+  overflow-anchor: none;
 }
 .session-head {
   position: sticky;
@@ -469,6 +474,7 @@ main {
   height: 100%;
   overflow-y: auto;
   background: var(--bg);
+  overflow-anchor: none; /* see main — the engine anchors scroll itself */
 }
 .standalone-main {
   max-width: 860px;
