@@ -1,7 +1,7 @@
 # Connecting agents
 
 sideshow meets an agent wherever it is. Pick whichever tier the agent supports —
-each one covers the full loop: publish a surface, render it live, read the user's
+each one covers the full loop: publish a post, render it live, read the user's
 comments, reply or revise.
 
 The fastest path for any agent with a shell is to paste the setup block into its
@@ -18,7 +18,7 @@ the underlying tiers those live instructions build on.
 
 ## Shell (CLI)
 
-The `sideshow` CLI has no dependencies and groups a conversation's surfaces into
+The `sideshow` CLI has no dependencies and groups a conversation's posts into
 one session for you:
 
 ```sh
@@ -32,8 +32,8 @@ sideshow guide                                  # print the design contract
 ## Pi extension
 
 Pi users can install the package directly. It adds native `sideshow_*` tools for
-publishing/updating surfaces, uploading assets, waiting for feedback, and
-replying in browser threads:
+publishing/updating posts, uploading assets, waiting for feedback, and replying
+in browser threads:
 
 ```sh
 pi install npm:sideshow
@@ -43,9 +43,11 @@ pi -e npm:sideshow
 
 ## MCP
 
-Tools: `publish_surface`, `update_surface`, `publish_snippet`, `update_snippet`,
-`wait_for_feedback`, `reply_to_user`, `list_surfaces`, `upload_asset`,
-`get_design_guide`. Connect over stdio or straight to the server at `/mcp`:
+Tools: `publish_post`, `update_post`, `list_posts`, `get_post`,
+`wait_for_feedback`, `reply_to_user`, `upload_asset`, and `get_design_guide`.
+Deprecated aliases (`publish_surface`, `update_surface`, `list_surfaces`, and
+html-only snippet tools) still work. Connect over stdio or straight to the server
+at `/mcp`:
 
 ```sh
 claude mcp add --scope user sideshow -- npx -y sideshow mcp
@@ -57,10 +59,9 @@ MCP agents get the usage instructions automatically.
 
 ## Plain HTTP
 
-`POST /api/surfaces`, `PUT /api/surfaces/:id`, `POST /api/assets` for blob
-uploads, and `GET /api/comments?wait=60` for long-polling. The legacy
-`/api/snippets` endpoints still work as html-only aliases. Documented at
-`/guide`.
+`POST /api/posts`, `PUT /api/posts/:id`, `POST /api/assets` for blob uploads,
+and `GET /api/comments?wait=60` for long-polling. Legacy `/api/surfaces` and
+`/api/snippets` endpoints still work as aliases. Documented at `/guide`.
 
 ## Claude Code
 
@@ -84,7 +85,7 @@ watcher:
 
 On install it asks for your **Sideshow URL** (default `http://localhost:8228`, or
 your deployed instance) and an optional token. The monitor runs `sideshow watch`
-against your board; comments are delivered to the agent exactly once. Requires
+against your workspace; comments are delivered to the agent exactly once. Requires
 Claude Code ≥ 2.1.105. The viewer's "connect Claude Code" link (sidebar footer)
 shows the same steps. The plugin lives in [`../plugin/`](../plugin/).
 

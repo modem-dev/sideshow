@@ -10,7 +10,7 @@ import type { WorkspaceSnapshot } from "../server/types.ts";
 
 const tmpJson = () => join(mkdtempSync(join(tmpdir(), "sideshow-mig-")), "data.json");
 
-test("migrates a JSON board into SQLite preserving identity, history, and seq", async () => {
+test("migrates a JSON workspace into SQLite preserving identity, history, and seq", async () => {
   const jsonPath = tmpJson();
   const json = new JsonFileStore(jsonPath);
   const session = await json.createSession({ agent: "pi", title: "Sess" });
@@ -125,7 +125,7 @@ test("migration never imports into a SQLite db that already has data", async () 
   );
 });
 
-test("importBoard rolls back fully if an insert fails partway through", async () => {
+test("importBoard (legacy snapshot API) rolls back fully if an insert fails partway through", async () => {
   const sqlite = new SqlStore(createSqliteStorage());
   const now = "2026-01-01T00:00:00Z";
   const session = {
@@ -141,7 +141,7 @@ test("importBoard rolls back fully if an insert fails partway through", async ()
   // throws — so the transaction must roll the first one back too.
   const bad: WorkspaceSnapshot = {
     sessions: [session, session],
-    surfaces: [],
+    posts: [],
     comments: [],
     traces: [],
     assets: [],

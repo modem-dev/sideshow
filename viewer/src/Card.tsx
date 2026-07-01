@@ -260,7 +260,7 @@ export function Card(props: { post: Post; standalone?: boolean }) {
     <div class="card" data-id={props.post.id} ref={(el) => (card = el)}>
       <div class="card-head">
         <span class="card-title">{props.post.title}</span>
-        {/* The version dropdown and "updated" meta are board-feed affordances;
+        {/* The version dropdown and "updated" meta are workspace-feed affordances;
             the standalone page is a clean, single-post view, so it shows only
             the title (and the watermark its parent adds below). */}
         <Show when={!props.standalone}>
@@ -438,17 +438,17 @@ export function Card(props: { post: Post; standalone?: boolean }) {
               >
                 <OpenIcon />
               </a>
-              {/* Open the post as a PNG. The image is rendered server-side by
-                  the Browser Rendering Worker, so the action is only live where
-                  that exists; on a plain Node server it's disabled with a tooltip
-                  that points at the README. */}
+              {/* Open the first renderable surface as a PNG. The image is
+                  rendered server-side by the Browser Rendering Worker, so the
+                  action is only live where that exists; on a plain Node server
+                  it's disabled with a tooltip that points at the README. */}
               <Show
                 when={canScreenshot()}
                 fallback={
                   <button
                     class="act icon shot"
                     disabled
-                    title="Saving a post as an image needs Cloudflare Browser Rendering, which this server doesn't have. See the README."
+                    title="Saving the first surface as an image needs Cloudflare Browser Rendering, which this server doesn't have. See the README."
                     aria-label="Screenshots aren't available on this server"
                   >
                     <ImageIcon />
@@ -459,8 +459,8 @@ export function Card(props: { post: Post; standalone?: boolean }) {
                   class="act icon shot"
                   target="_blank"
                   href={postImageLink(props.post.id)}
-                  title="Open as an image (PNG)"
-                  aria-label="Open as an image (PNG)"
+                  title="Open first surface as an image (PNG)"
+                  aria-label="Open first surface as an image (PNG)"
                 >
                   <ImageIcon />
                 </a>

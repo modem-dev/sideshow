@@ -80,11 +80,11 @@ export interface SideshowHost {
   // can ignore it. Additive — the tokens argument is unchanged.
   onThemeChange?(tokens: ThemeTokens, meta: { theme: string; mode: Mode }): void;
   // The engine calls this once, after its first session-list fetch resolves and
-  // the initial board (a session, or the empty-board onboarding) has been
+  // the initial workspace (a session, or the empty-workspace onboarding) has been
   // decided — i.e. the moment the engine knows what to show. An embedding host
   // can hold a loading overlay over the mount until then so its users never see
-  // the pre-load board flash (the engine's own onboarding pane is internally
-  // gated on the same signal). Fires even if that fetch failed (the board falls
+  // the pre-load workspace flash (the engine's own onboarding pane is internally
+  // gated on the same signal). Fires even if that fetch failed (the workspace falls
   // back to onboarding), so a host overlay can't get stuck. Optional — the
   // trivial self-hosted host omits it.
   onReady?(): void;
@@ -111,21 +111,21 @@ export const SLOTS = {
   asideFoot: "ss:aside-foot",
   // Empty-sidebar affordance shown in the session list when no sessions exist.
   // (`#sessionList`, App.tsx) Fallback is a native "Connect an agent" row that
-  // scrolls to the empty-board pane (ss:empty); an embedder projects its own
-  // empty-list nudge here. Renders only on an empty (post-load) board.
+  // scrolls to the empty-workspace pane (ss:empty); an embedder projects its own
+  // empty-list nudge here. Renders only on an empty (post-load) workspace.
   asideEmpty: "ss:aside-empty",
-  // Empty-board onboarding shown before any session exists. (`#onboard`, App.tsx)
+  // Empty-workspace onboarding shown before any session exists. (`#onboard`, App.tsx)
   empty: "ss:empty",
   // Per-session actions in the session header, beside the stream/timeline toggle.
   // Empty by default (self-hosted has no actions here); an embedder projects
   // session-scoped controls such as a cloud "Share" button. (`.session-head`, App.tsx)
   sessionActions: "ss:session-actions",
   // The whole main content pane (onboarding + session stream). Fallback is the
-  // engine's normal board; an embedder projects a full-pane view here — e.g. a
+  // engine's normal workspace; an embedder projects a full-pane view here — e.g. a
   // cloud "Settings" page — to take over the main area while the sidebar (session
   // list, account footer) stays put. Unlike the always-on footer/empty overrides,
   // this is meant to be projected *conditionally*: project a child only while the
-  // host view is active, and the engine falls back to the board when it's gone.
+  // host view is active, and the engine falls back to the workspace when it's gone.
   // (`<main>`, App.tsx)
   main: "ss:main",
 } as const;

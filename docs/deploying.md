@@ -30,12 +30,12 @@ To share read-only access without handing out the token, set
 Writes still require `SIDESHOW_TOKEN`, and authenticated owners keep the full
 UI. Invalid `SIDESHOW_PUBLIC_READ` values are ignored.
 
-Bare surface links (`/s/:surfaceId`) include Open Graph/Twitter metadata for
-inline previews. Crawlers only see useful previews when those read routes are
-publicly reachable under the settings above; tokened/private boards do not put
+Bare post links (`/s/:postId`) include Open Graph/Twitter metadata for inline
+previews. Crawlers only see useful previews when those read routes are publicly
+reachable under the settings above; tokened/private workspaces do not put
 `?key=` secrets into preview metadata. Preview images use
-`/s/:surfaceId.png?card=1`, which requires the Cloudflare Browser Rendering
-binding from `wrangler.jsonc` on deployed Workers.
+`/s/:postId.png?card=1`, which requires the Cloudflare Browser Rendering binding
+from `wrangler.jsonc` on deployed Workers.
 
 Remote agents can connect MCP straight to the deployment:
 
@@ -44,12 +44,13 @@ claude mcp add --transport http sideshow https://sideshow.<account>.workers.dev/
   --header "Authorization: Bearer $SIDESHOW_TOKEN"
 ```
 
-## Surface screenshots
+## Post preview screenshots
 
-Every surface can be rendered to a PNG at `/s/:surfaceId.png` (the viewer's
-per-surface "open as image" action links here; `?card=1` produces the 1200×630
-Open Graph/Twitter preview image embedded in `/s/:surfaceId` link unfurls). The
-image is captured by a real headless browser through Cloudflare's [Browser
+A post's first renderable surface can be rendered to a PNG at `/s/:postId.png`
+(the viewer's "open first surface as image" action links here; `?card=1`
+produces the 1200×630 Open Graph/Twitter preview image embedded in `/s/:postId`
+link unfurls). The image is captured by a real headless browser through
+Cloudflare's [Browser
 Rendering](https://developers.cloudflare.com/browser-rendering/) binding, declared
 in `wrangler.jsonc`:
 
@@ -60,9 +61,9 @@ in `wrangler.jsonc`:
 Because there is no headless browser on the plain Node server, `/s/:id.png` is a
 Workers-only route. The local viewer still shows the screenshot action, but
 disabled with a tooltip — there is nothing to render the image. Auth is unchanged:
-the Worker first forwards the request to the surface's read route, so a private
-board's screenshots stay as protected as the board itself.
+the Worker first forwards the request to the post's read route, so a private
+workspace's screenshots stay as protected as the workspace itself.
 
 The whole app runs inside a single Durable Object with SQLite storage. One
-instance per board keeps the in-memory event bus authoritative, so SSE and
+instance per workspace keeps the in-memory event bus authoritative, so SSE and
 long-polling behave the same as the local server.

@@ -238,12 +238,14 @@ export class JsonFileStore implements Store {
   }
 
   // Snapshot the whole workspace for a one-time backend migration (→ SqlStore.
-  // importBoard). Returns live references — fine for a read-once-then-import
+  // importBoard). The method name predates the workspace terminology; keep it as
+  // public API. Returns live references — fine for a read-once-then-import
   // migration, which never mutates the store afterward.
   async exportBoard(): Promise<WorkspaceSnapshot> {
     await this.load();
     return {
       sessions: [...this.sessions.values()],
+      posts: [...this.surfaces.values()],
       surfaces: [...this.surfaces.values()],
       comments: this.comments,
       assets: [...this.assets.values()],
@@ -295,8 +297,8 @@ export class JsonFileStore implements Store {
   async removeSession(id: string) {
     await this.load();
     if (!this.sessions.delete(id)) return false;
-    for (const [sid, surface] of this.surfaces) {
-      if (surface.sessionId === id) this.surfaces.delete(sid);
+    for (const [postId, post] of this.surfaces) {
+      if (post.sessionId === id) this.surfaces.delete(postId);
     }
     this.comments = this.comments.filter((c) => c.sessionId !== id);
     this.trace.delete(id);
@@ -366,7 +368,7 @@ export class JsonFileStore implements Store {
     await this.load();
     if (!this.sessions.has(input.sessionId)) return null;
     const now = new Date().toISOString();
-    const surface: Post = {
+    const post: Post = {
       id: newId(),
       sessionId: input.sessionId,
       title: stripNul(input.title)?.trim() || "Untitled",
@@ -376,38 +378,38 @@ export class JsonFileStore implements Store {
       version: 1,
       history: [],
     };
-    this.surfaces.set(surface.id, surface);
+    this.surfaces.set(post.id, post);
     this.touch(input.sessionId);
     this.addAssetRefs(input.surfaces);
     await this.persist();
-    return clone(surface);
+    return clone(post);
   }
 
   async updatePost(id: string, patch: UpdatePostInput) {
     await this.load();
-    const surface = this.surfaces.get(id);
-    if (!surface) return null;
-    surface.history.push({
-      version: surface.version,
-      title: surface.title,
-      surfaces: clone(surface.surfaces),
-      at: surface.updatedAt,
+    const post = this.surfaces.get(id);
+    if (!post) return null;
+    post.history.push({
+      version: post.version,
+      title: post.title,
+      surfaces: clone(post.surfaces),
+      at: post.updatedAt,
     });
-    if (surface.history.length > HISTORY_LIMIT) surface.history.shift();
-    if (patch.title !== undefined) surface.title = stripNul(patch.title).trim() || surface.title;
-    if (patch.surfaces !== undefined) surface.surfaces = normalizeSurfaceIds(clone(patch.surfaces));
-    surface.version += 1;
-    surface.updatedAt = new Date().toISOString();
-    this.touch(surface.sessionId);
+    if (post.history.length > HISTORY_LIMIT) post.history.shift();
+    if (patch.title !== undefined) post.title = stripNul(patch.title).trim() || post.title;
+    if (patch.surfaces !== undefined) post.surfaces = normalizeSurfaceIds(clone(patch.surfaces));
+    post.version += 1;
+    post.updatedAt = new Date().toISOString();
+    this.touch(post.sessionId);
     if (patch.surfaces !== undefined) this.addAssetRefs(patch.surfaces);
     await this.persist();
-    return clone(surface);
+    return clone(post);
   }
 
   async removePost(id: string) {
     await this.load();
-    const surface = this.surfaces.get(id);
-    if (!surface) return false;
+    const post = this.surfaces.get(id);
+    if (!post) return false;
     this.surfaces.delete(id);
     this.comments = this.comments.filter((c) => c.postId !== id);
     this.invalidateAssetRefs();
@@ -432,13 +434,13 @@ export class JsonFileStore implements Store {
   async createComment(input: CreateCommentInput) {
     await this.load();
     if (!this.sessions.has(input.sessionId)) return null;
-    const surface = input.postId ? this.surfaces.get(input.postId) : null;
+    const post = input.postId ? this.surfaces.get(input.postId) : null;
     const comment: Comment = {
       id: newId(),
       seq: ++this.lastSeq,
       sessionId: input.sessionId,
-      postId: surface?.id ?? null,
-      postTitle: surface?.title ?? null,
+      postId: post?.id ?? null,
+      postTitle: post?.title ?? null,
       author: stripNul(input.author).trim() || "user",
       text: stripNul(input.text),
       createdAt: new Date().toISOString(),

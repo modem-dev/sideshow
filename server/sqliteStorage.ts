@@ -113,10 +113,11 @@ export async function migrateJsonToSqlite(sqlite: SqlStore, jsonPath: string): P
   }
   sqlite.importBoard(snapshot);
   await sqlite.setSetting("importedFrom", jsonPath);
-  if (snapshot.sessions.length || snapshot.surfaces.length) {
+  const posts = snapshot.posts ?? snapshot.surfaces ?? [];
+  if (snapshot.sessions.length || posts.length) {
     console.error(
       `[sideshow] migrated ${snapshot.sessions.length} session(s), ` +
-        `${snapshot.surfaces.length} surface(s), ${snapshot.comments.length} comment(s), ` +
+        `${posts.length} post(s), ${snapshot.comments.length} comment(s), ` +
         `${snapshot.assets.length} asset(s) from ${jsonPath} into SQLite`,
     );
   }

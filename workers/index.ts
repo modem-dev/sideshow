@@ -6,7 +6,7 @@ import pkg from "../package.json" with { type: "json" };
 import { createApp } from "../server/app.ts";
 import { SqlStore } from "../server/sqlStore.ts";
 import viewerHtml from "../viewer/dist/index.html";
-import { matchSurfaceScreenshot, planSurfaceScreenshot } from "./screenshot.ts";
+import { matchPostScreenshot, planPostScreenshot } from "./screenshot.ts";
 
 interface Env {
   BOARD: DurableObjectNamespace<SideshowBoard>;
@@ -15,7 +15,7 @@ interface Env {
   SIDESHOW_PUBLIC_READ?: string;
 }
 
-// The whole app lives inside one Durable Object: a single instance per board
+// The whole app lives inside one Durable Object: a single instance per workspace
 // means the in-memory event bus is authoritative — SSE and long-poll work
 // exactly as they do locally, with SQLite-in-DO as the store.
 export class SideshowBoard extends DurableObject<Env> {
@@ -54,23 +54,25 @@ export default {
         { status: 503 },
       );
     }
-    const board = env.BOARD.get(env.BOARD.idFromName("default"));
+    const workspace = env.BOARD.get(env.BOARD.idFromName("default"));
 
-    // Screenshot: GET /s/:id.png → PNG of the rendered surface page.
+    // Screenshot: GET /s/:id.png → PNG of the rendered post page.
     // Auth is decided by the app — we forward the user's credentials to the DO
     // and only proceed if it returns 200.
     const url = new URL(request.url);
-    const surfaceId = matchSurfaceScreenshot(request.method, url.pathname);
-    if (!surfaceId) return board.fetch(request);
+    const postId = matchPostScreenshot(request.method, url.pathname);
+    if (!postId) return workspace.fetch(request);
 
     // Let the app decide auth: forward the request (with user cookies/headers)
     // to the real /s/:id?part=0 renderer. We pass theme/mode so the rendered
     // page matches what the viewer shows; the width is configurable via ?w=
     // (default 800). Social card mode is fixed at 1200x630.
-    const plan = planSurfaceScreenshot(url, surfaceId, request.headers.get("cookie"));
-    const checkRes = await board.fetch(new Request(plan.checkUrl, { headers: request.headers }));
+    const plan = planPostScreenshot(url, postId, request.headers.get("cookie"));
+    const checkRes = await workspace.fetch(
+      new Request(plan.checkUrl, { headers: request.headers }),
+    );
     if (!checkRes.ok) return checkRes;
-    // Auth passed and surface exists — discard the HTML. For HEAD, return the
+    // Auth passed and post exists — discard the HTML. For HEAD, return the
     // same public image headers Slack checks without paying for Browser Rendering.
     await checkRes.arrayBuffer();
     if (request.method === "HEAD") {

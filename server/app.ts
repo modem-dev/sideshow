@@ -58,14 +58,14 @@ const MAX_COMMENT_TEXT = 8000;
 const MAX_TITLE = 500;
 // Ceiling on concurrently-held SSE + long-poll connections. Both are GETs that
 // pin a connection open (the event stream indefinitely, /api/comments?wait up
-// to MAX_WAIT_SECONDS); on a publicRead board they're reachable unauthenticated,
+// to MAX_WAIT_SECONDS); on a publicRead workspace they're reachable unauthenticated,
 // so without a cap a flood exhausts sockets. One app instance is one workspace
 // (a single Durable Object), and one workspace is one user — so legitimate
 // concurrent holds are small but not tiny: each open viewer tab holds one SSE,
 // and each active agent holds a long-poll (and possibly its own SSE). A
 // multi-agent session with 5 agents plus a few viewer tabs can legitimately
 // reach ~15. 32 clears that with headroom while still bounding a flood on a
-// no-token local board — and a real flood is orders of magnitude bigger, so
+// no-token local workspace — and a real flood is orders of magnitude bigger, so
 // rejecting at 32 vs 16 makes no difference to flood protection, only to
 // legitimate use. Configurable so deployments can tune it and tests can
 // exercise the cap cheaply.
@@ -146,11 +146,12 @@ export interface AppOptions {
   // write token. "session" exposes only session-scoped reads; "full" exposes
   // every GET route.
   publicRead?: PublicReadMode;
-  // Whether this deployment can render a surface as a PNG (the /s/:id.png route).
-  // That route lives in the Cloudflare Worker entry and needs the Browser
-  // Rendering binding; the plain Node server can't drive a headless browser, so
-  // it leaves this false. Surfaced to the viewer (window.__SIDESHOW_SCREENSHOTS__)
-  // so the per-surface screenshot action knows whether to enable itself.
+  // Whether this deployment can render a post's first surface as a PNG (the
+  // /s/:id.png route). That route lives in the Cloudflare Worker entry and needs
+  // the Browser Rendering binding; the plain Node server can't drive a headless
+  // browser, so it leaves this false. Surfaced to the viewer
+  // (window.__SIDESHOW_SCREENSHOTS__) so the screenshot action knows whether to
+  // enable itself.
   screenshots?: boolean;
   // Update notice: the running version and the upgrade hint that fits this
   // deployment (npm install vs redeploy). Without `version`, /api/version
@@ -165,7 +166,7 @@ export interface AppOptions {
   onEvent?: (event: FeedEvent) => void;
   // Max concurrently-held SSE (`/api/events`) + long-poll (`/api/comments?wait`)
   // connections before new ones are rejected with 503. Bounds a connection flood
-  // on publicRead boards; defaults to DEFAULT_MAX_HOLD_CONNECTIONS.
+  // on publicRead workspaces; defaults to DEFAULT_MAX_HOLD_CONNECTIONS.
   maxHoldConnections?: number;
 }
 
@@ -215,22 +216,23 @@ const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 // html surfaces carry arbitrary markup the viewer renders via a sandboxed iframe,
 // so the card list never needs their bodies — strip them to a kind marker.
 // diff surfaces are structured data the viewer renders inline, so keep them whole.
-const stripParts = (parts: Surface[]): Surface[] =>
-  parts.map((p) => (p.kind === "html" ? { kind: "html", html: "" } : p));
+const stripHtmlBodies = (surfaces: Surface[]): Surface[] =>
+  surfaces.map((surface) => (surface.kind === "html" ? { kind: "html", html: "" } : surface));
 
-const surfaceMeta = (s: Post) => ({
-  id: s.id,
-  sessionId: s.sessionId,
-  title: s.title,
-  createdAt: s.createdAt,
-  updatedAt: s.updatedAt,
-  version: s.version,
-  parts: stripParts(s.surfaces),
+const postMeta = (post: Post) => ({
+  id: post.id,
+  sessionId: post.sessionId,
+  title: post.title,
+  createdAt: post.createdAt,
+  updatedAt: post.updatedAt,
+  version: post.version,
+  // Legacy wire name: session list responses still expose `parts` for older clients.
+  parts: stripHtmlBodies(post.surfaces),
 });
 
 // Cap inline preview fields so /api/surfaces/recent stays cheap while still
-// carrying a real clipped preview. Unlike stripParts (which empties html for the
-// card list), this TRUNCATES large inline payloads so a feed card can render an
+// carrying a real clipped preview. Unlike stripHtmlBodies (which empties html
+// for the card list), this TRUNCATES large inline payloads so a feed card can render an
 // honest preview. Assets stay by-reference (assetId). When a field is clipped we
 // set `truncated:true` on that part so a client can offer a "view full post"
 // affordance honestly.
@@ -353,7 +355,7 @@ function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
   if (path.startsWith("/a/")) return true;
   if (path.startsWith("/api/sessions/")) return true;
   // /api/surfaces/recent is the cross-session feed source — gate it like
-  // /api/sessions (NOT public on a session-scoped board), not like the
+  // /api/sessions (NOT public on a session-scoped workspace), not like the
   // per-surface /api/surfaces/:id reads below.
   if (path === "/api/surfaces/recent") return false;
   if (path.startsWith("/api/surfaces/")) return true;
@@ -573,20 +575,20 @@ export function createApp({
     return { ...surface, [field]: value } as Surface;
   }
 
-  async function publishSurface(input: {
-    parts: Surface[];
+  async function publishPostFlow(input: {
+    surfaces: Surface[];
     title?: string;
     session?: string;
     sessionTitle?: string;
     agent?: string;
     cwd?: string;
   }): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    { post: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
   > {
-    if (input.parts.length === 0) {
+    if (input.surfaces.length === 0) {
       return { error: "a post needs at least one surface", status: 400 };
     }
-    if (surfacesByteLength(input.parts) > MAX_SURFACE_BYTES) {
+    if (surfacesByteLength(input.surfaces) > MAX_SURFACE_BYTES) {
       return { error: `surface exceeds ${MAX_SURFACE_BYTES} bytes`, status: 413 };
     }
     let sessionId = input.session;
@@ -604,17 +606,17 @@ export function createApp({
       bus.broadcast({ type: "session-created", id: session.id });
       sessionId = session.id;
     }
-    const surface = await store.createPost({
+    const post = await store.createPost({
       sessionId,
-      surfaces: input.parts,
+      surfaces: input.surfaces,
       title: input.title?.slice(0, MAX_TITLE),
     });
-    if (!surface) return { error: "session not found", status: 404 };
-    bus.broadcast({ type: "post-created", id: surface.id, sessionId, version: 1 });
-    return { surface, userFeedback: await collectFeedback(sessionId) };
+    if (!post) return { error: "session not found", status: 404 };
+    bus.broadcast({ type: "post-created", id: post.id, sessionId, version: 1 });
+    return { post, userFeedback: await collectFeedback(sessionId) };
   }
 
-  // Store an uploaded blob. Like publishSurface, an explicit session is
+  // Store an uploaded blob. Like publishPostFlow, an explicit session is
   // validated and a missing one is auto-created so an upload can precede the
   // first publish. The asset's data is dropped from the result (it's bytes).
   async function uploadAsset(input: {
@@ -650,43 +652,43 @@ export function createApp({
     return { asset: meta };
   }
 
-  async function reviseSurface(
+  async function revisePost(
     id: string,
-    patch: { parts?: Surface[]; title?: string },
+    patch: { surfaces?: Surface[]; title?: string },
   ): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    { post: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
   > {
-    if (patch.parts) {
-      if (patch.parts.length === 0) {
+    if (patch.surfaces) {
+      if (patch.surfaces.length === 0) {
         return { error: "a post needs at least one surface", status: 400 };
       }
-      if (surfacesByteLength(patch.parts) > MAX_SURFACE_BYTES) {
+      if (surfacesByteLength(patch.surfaces) > MAX_SURFACE_BYTES) {
         return { error: `surface exceeds ${MAX_SURFACE_BYTES} bytes`, status: 413 };
       }
     }
     if (patch.title !== undefined) patch.title = patch.title.slice(0, MAX_TITLE);
-    const surface = await store.updatePost(id, { surfaces: patch.parts, title: patch.title });
-    if (!surface) return { error: "surface not found", status: 404 };
+    const post = await store.updatePost(id, { surfaces: patch.surfaces, title: patch.title });
+    if (!post) return { error: "post not found", status: 404 };
     bus.broadcast({
       type: "post-updated",
-      id: surface.id,
-      sessionId: surface.sessionId,
-      version: surface.version,
+      id: post.id,
+      sessionId: post.sessionId,
+      version: post.version,
     });
-    return { surface, userFeedback: await collectFeedback(surface.sessionId) };
+    return { post, userFeedback: await collectFeedback(post.sessionId) };
   }
 
   // --- per-surface flow functions (append / replace / remove / reorder) ---
   // Each reads the existing post, mutates the surfaces array, and writes it
-  // back via reviseSurface so version/history/SSE stay consistent. Untouched
+  // back via revisePost so version/history/SSE stay consistent. Untouched
   // surfaces keep their ids (normalizeSurfaceIds preserves existing ids).
 
-  async function appendSurface(
+  async function appendPostSurface(
     id: string,
     surface: Surface,
     pos?: { before?: string; after?: string },
   ): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    { post: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
   > {
     const existing = await store.getPost(id);
     if (!existing) return { error: "post not found", status: 404 };
@@ -700,17 +702,17 @@ export function createApp({
       if (i < 0) return { error: `surface "${pos.after}" not found`, status: 404 };
       insertAt = i + 1;
     }
-    const parts = [...existing.surfaces];
-    parts.splice(insertAt, 0, surface);
-    return reviseSurface(id, { parts });
+    const surfaces = [...existing.surfaces];
+    surfaces.splice(insertAt, 0, surface);
+    return revisePost(id, { surfaces });
   }
 
-  async function replaceSurface(
+  async function replacePostSurface(
     id: string,
     target: string,
     replacement: { surface?: Surface; content?: string; kits?: unknown },
   ): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    { post: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
   > {
     const existing = await store.getPost(id);
     if (!existing) return { error: "post not found", status: 404 };
@@ -745,16 +747,16 @@ export function createApp({
     if (!parsed.ok) return { error: parsed.error, status: 400 };
     // The validator strips the id field (zod schemas don't declare it), so
     // re-apply the target's id after validation to preserve surface identity.
-    const parts = [...existing.surfaces];
-    parts[idx] = { ...parsed.parts[0], id: existing.surfaces[idx].id };
-    return reviseSurface(id, { parts });
+    const surfaces = [...existing.surfaces];
+    surfaces[idx] = { ...parsed.parts[0], id: existing.surfaces[idx].id };
+    return revisePost(id, { surfaces });
   }
 
-  async function removeSurface(
+  async function removePostSurface(
     id: string,
     target: string,
   ): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    { post: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
   > {
     const existing = await store.getPost(id);
     if (!existing) return { error: "post not found", status: 404 };
@@ -763,15 +765,15 @@ export function createApp({
     if (existing.surfaces.length === 1) {
       return { error: "a post needs at least one surface", status: 400 };
     }
-    const parts = existing.surfaces.filter((_, i) => i !== idx);
-    return reviseSurface(id, { parts });
+    const surfaces = existing.surfaces.filter((_, i) => i !== idx);
+    return revisePost(id, { surfaces });
   }
 
-  async function reorderSurfaces(
+  async function reorderPostSurfaces(
     id: string,
     order: (string | number)[],
   ): Promise<
-    { surface: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
+    { post: Post; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 | 413 }
   > {
     const existing = await store.getPost(id);
     if (!existing) return { error: "post not found", status: 404 };
@@ -779,7 +781,7 @@ export function createApp({
       return { error: "order array length must match surface count", status: 400 };
     }
     // Build the reordered array. Each entry is a surface id or 0-based index.
-    const indexed: Surface[] = Array.from({ length: order.length });
+    const reordered: Surface[] = Array.from({ length: order.length });
     const used = new Set<number>();
     for (const entry of order) {
       const idx = findSurfaceIndex(existing.surfaces, String(entry));
@@ -789,9 +791,9 @@ export function createApp({
     }
     for (let i = 0; i < order.length; i++) {
       const idx = findSurfaceIndex(existing.surfaces, String(order[i]));
-      indexed[i] = existing.surfaces[idx];
+      reordered[i] = existing.surfaces[idx];
     }
-    return reviseSurface(id, { parts: indexed });
+    return revisePost(id, { surfaces: reordered });
   }
 
   function numberInRange(value: unknown, min: number, max: number): number | null {
@@ -856,17 +858,17 @@ export function createApp({
   }): Promise<
     { comment: Comment; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 }
   > {
-    // Comments always attach to a surface — a comment with nothing to point at
+    // Comments always attach to a post — a comment with nothing to point at
     // is just a message to the agent, which is what the agent's own prompt is for.
     if (!input.surface) return { error: 'provide a "surface" id', status: 400 };
-    const surface = await store.getPost(input.surface);
-    if (!surface) return { error: "surface not found", status: 404 };
+    const post = await store.getPost(input.surface);
+    if (!post) return { error: "post not found", status: 404 };
     const comment = await store.createComment({
-      sessionId: surface.sessionId,
-      postId: surface.id,
+      sessionId: post.sessionId,
+      postId: post.id,
       author: input.author,
       text: input.text.trim().slice(0, MAX_COMMENT_TEXT),
-      anchor: sanitizeCommentAnchor(input.anchor, surface),
+      anchor: sanitizeCommentAnchor(input.anchor, post),
     });
     if (!comment) return { error: "session not found", status: 404 };
     bus.broadcast({
@@ -1055,12 +1057,12 @@ export function createApp({
     return injectHead(text, `<script>${config}</script>`);
   };
 
-  const surfacePreviewHead = (surface: Post, request: Request) => {
+  const postPreviewHead = (post: Post, request: Request) => {
     const origin = new URL(request.url).origin;
     const publicBasePath = requestBasePath(request);
-    const canonical = `${origin}${publicBasePath}/s/${surface.id}`;
-    const image = `${origin}${publicBasePath}/s/${surface.id}.png?card=1`;
-    const title = escapeHtml(surface.title);
+    const canonical = `${origin}${publicBasePath}/s/${post.id}`;
+    const image = `${origin}${publicBasePath}/s/${post.id}.png?card=1`;
+    const title = escapeHtml(post.title);
     const description = "A https://sideshow.sh surface";
     return [
       `<link rel="canonical" href="${escapeHtml(canonical)}">`,
@@ -1078,11 +1080,8 @@ export function createApp({
     ].join("\n");
   };
 
-  const configuredViewerHtml = (
-    c: Context,
-    opts: { surface?: Post; title?: string | null } = {},
-  ) => {
-    const pageTitle = opts.surface?.title ?? opts.title;
+  const configuredViewerHtml = (c: Context, opts: { post?: Post; title?: string | null } = {}) => {
+    const pageTitle = opts.post?.title ?? opts.title;
     const html = withDocumentTitle(
       withViewerConfig(
         withOrigin(viewerHtml, { req: { url: c.req.url } }),
@@ -1092,7 +1091,7 @@ export function createApp({
       ),
       pageTitle,
     );
-    return opts.surface ? injectHead(html, surfacePreviewHead(opts.surface, c.req.raw)) : html;
+    return opts.post ? injectHead(html, postPreviewHead(opts.post, c.req.raw)) : html;
   };
   app.get("/", (c) => c.html(configuredViewerHtml(c)));
   app.get("/session/:id", async (c) => {
@@ -1102,19 +1101,19 @@ export function createApp({
     }
     return c.html(configuredViewerHtml(c, { title: sessionDocumentTitle(session) }));
   });
-  const sessionSurfacePage = async (c: any) => {
+  const sessionPostPage = async (c: any) => {
     const session = await store.getSession(c.req.param("id"));
     if (isUnauthenticatedSessionRead(c)) {
-      const surfaceId = c.req.param("surfaceId") ?? c.req.param("postId");
-      const surface = await store.getPost(surfaceId ?? "");
-      if (!session || !surface || surface.sessionId !== session.id) {
-        return c.text("Session or surface not found", 404);
+      const postId = c.req.param("surfaceId") ?? c.req.param("postId");
+      const post = await store.getPost(postId ?? "");
+      if (!session || !post || post.sessionId !== session.id) {
+        return c.text("Session or post not found", 404);
       }
     }
     return c.html(configuredViewerHtml(c, { title: sessionDocumentTitle(session) }));
   };
-  app.get("/session/:id/s/:surfaceId", sessionSurfacePage);
-  app.get("/session/:id/p/:postId", sessionSurfacePage); // canonical alias
+  app.get("/session/:id/s/:surfaceId", sessionPostPage); // legacy alias
+  app.get("/session/:id/p/:postId", sessionPostPage);
   app.get("/guide", (c) => c.text(withOrigin(guideMarkdown, c)));
   app.get("/setup", (c) => c.text(withOrigin(setupText, c)));
   app.get("/agent-howto", (c) => c.text(withOrigin(agentHowtoText, c)));
@@ -1162,7 +1161,7 @@ export function createApp({
   // with truncated:true); images travel as plain assetId refs (served at /a/:id),
   // so the response stays cheap. Same auth as /api/sessions — see
   // isPublicReadAllowed, which intentionally does NOT expose this path on a
-  // session-scoped publicRead board.
+  // session-scoped publicRead workspace.
   app.get("/api/surfaces/recent", async (c) => {
     const limit = parseRecentLimit(c.req.query("limit"));
     const posts = await store.listRecentPosts(limit);
@@ -1220,15 +1219,15 @@ export function createApp({
     return c.json({ ok: true });
   });
 
-  const listSessionSurfaces = async (c: any) => {
+  const listSessionPosts = async (c: any) => {
     const session = await store.getSession(c.req.param("id"));
     if (!session) return c.json({ error: "session not found" }, 404);
-    const surfaces = await store.listPosts(session.id);
-    return c.json(surfaces.map(surfaceMeta));
+    const posts = await store.listPosts(session.id);
+    return c.json(posts.map(postMeta));
   };
-  app.get("/api/sessions/:id/surfaces", listSessionSurfaces);
-  app.get("/api/sessions/:id/posts", listSessionSurfaces); // canonical alias
-  app.get("/api/sessions/:id/snippets", listSessionSurfaces); // legacy alias
+  app.get("/api/sessions/:id/surfaces", listSessionPosts); // legacy alias
+  app.get("/api/sessions/:id/posts", listSessionPosts);
+  app.get("/api/sessions/:id/snippets", listSessionPosts); // legacy alias
 
   // --- session trace ---
 
@@ -1267,16 +1266,16 @@ export function createApp({
     return c.json({ ok: true, added: clean.length, count: bounded.length });
   });
 
-  // --- surfaces ---
+  // --- posts ---
 
-  const getSurface = async (c: any) => {
-    const surface = await store.getPost(c.req.param("id"));
-    if (!surface) return c.json({ error: "surface not found" }, 404);
-    return c.json(surface);
+  const getPost = async (c: any) => {
+    const post = await store.getPost(c.req.param("id"));
+    if (!post) return c.json({ error: "post not found" }, 404);
+    return c.json(post);
   };
-  app.get("/api/surfaces/:id", getSurface);
-  app.get("/api/posts/:id", getSurface); // canonical alias
-  app.get("/api/snippets/:id", getSurface); // legacy alias
+  app.get("/api/surfaces/:id", getPost); // legacy alias
+  app.get("/api/posts/:id", getPost);
+  app.get("/api/snippets/:id", getPost); // legacy alias
 
   // Accepts either an existing session id, or agent/cwd fields to
   // auto-create a session — so a bare `curl` one-liner works with no ceremony.
@@ -1307,9 +1306,9 @@ export function createApp({
     return publish(c, body, parsed.parts);
   });
 
-  async function publish(c: any, body: any, parts: Surface[]) {
-    const result = await publishSurface({
-      parts,
+  async function publish(c: any, body: any, surfaces: Surface[]) {
+    const result = await publishPostFlow({
+      surfaces,
       title: typeof body.title === "string" ? body.title : undefined,
       session: typeof body.session === "string" ? body.session : undefined,
       sessionTitle: typeof body.sessionTitle === "string" ? body.sessionTitle : undefined,
@@ -1319,7 +1318,7 @@ export function createApp({
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json(
       {
-        ...writeResult(result.surface),
+        ...writeResult(result.post),
         ...(result.userFeedback && { userFeedback: result.userFeedback }),
       },
       201,
@@ -1334,26 +1333,26 @@ export function createApp({
     // `surfaces: null` is a 400 (like POST) rather than a silent title-only update.
     const hasBlocks = body.surfaces !== undefined || body.parts !== undefined;
     const blocks = body.surfaces ?? body.parts;
-    let parts: Surface[] | undefined;
+    let surfaces: Surface[] | undefined;
     if (hasBlocks) {
       if (!Array.isArray(blocks)) {
         return c.json({ error: '"surfaces" (or legacy "parts") must be an array' }, 400);
       }
       const parsed = await validateSurfaces(blocks);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-      parts = parsed.parts;
+      surfaces = parsed.parts;
     } else if (typeof body.html === "string") {
       const parsed = await validateSurfaces([htmlSurface(body.html, body.kits)]);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-      parts = parsed.parts;
+      surfaces = parsed.parts;
     }
-    const result = await reviseSurface(c.req.param("id"), {
-      parts,
+    const result = await revisePost(c.req.param("id"), {
+      surfaces,
       title: typeof body.title === "string" ? body.title : undefined,
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.surface),
+      ...writeResult(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   };
@@ -1375,7 +1374,7 @@ export function createApp({
     }
     const existing = await store.getPost(c.req.param("id"));
     if (!existing) return c.json({ error: "post not found" }, 404);
-    let parts: Surface[] | undefined;
+    let surfaces: Surface[] | undefined;
     if (content !== undefined) {
       if (typeof content !== "string") {
         return c.json({ error: '"content" must be a string' }, 400);
@@ -1409,16 +1408,16 @@ export function createApp({
       }
       const parsed = await validateSurfaces([updated]);
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-      parts = [...existing.surfaces];
-      parts[targetIdx] = { ...parsed.parts[0], id: existing.surfaces[targetIdx].id };
+      surfaces = [...existing.surfaces];
+      surfaces[targetIdx] = { ...parsed.parts[0], id: existing.surfaces[targetIdx].id };
     }
-    const result = await reviseSurface(c.req.param("id"), {
-      parts,
+    const result = await revisePost(c.req.param("id"), {
+      surfaces,
       title: typeof title === "string" ? title : undefined,
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.surface),
+      ...writeResult(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   });
@@ -1434,13 +1433,13 @@ export function createApp({
     }
     const parsed = await validateSurfaces([body.surface]);
     if (!parsed.ok) return c.json({ error: parsed.error }, 400);
-    const result = await appendSurface(c.req.param("id"), parsed.parts[0], {
+    const result = await appendPostSurface(c.req.param("id"), parsed.parts[0], {
       before: body.before,
       after: body.after,
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.surface),
+      ...writeResult(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   });
@@ -1459,14 +1458,14 @@ export function createApp({
       if (!parsed.ok) return c.json({ error: parsed.error }, 400);
       surface = parsed.parts[0];
     }
-    const result = await replaceSurface(c.req.param("id"), c.req.param("target"), {
+    const result = await replacePostSurface(c.req.param("id"), c.req.param("target"), {
       surface,
       content: body.content,
       kits: body.kits,
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.surface),
+      ...writeResult(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   });
@@ -1474,10 +1473,10 @@ export function createApp({
   // Remove a single surface. `:target` is a surface id or 0-based index.
   // Rejects with 400 if it's the last surface (posts need ≥1).
   app.delete("/api/posts/:id/surfaces/:target", async (c: any) => {
-    const result = await removeSurface(c.req.param("id"), c.req.param("target"));
+    const result = await removePostSurface(c.req.param("id"), c.req.param("target"));
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.surface),
+      ...writeResult(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   });
@@ -1488,19 +1487,19 @@ export function createApp({
     if (!body || !Array.isArray(body.order)) {
       return c.json({ error: 'body must include an "order" array' }, 400);
     }
-    const result = await reorderSurfaces(c.req.param("id"), body.order);
+    const result = await reorderPostSurfaces(c.req.param("id"), body.order);
     if ("error" in result) return c.json({ error: result.error }, result.status);
     return c.json({
-      ...writeResult(result.surface),
+      ...writeResult(result.post),
       ...(result.userFeedback && { userFeedback: result.userFeedback }),
     });
   });
 
   const remove = async (c: any) => {
-    const surface = await store.getPost(c.req.param("id"));
-    if (!surface) return c.json({ error: "surface not found" }, 404);
-    await store.removePost(surface.id);
-    bus.broadcast({ type: "post-deleted", id: surface.id, sessionId: surface.sessionId });
+    const post = await store.getPost(c.req.param("id"));
+    if (!post) return c.json({ error: "post not found" }, 404);
+    await store.removePost(post.id);
+    bus.broadcast({ type: "post-deleted", id: post.id, sessionId: post.sessionId });
     return c.json({ ok: true });
   };
   app.delete("/api/surfaces/:id", remove);
@@ -1562,9 +1561,9 @@ export function createApp({
         return c.json({ error: "session not found" }, 404);
       }
       if (surfaceId) {
-        const surface = await store.getPost(surfaceId);
-        if (!surface || (sessionId && surface.sessionId !== sessionId)) {
-          return c.json({ error: "surface not found" }, 404);
+        const post = await store.getPost(surfaceId);
+        if (!post || (sessionId && post.sessionId !== sessionId)) {
+          return c.json({ error: "post not found" }, 404);
         }
       }
     }
@@ -1608,25 +1607,25 @@ export function createApp({
   // server-side; mermaid as a self-rendering CDN doc). Image/trace/json surfaces
   // are data the viewer renders natively (text nodes / <img> / JSX), so they
   // never reach here.
-  const renderSurfacePage = async (c: any) => {
-    const surface = await store.getPost(c.req.param("id"));
-    if (!surface) return c.text("Post not found", 404);
+  const renderPostPage = async (c: any) => {
+    const post = await store.getPost(c.req.param("id"));
+    if (!post) return c.text("Post not found", 404);
     const partParam = c.req.query("surface") ?? c.req.query("part");
-    if (partParam == null) return c.html(configuredViewerHtml(c, { surface }));
+    if (partParam == null) return c.html(configuredViewerHtml(c, { post }));
 
     const ver = c.req.query("ver");
-    let title = surface.title;
-    let parts = surface.surfaces;
-    let version = surface.version;
-    if (ver && Number(ver) !== surface.version) {
-      const old = surface.history.find((h) => h.version === Number(ver));
+    let title = post.title;
+    let surfaces = post.surfaces;
+    let version = post.version;
+    if (ver && Number(ver) !== post.version) {
+      const old = post.history.find((h) => h.version === Number(ver));
       if (!old) return c.text(`Version ${ver} not available`, 404);
       title = old.title;
-      parts = old.surfaces;
+      surfaces = old.surfaces;
       version = old.version;
     }
     const idx = Number(partParam ?? 0);
-    const part = parts[idx];
+    const part = surfaces[idx];
     // Only the kinds that become HTML are served here. Image/trace/json render
     // natively in the viewer and must not be reachable as a document.
     const SANDBOXED = ["html", "markdown", "code", "diff", "terminal", "mermaid"];
@@ -1660,7 +1659,7 @@ export function createApp({
     // on; the resolved `version` makes it immutable, so a hit is always correct.
     // Versioned + themed requests (what the viewer always sends) are immutable,
     // so allow long-lived shared caching; an unpinned direct load is not.
-    const cacheKey = `${surface.id}:${idx}:${version}:${themeId}:${mode ?? "os"}`;
+    const cacheKey = `${post.id}:${idx}:${version}:${themeId}:${mode ?? "os"}`;
     const immutable = c.req.query("ver") != null && c.req.query("theme") != null;
     if (immutable) c.header("Cache-Control", "public, max-age=31536000, immutable");
     else c.header("Cache-Control", "private, no-cache");
@@ -1689,8 +1688,8 @@ export function createApp({
     });
     return c.html(doc);
   };
-  app.get("/s/:id", renderSurfacePage);
-  app.get("/p/:id", renderSurfacePage); // canonical alias
+  app.get("/s/:id", renderPostPage); // legacy alias
+  app.get("/p/:id", renderPostPage);
 
   // --- assets (agent-uploaded images, traces, files) ---
 
@@ -1845,12 +1844,12 @@ export function createApp({
   registerMcp(app, {
     store,
     basePath: requestBasePath,
-    publishSurface,
-    reviseSurface,
-    appendSurface,
-    replaceSurface,
-    removeSurface,
-    reorderSurfaces,
+    publishPost: publishPostFlow,
+    revisePost,
+    appendPostSurface,
+    replacePostSurface,
+    removePostSurface,
+    reorderPostSurfaces,
     createComment,
     waitForComments,
     uploadAsset,

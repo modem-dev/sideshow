@@ -280,7 +280,7 @@ test("publish --kit with an unknown id fails with a clear error", async () => {
   }
 });
 
-test("kits lists the board's available kits", async () => {
+test("kits lists the workspace's available kits", async () => {
   const server = await serveApp();
   try {
     const { code, stdout } = await runWith({ env: { SIDESHOW_URL: server.url } }, "kits");

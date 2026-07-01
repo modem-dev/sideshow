@@ -365,7 +365,9 @@ export interface SqlStorage {
 // survive the copy.
 export interface WorkspaceSnapshot {
   sessions: Session[];
-  surfaces: Post[];
+  posts?: Post[];
+  /** @deprecated Use `posts`; kept so external migration helpers that still read/write snapshots as `surfaces` do not break. */
+  surfaces?: Post[];
   comments: Comment[];
   traces: { sessionId: string; steps: TraceStep[] }[];
   assets: Asset[];

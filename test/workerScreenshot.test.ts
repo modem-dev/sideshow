@@ -1,37 +1,37 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { matchSurfaceScreenshot, planSurfaceScreenshot } from "../workers/screenshot.ts";
+import { matchPostScreenshot, planPostScreenshot } from "../workers/screenshot.ts";
 
-test("surface screenshot route matches GET and HEAD requests without baking in an id alphabet", () => {
-  assert.equal(matchSurfaceScreenshot("GET", "/s/4tgMLMav_WY.png"), "4tgMLMav_WY");
-  assert.equal(matchSurfaceScreenshot("HEAD", "/s/future.id~v2.png"), "future.id~v2");
-  assert.equal(matchSurfaceScreenshot("POST", "/s/abc123.png"), null);
-  assert.equal(matchSurfaceScreenshot("HEAD", "/s/abc123"), null);
-  assert.equal(matchSurfaceScreenshot("GET", "/s/nested/id.png"), null);
+test("post screenshot route matches GET and HEAD requests without baking in an id alphabet", () => {
+  assert.equal(matchPostScreenshot("GET", "/s/4tgMLMav_WY.png"), "4tgMLMav_WY");
+  assert.equal(matchPostScreenshot("HEAD", "/s/future.id~v2.png"), "future.id~v2");
+  assert.equal(matchPostScreenshot("POST", "/s/abc123.png"), null);
+  assert.equal(matchPostScreenshot("HEAD", "/s/abc123"), null);
+  assert.equal(matchPostScreenshot("GET", "/s/nested/id.png"), null);
 });
 
 test("card screenshots use stable social-card dimensions without fullPage", () => {
-  const plan = planSurfaceScreenshot(
-    new URL("https://board.test/s/abc123.png?card=1&w=640&theme=gruvbox&mode=dark&key=secret"),
+  const plan = planPostScreenshot(
+    new URL("https://workspace.test/s/abc123.png?card=1&w=640&theme=gruvbox&mode=dark&key=secret"),
     "abc123",
     "sideshow_mode=light",
   );
 
   assert.deepEqual(plan.viewport, { width: 1200, height: 630 });
   assert.deepEqual(plan.screenshotOptions, { fullPage: false });
-  assert.equal(plan.target, "https://board.test/s/abc123?part=0&theme=gruvbox&mode=dark");
+  assert.equal(plan.target, "https://workspace.test/s/abc123?part=0&theme=gruvbox&mode=dark");
   assert.doesNotMatch(plan.target, /key=secret|card=1|w=640/);
 });
 
 test("non-card screenshots preserve full-page behavior and configurable width", () => {
-  const plan = planSurfaceScreenshot(
-    new URL("https://board.test/s/abc123.png?w=640&nocache=1"),
+  const plan = planPostScreenshot(
+    new URL("https://workspace.test/s/abc123.png?w=640&nocache=1"),
     "abc123",
     "sideshow_mode=dark",
   );
 
   assert.deepEqual(plan.viewport, { width: 640, height: 800 });
   assert.deepEqual(plan.screenshotOptions, { fullPage: true });
-  assert.equal(plan.target, "https://board.test/s/abc123?part=0&mode=dark");
+  assert.equal(plan.target, "https://workspace.test/s/abc123?part=0&mode=dark");
   assert.equal(plan.noCache, true);
 });

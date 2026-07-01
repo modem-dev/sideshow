@@ -392,7 +392,7 @@ export class SqlStore implements Store {
   async createPost(input: CreatePostInput) {
     if (!(await this.getSession(input.sessionId))) return null;
     const now = new Date().toISOString();
-    const surface: Post = {
+    const post: Post = {
       id: newId(),
       sessionId: input.sessionId,
       title: stripNul(input.title)?.trim() || "Untitled",
@@ -404,18 +404,18 @@ export class SqlStore implements Store {
     };
     this.sql.exec(
       "INSERT INTO posts (id, sessionId, title, surfaces, createdAt, updatedAt, version, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      surface.id,
-      surface.sessionId,
-      surface.title,
-      JSON.stringify(surface.surfaces),
-      surface.createdAt,
-      surface.updatedAt,
-      surface.version,
+      post.id,
+      post.sessionId,
+      post.title,
+      JSON.stringify(post.surfaces),
+      post.createdAt,
+      post.updatedAt,
+      post.version,
       "[]",
     );
     this.touch(input.sessionId);
     this.addAssetRefs(input.surfaces);
-    return surface;
+    return post;
   }
 
   async updatePost(id: string, patch: UpdatePostInput) {
@@ -424,24 +424,24 @@ export class SqlStore implements Store {
     // can match the WHERE clause; the loser sees 0 rows affected and retries
     // with the now-current version.
     for (let attempt = 0; attempt < 4; attempt++) {
-      const surface = await this.getPost(id);
-      if (!surface) return null;
-      const expectedVersion = surface.version;
+      const post = await this.getPost(id);
+      if (!post) return null;
+      const expectedVersion = post.version;
       const history = [
-        ...surface.history,
+        ...post.history,
         {
-          version: surface.version,
-          title: surface.title,
-          surfaces: surface.surfaces,
-          at: surface.updatedAt,
+          version: post.version,
+          title: post.title,
+          surfaces: post.surfaces,
+          at: post.updatedAt,
         },
       ];
       if (history.length > HISTORY_LIMIT) history.shift();
       const title =
-        patch.title !== undefined ? stripNul(patch.title).trim() || surface.title : surface.title;
+        patch.title !== undefined ? stripNul(patch.title).trim() || post.title : post.title;
       const surfaces =
-        patch.surfaces !== undefined ? normalizeSurfaceIds(patch.surfaces) : surface.surfaces;
-      const version = surface.version + 1;
+        patch.surfaces !== undefined ? normalizeSurfaceIds(patch.surfaces) : post.surfaces;
+      const version = post.version + 1;
       const updatedAt = new Date().toISOString();
       this.sql.exec(
         "UPDATE posts SET title = ?, surfaces = ?, updatedAt = ?, version = ?, history = ? WHERE id = ? AND version = ?",
@@ -455,9 +455,9 @@ export class SqlStore implements Store {
       );
       const affected = this.sql.exec("SELECT changes() AS n").one().n as number;
       if (affected > 0) {
-        this.touch(surface.sessionId);
+        this.touch(post.sessionId);
         if (patch.surfaces !== undefined) this.addAssetRefs(patch.surfaces);
-        return { ...surface, title, surfaces, version, updatedAt, history };
+        return { ...post, title, surfaces, version, updatedAt, history };
       }
       // Lost the race — retry with the now-current version.
     }
@@ -498,7 +498,7 @@ export class SqlStore implements Store {
 
   async createComment(input: CreateCommentInput) {
     if (!(await this.getSession(input.sessionId))) return null;
-    const surface = input.postId ? await this.getPost(input.postId) : null;
+    const post = input.postId ? await this.getPost(input.postId) : null;
     const id = newId();
     const createdAt = new Date().toISOString();
     const author = stripNul(input.author).trim() || "user";
@@ -507,8 +507,8 @@ export class SqlStore implements Store {
       "INSERT INTO comments (id, sessionId, postId, postTitle, author, text, createdAt, anchor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       id,
       input.sessionId,
-      surface?.id ?? null,
-      surface?.title ?? null,
+      post?.id ?? null,
+      post?.title ?? null,
       author,
       text,
       createdAt,
@@ -520,8 +520,8 @@ export class SqlStore implements Store {
       id,
       seq,
       sessionId: input.sessionId,
-      postId: surface?.id ?? null,
-      postTitle: surface?.title ?? null,
+      postId: post?.id ?? null,
+      postTitle: post?.title ?? null,
       author,
       text,
       createdAt,
@@ -693,7 +693,8 @@ export class SqlStore implements Store {
   }
 
   // One-time bulk import to migrate another backend's data into this database
-  // (see server/sqliteStorage.ts → migrateJsonToSqlite). Every field is written
+  // (see server/sqliteStorage.ts → migrateJsonToSqlite). The method name predates
+  // the workspace terminology; keep it as public API. Every field is written
   // verbatim — ids, versions, history, the comment `seq` and `agentSeq` the
   // feedback cursor keys on, asset bytes — so identity survives the copy.
   // Wrapped in a transaction so a crash mid-copy rolls back to an empty db
@@ -714,18 +715,18 @@ export class SqlStore implements Store {
           s.agentSeq,
         );
       }
-      for (const s of snapshot.surfaces) {
+      for (const post of snapshot.posts ?? snapshot.surfaces ?? []) {
         this.sql.exec(
           "INSERT INTO posts (id, sessionId, title, surfaces, createdAt, updatedAt, version, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-          s.id,
-          s.sessionId,
-          s.title,
-          JSON.stringify(normalizeSurfaceIds(s.surfaces)),
-          s.createdAt,
-          s.updatedAt,
-          s.version,
+          post.id,
+          post.sessionId,
+          post.title,
+          JSON.stringify(normalizeSurfaceIds(post.surfaces)),
+          post.createdAt,
+          post.updatedAt,
+          post.version,
           JSON.stringify(
-            s.history.map((h) => ({ ...h, surfaces: normalizeSurfaceIds(h.surfaces) })),
+            post.history.map((h) => ({ ...h, surfaces: normalizeSurfaceIds(h.surfaces) })),
           ),
         );
       }

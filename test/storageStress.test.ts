@@ -147,9 +147,9 @@ async function snapshot(store: Store) {
 const tmpFile = (name: string) => join(mkdtempSync(join(tmpdir(), "sideshow-stress-")), name);
 const filePathOf = (s: JsonFileStore) => (s as unknown as { filePath: string }).filePath;
 
-test("migration is byte-faithful across 25 randomized boards", async () => {
+test("migration is byte-faithful across 25 randomized workspaces", async () => {
   for (let seed = 1; seed <= 25; seed++) {
-    const json = new JsonFileStore(tmpFile(`board-${seed}.json`));
+    const json = new JsonFileStore(tmpFile(`workspace-${seed}.json`));
     await buildRandomBoard(json, mulberry32(seed));
     // Snapshot a FRESH reload — that's the on-disk JSON migration actually reads
     // (and it's been through JSON.stringify, which drops `undefined` keys), so

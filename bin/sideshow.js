@@ -341,8 +341,8 @@ function out(value) {
   console.log(JSON.stringify(value, null, 2));
 }
 
-function outSurface(surface) {
-  out({ ...surface, url: `${BASE}/s/${surface.id}` });
+function outPost(post) {
+  out({ ...post, url: `${BASE}/s/${post.id}` });
 }
 
 const CONTENT_TYPES = {
@@ -551,12 +551,12 @@ async function surfacesFromFlags(flags, tokens, { session, layout }) {
   return out;
 }
 
-async function publishSurface(parts, flags) {
+async function publishPost(surfaces, flags) {
   const session = await resolveSession(flags, { create: true });
-  return api("/api/surfaces", {
+  return api("/api/posts", {
     method: "POST",
     body: JSON.stringify({
-      parts,
+      surfaces,
       title: flags.title,
       session,
       sessionTitle: flags["session-title"],
@@ -948,11 +948,11 @@ const commands = {
     // Surfaces render top-to-bottom, so order is user-visible. `surfacesFromFlags`
     // walks parseArgs tokens (command-line order, repeats included) and builds
     // one surface per flag occurrence — so --diff a --diff b yields two diffs.
-    const parts = [
+    const surfaces = [
       htmlPart,
       ...(await surfacesFromFlags(flags, tokens, { session, layout: flags.layout })),
     ];
-    outSurface(await publishSurface(parts, { ...flags, session }));
+    outPost(await publishPost(surfaces, { ...flags, session }));
   },
 
   async upload() {
@@ -999,7 +999,7 @@ const commands = {
       assetId: asset.id,
       ...(flags.caption && { caption: flags.caption }),
     };
-    outSurface(await publishSurface([part], { ...flags, session }));
+    outPost(await publishPost([part], { ...flags, session }));
   },
 
   async trace() {
@@ -1017,8 +1017,8 @@ const commands = {
     if (!file || file === "-") fail("usage: sideshow trace <file> [--title t]");
     const session = await resolveSession(flags, { create: true });
     const asset = await uploadFile(file, { session, kind: "trace" });
-    outSurface(
-      await publishSurface([{ kind: "trace", assetId: asset.id }], {
+    outPost(
+      await publishPost([{ kind: "trace", assetId: asset.id }], {
         ...flags,
         session,
       }),
@@ -1037,14 +1037,14 @@ const commands = {
         "new-session": { type: "boolean" },
       },
     });
-    const parts = [
+    const surfaces = [
       {
         kind: "diff",
         patch: readContent(positionals[0]),
         ...(flags.layout === "split" && { layout: "split" }),
       },
     ];
-    outSurface(await publishSurface(parts, flags));
+    outPost(await publishPost(surfaces, flags));
   },
 
   async markdown() {
@@ -1058,9 +1058,8 @@ const commands = {
         "new-session": { type: "boolean" },
       },
     });
-    const parts = [{ kind: "markdown", markdown: readContent(positionals[0]) }];
-    const surface = await publishSurface(parts, flags);
-    out({ ...surface, url: `${BASE}/s/${surface.id}` });
+    const surfaces = [{ kind: "markdown", markdown: readContent(positionals[0]) }];
+    outPost(await publishPost(surfaces, flags));
   },
 
   async terminal() {
@@ -1077,7 +1076,7 @@ const commands = {
       },
     });
     const cols = Number(flags.cols);
-    const parts = [
+    const surfaces = [
       {
         kind: "terminal",
         text: readContent(positionals[0]),
@@ -1085,8 +1084,7 @@ const commands = {
         ...(flags["term-title"] && { title: flags["term-title"] }),
       },
     ];
-    const surface = await publishSurface(parts, flags);
-    out({ ...surface, url: `${BASE}/s/${surface.id}` });
+    outPost(await publishPost(surfaces, flags));
   },
 
   async mermaid() {
@@ -1100,8 +1098,8 @@ const commands = {
         "new-session": { type: "boolean" },
       },
     });
-    const parts = [{ kind: "mermaid", mermaid: readContent(positionals[0]) }];
-    outSurface(await publishSurface(parts, flags));
+    const surfaces = [{ kind: "mermaid", mermaid: readContent(positionals[0]) }];
+    outPost(await publishPost(surfaces, flags));
   },
 
   async json() {
@@ -1123,8 +1121,8 @@ const commands = {
     } catch {
       fail(`invalid JSON${positionals[0] !== "-" ? ` in ${positionals[0]}` : ""}`);
     }
-    const parts = [{ kind: "json", data }];
-    outSurface(await publishSurface(parts, flags));
+    const surfaces = [{ kind: "json", data }];
+    outPost(await publishPost(surfaces, flags));
   },
   async code() {
     const { values: flags, positionals } = parse({
@@ -1157,7 +1155,7 @@ const commands = {
       flags.filename ??
       (positionals[0] !== "-" ? positionals[0].split("/").pop() || positionals[0] : undefined);
     if (filename) part.title = filename;
-    outSurface(await publishSurface([part], flags));
+    outPost(await publishPost([part], flags));
   },
   async update() {
     const { values: flags, positionals } = parse({
@@ -1178,7 +1176,7 @@ const commands = {
     const kits = normalizeKits(flags.kit);
     if (kits) body.kits = kits;
     if (flags.surface !== undefined) body.surface = flags.surface;
-    outSurface(
+    outPost(
       await api(`/api/posts/${id}`, {
         method: "PATCH",
         body: JSON.stringify(body),
@@ -1237,19 +1235,19 @@ const commands = {
           body: JSON.stringify(body),
         });
       }
-      outSurface(lastResult);
+      outPost(lastResult);
     } else if (sub === "remove") {
       const { positionals } = parse({ allowPositionals: true });
       const [postId, target] = positionals;
       if (!postId || !target) fail("usage: sideshow surface remove <postId> <N|id>");
-      outSurface(await api(`/api/posts/${postId}/surfaces/${target}`, { method: "DELETE" }));
+      outPost(await api(`/api/posts/${postId}/surfaces/${target}`, { method: "DELETE" }));
     } else if (sub === "edit") {
       const { positionals } = parse({ allowPositionals: true });
       const [postId, target, file] = positionals;
       if (!postId || !target || file === undefined) {
         fail("usage: sideshow surface edit <postId> <N|id> <file|->");
       }
-      outSurface(
+      outPost(
         await api(`/api/posts/${postId}/surfaces/${target}`, {
           method: "PATCH",
           body: JSON.stringify({ content: readContent(file) }),
@@ -1280,7 +1278,7 @@ const commands = {
       const ids = surfaces.map((s) => s.id);
       const [moved] = ids.splice(fromIdx, 1);
       ids.splice(toIdx, 0, moved);
-      outSurface(
+      outPost(
         await api(`/api/posts/${postId}/surfaces`, {
           method: "PATCH",
           body: JSON.stringify({ order: ids }),
@@ -1526,13 +1524,13 @@ const commands = {
       const sessions = await api("/api/sessions");
       const result = [];
       for (const s of sessions) {
-        result.push({ ...s, surfaces: await api(`/api/sessions/${s.id}/surfaces`) });
+        result.push({ ...s, surfaces: await api(`/api/sessions/${s.id}/posts`) });
       }
       return out(result);
     }
     const session = flags.session ?? (await resolveSession(flags));
     if (!session) fail("no active session — pass --session or --all");
-    out(await api(`/api/sessions/${session}/surfaces`));
+    out(await api(`/api/sessions/${session}/posts`));
   },
 
   async show() {
@@ -1563,13 +1561,17 @@ const commands = {
         body: JSON.stringify({ agent: demo.agent, title: demo.title }),
       });
       for (const snip of demo.snippets) {
-        const snippet = await api("/api/snippets", {
+        const post = await api("/api/posts", {
           method: "POST",
-          body: JSON.stringify({ session: session.id, title: snip.title, html: snip.html }),
+          body: JSON.stringify({
+            session: session.id,
+            title: snip.title,
+            surfaces: [{ kind: "html", html: snip.html }],
+          }),
         });
         for (const step of snip.followups ?? []) {
           if (step.update) {
-            await api(`/api/snippets/${snippet.id}`, {
+            await api(`/api/posts/${post.id}`, {
               method: "PUT",
               body: JSON.stringify(step.update),
             });
@@ -1577,7 +1579,7 @@ const commands = {
           if (step.comment) {
             await api("/api/comments", {
               method: "POST",
-              body: JSON.stringify({ snippet: snippet.id, ...step.comment }),
+              body: JSON.stringify({ surface: post.id, ...step.comment }),
             });
           }
         }

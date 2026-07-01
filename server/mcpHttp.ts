@@ -18,32 +18,32 @@ import { coerceSurfaces } from "./postSurfaces.ts";
 // publish_surface returns a sessionId the agent passes back on later calls.
 
 type FlowResult<T> = Promise<
-  { surface: T; userFeedback?: Feedback[] } | { error: string; status: number }
+  { post: T; userFeedback?: Feedback[] } | { error: string; status: number }
 >;
 
 export interface McpDeps {
   store: Store;
   basePath?: (request: Request) => string;
-  publishSurface(input: {
-    parts: Surface[];
+  publishPost(input: {
+    surfaces: Surface[];
     title?: string;
     session?: string;
     sessionTitle?: string;
     agent?: string;
   }): FlowResult<Post>;
-  reviseSurface(id: string, patch: { parts?: Surface[]; title?: string }): FlowResult<Post>;
-  appendSurface(
+  revisePost(id: string, patch: { surfaces?: Surface[]; title?: string }): FlowResult<Post>;
+  appendPostSurface(
     id: string,
     surface: Surface,
     pos?: { before?: string; after?: string },
   ): FlowResult<Post>;
-  replaceSurface(
+  replacePostSurface(
     id: string,
     target: string,
     replacement: { surface?: Surface; content?: string; kits?: unknown },
   ): FlowResult<Post>;
-  removeSurface(id: string, target: string): FlowResult<Post>;
-  reorderSurfaces(id: string, order: (string | number)[]): FlowResult<Post>;
+  removePostSurface(id: string, target: string): FlowResult<Post>;
+  reorderPostSurfaces(id: string, order: (string | number)[]): FlowResult<Post>;
   createComment(input: {
     text: string;
     surface?: string;
@@ -67,18 +67,18 @@ export const coerceParts = coerceSurfaces;
 
 export function registerMcp(app: Hono, deps: McpDeps) {
   // The view URL's path segment: legacy tools emit /s/<id>; the new post tools
-  // emit the canonical /p/<id>. Both resolve to the same surface page.
-  const surfaceResult = (
-    result: { surface: Post; userFeedback?: Feedback[] },
+  // emit the canonical /p/<id>. Both resolve to the same post page.
+  const postResult = (
+    result: { post: Post; userFeedback?: Feedback[] },
     origin: string,
     seg: "s" | "p" = "s",
   ) =>
     JSON.stringify(
       {
-        id: result.surface.id,
-        sessionId: result.surface.sessionId,
-        version: result.surface.version,
-        url: `${origin}/${seg}/${result.surface.id}`,
+        id: result.post.id,
+        sessionId: result.post.sessionId,
+        version: result.post.version,
+        url: `${origin}/${seg}/${result.post.id}`,
         ...(result.userFeedback && { userFeedback: result.userFeedback }),
       },
       null,
@@ -92,43 +92,39 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       case "publish_snippet": {
         // New tools advertise `surfaces`; legacy tools still send `parts`.
         const blocks = name === "publish_post" ? (args.surfaces ?? args.parts) : args.parts;
-        const parts =
+        const surfaces =
           name === "publish_snippet"
             ? await coerceParts([htmlSurface(String(args.html ?? ""), args.kits)])
             : await coerceParts(blocks);
-        if (parts.length === 0) {
-          throw new Error(
-            name === "publish_post"
-              ? "a post needs at least one surface"
-              : "a surface needs at least one part",
-          );
+        if (surfaces.length === 0) {
+          throw new Error("a post needs at least one surface");
         }
-        const result = await deps.publishSurface({
-          parts,
+        const result = await deps.publishPost({
+          surfaces,
           title: typeof args.title === "string" ? args.title : undefined,
           session: typeof args.session === "string" ? args.session : undefined,
           sessionTitle: typeof args.sessionTitle === "string" ? args.sessionTitle : undefined,
           agent: typeof args.agent === "string" ? args.agent : undefined,
         });
         if ("error" in result) throw new Error(result.error);
-        return surfaceResult(result, origin, name === "publish_post" ? "p" : "s");
+        return postResult(result, origin, name === "publish_post" ? "p" : "s");
       }
       case "update_post":
       case "update_surface":
       case "update_snippet": {
-        const patch: { parts?: Surface[]; title?: string } = {
+        const patch: { surfaces?: Surface[]; title?: string } = {
           title: typeof args.title === "string" ? args.title : undefined,
         };
         if (name === "update_snippet") {
           if (typeof args.html === "string")
-            patch.parts = await coerceParts([htmlSurface(args.html, args.kits)]);
+            patch.surfaces = await coerceParts([htmlSurface(args.html, args.kits)]);
         } else {
           const blocks = name === "update_post" ? (args.surfaces ?? args.parts) : args.parts;
-          if (blocks !== undefined) patch.parts = await coerceParts(blocks);
+          if (blocks !== undefined) patch.surfaces = await coerceParts(blocks);
         }
-        const result = await deps.reviseSurface(String(args.id ?? ""), patch);
+        const result = await deps.revisePost(String(args.id ?? ""), patch);
         if ("error" in result) throw new Error(result.error);
-        return surfaceResult(result, origin, name === "update_post" ? "p" : "s");
+        return postResult(result, origin, name === "update_post" ? "p" : "s");
       }
       case "wait_for_feedback": {
         const result = await deps.waitForComments({
@@ -180,11 +176,11 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       case "list_posts":
       case "list_surfaces":
       case "list_snippets": {
-        const surfaces = await deps.store.listPosts(
+        const posts = await deps.store.listPosts(
           typeof args.session === "string" ? args.session : undefined,
         );
         return JSON.stringify(
-          surfaces.map((s) => ({
+          posts.map((s) => ({
             id: s.id,
             sessionId: s.sessionId,
             title: s.title,
@@ -232,23 +228,23 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       case "get_design_guide":
         return deps.guide;
       case "add_surface": {
-        const parts = await coerceParts([args.surface]);
-        if (parts.length === 0) throw new Error("invalid surface");
-        const result = await deps.appendSurface(String(args.postId ?? ""), parts[0], {
+        const surfaces = await coerceParts([args.surface]);
+        if (surfaces.length === 0) throw new Error("invalid surface");
+        const result = await deps.appendPostSurface(String(args.postId ?? ""), surfaces[0], {
           before: typeof args.before === "string" ? args.before : undefined,
           after: typeof args.after === "string" ? args.after : undefined,
         });
         if ("error" in result) throw new Error(result.error);
-        return surfaceResult(result, origin, "p");
+        return postResult(result, origin, "p");
       }
       case "edit_surface": {
         let surface: Surface | undefined;
         if (args.surface !== undefined) {
-          const parts = await coerceParts([args.surface]);
-          if (parts.length === 0) throw new Error("invalid surface");
-          surface = parts[0];
+          const surfaces = await coerceParts([args.surface]);
+          if (surfaces.length === 0) throw new Error("invalid surface");
+          surface = surfaces[0];
         }
-        const result = await deps.replaceSurface(
+        const result = await deps.replacePostSurface(
           String(args.postId ?? ""),
           String(args.target ?? ""),
           {
@@ -258,23 +254,23 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           },
         );
         if ("error" in result) throw new Error(result.error);
-        return surfaceResult(result, origin, "p");
+        return postResult(result, origin, "p");
       }
       case "remove_surface": {
-        const result = await deps.removeSurface(
+        const result = await deps.removePostSurface(
           String(args.postId ?? ""),
           String(args.target ?? ""),
         );
         if ("error" in result) throw new Error(result.error);
-        return surfaceResult(result, origin, "p");
+        return postResult(result, origin, "p");
       }
       case "reorder_surfaces": {
-        const result = await deps.reorderSurfaces(
+        const result = await deps.reorderPostSurfaces(
           String(args.postId ?? ""),
           Array.isArray(args.order) ? args.order : [],
         );
         if ("error" in result) throw new Error(result.error);
-        return surfaceResult(result, origin, "p");
+        return postResult(result, origin, "p");
       }
       default:
         throw new Error(`unknown tool: ${name}`);

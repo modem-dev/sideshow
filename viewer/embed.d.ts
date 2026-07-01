@@ -37,11 +37,12 @@ export interface SideshowHost {
    */
   liveTransport?: LiveTransport;
   /**
-   * Whether this deployment can render a surface as a PNG (the /s/:id.png route).
-   * That route needs Cloudflare Browser Rendering, so it exists only on a Workers
-   * deployment; elsewhere the engine shows the per-surface screenshot action but
-   * disables it with an explanatory tooltip. An embedder on Cloudflare sets this
-   * true; self-hosted drives the same flag via a window global. Defaults to off.
+   * Whether this deployment can render a post's first surface as a PNG (the
+   * /s/:id.png route). That route needs Cloudflare Browser Rendering, so it exists
+   * only on a Workers deployment; elsewhere the engine shows the screenshot
+   * action but disables it with an explanatory tooltip. An embedder on Cloudflare
+   * sets this true; self-hosted drives the same flag via a window global.
+   * Defaults to off.
    */
   screenshots?: boolean;
   /**
@@ -76,11 +77,11 @@ export interface SideshowHost {
   onThemeChange?(tokens: ThemeTokens, meta: { theme: string; mode: "light" | "dark" }): void;
   /**
    * Called once, after the engine's first session-list fetch resolves and the
-   * initial board (a session, or the empty-board onboarding) is decided — the
+   * initial workspace (a session, or the empty-workspace onboarding) is decided — the
    * moment the engine knows what to show. Hold a loading overlay over the mount
-   * until then to avoid showing the pre-load board flash; the engine's own
+   * until then to avoid showing the pre-load workspace flash; the engine's own
    * onboarding pane is internally gated on the same signal. Fires even if that
-   * fetch failed (board falls back to onboarding), so an overlay can't get
+   * fetch failed (workspace falls back to onboarding), so an overlay can't get
    * stuck. Optional — the trivial self-hosted host omits it.
    */
   onReady?(): void;
@@ -115,20 +116,20 @@ export declare const SLOTS: {
   readonly asideFoot: "ss:aside-foot";
   /**
    * Empty-sidebar affordance shown in the session list when no sessions exist.
-   * Fallback is a native "Connect an agent" row that scrolls to the empty-board
+   * Fallback is a native "Connect an agent" row that scrolls to the empty-workspace
    * pane (ss:empty); project a `slot="ss:aside-empty"` child for a host-specific
-   * nudge. Renders only on an empty (post-load) board.
+   * nudge. Renders only on an empty (post-load) workspace.
    */
   readonly asideEmpty: "ss:aside-empty";
-  /** Empty-board onboarding shown before any session exists. */
+  /** Empty-workspace onboarding shown before any session exists. */
   readonly empty: "ss:empty";
   /** Per-session actions in the session header, beside the stream/timeline toggle. */
   readonly sessionActions: "ss:session-actions";
   /**
    * The whole main content pane (onboarding + session stream). Fallback is the
-   * normal board; project a `slot="ss:main"` child to take over the main area
+   * normal workspace; project a `slot="ss:main"` child to take over the main area
    * (e.g. a cloud Settings page) while the sidebar stays. Meant to be projected
-   * conditionally — when no child is assigned the engine shows the board.
+   * conditionally — when no child is assigned the engine shows the workspace.
    */
   readonly main: "ss:main";
 };

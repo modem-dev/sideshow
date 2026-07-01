@@ -67,11 +67,11 @@ const [connectOpen, setConnectOpen] = createSignal(false);
 const streamMode = () => layoutMode() === "stream";
 
 // The wordmark, doubling as a home link: clicking it clears the current session
-// and returns to the empty board (goHome). A real <button> so it's keyboard- and
+// and returns to the empty workspace (goHome). A real <button> so it's keyboard- and
 // screen-reader-reachable; it shares the .brand styling with the static header
-// and aside wordmarks. This is the guaranteed way back to the board when no
+// and aside wordmarks. This is the guaranteed way back to the workspace when no
 // session is selectable in the sidebar — e.g. an embedding host (sideshow cloud)
-// showing a full-page view over an empty board.
+// showing a full-page view over an empty workspace.
 function Brand() {
   return (
     <button class="brand" type="button" aria-label="sideshow — home" onClick={() => goHome()}>
@@ -106,11 +106,11 @@ export default function App() {
 
   onMount(() => {
     // Await the initial route resolution (the standalone post fetch, or the
-    // first session fetch), then mark the board decided and tell the host
-    // (onReady). Until then #onboard stays hidden, so neither the empty board
+    // first session fetch), then mark the workspace decided and tell the host
+    // (onReady). Until then #onboard stays hidden, so neither the empty workspace
     // nor a host's loading overlay flips to real content before we know what to
     // show. .catch keeps it unblocking — a failed fetch still resolves to the
-    // (empty) onboarding board, and the host overlay still clears.
+    // (empty) onboarding view, and the host overlay still clears.
     void bootstrap()
       .catch(() => {})
       .finally(() => {
@@ -226,14 +226,14 @@ export default function App() {
                   {/* Host-overridable region (SLOTS.asideEmpty): the session
                   list's empty state. The fallback below is a native "Connect an
                   agent" row — the first item of an otherwise-empty list — that
-                  scrolls to the empty-board pane (ss:empty) holding the connect
+                  scrolls to the empty-workspace pane (ss:empty) holding the connect
                   instructions. An embedder projects its own empty-list nudge
-                  here; either shows only on a post-load empty board, and
+                  here; either shows only on a post-load empty workspace, and
                   neither renders once a session exists. */}
                   <Show when={initialLoaded() && sessions.length === 0}>
                     <slot name={SLOTS.asideEmpty}>
                       {/* The native fallback is a connect affordance, so it only
-                      makes sense when the board is writable — readonly boards
+                      makes sense when the workspace is writable — readonly workspaces
                       show "Nothing here yet" in the empty pane, not connect
                       instructions, so the row would point at a contradiction.
                       The slot itself stays mounted so an embedder can still
@@ -285,7 +285,7 @@ export default function App() {
               }}
             >
               {/* Host-overridable main pane (SLOTS.main). Fallback is the normal
-              board; an embedder projects a `slot="ss:main"` child to take over the
+              workspace; an embedder projects a `slot="ss:main"` child to take over the
               pane (e.g. a cloud Settings page) while the sidebar stays. */}
               <slot name={SLOTS.main}>
                 <Show when={!streamMode()}>
@@ -327,7 +327,7 @@ export default function App() {
 // The full-page view a bare /s/:id direct link lands on: just the one post,
 // no sidebar/session chrome/comments, with a small sideshow watermark beneath
 // it. The Card renders in `standalone` mode (title + surfaces only); its
-// iframes are sized by the same postMessage bridge the board uses (it resolves
+// iframes are sized by the same postMessage bridge the workspace uses (it resolves
 // any registered card, so a standalone card sizes identically).
 function StandaloneView(props: { post: Post }) {
   return (
@@ -535,15 +535,15 @@ function SessionItem(props: { session: SessionRow }) {
 }
 
 // The native empty-sidebar affordance: the fallback content for the
-// ss:aside-empty slot, shown when the board has no sessions. It reads as the
+// ss:aside-empty slot, shown when the workspace has no sessions. It reads as the
 // first item of an otherwise-empty list (it reuses the .sess row chrome) — a
 // plug icon + "Connect an agent" label, with one line of muted helper text.
-// Clicking it scrolls to the empty-board pane (#onboard, wrapped by ss:empty)
+// Clicking it scrolls to the empty-workspace pane (#onboard, wrapped by ss:empty)
 // that holds the connect instructions; generic, no deployment-specific logic.
 function AsideEmptyRow() {
   const activate = () => {
     setNavOpen(false);
-    // #onboard is the empty-board pane wrapped by ss:empty. When an embedder
+    // #onboard is the empty-workspace pane wrapped by ss:empty. When an embedder
     // projects ss:main (taking over the main pane), #onboard isn't in the DOM
     // and this is a silent no-op — acceptable: there's nothing to scroll to.
     root().querySelector("#onboard")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -689,14 +689,14 @@ function Onboard() {
           first-run onboarding here. The fallback below is the self-hosted
           default — setup snippets that assume a local sideshow on port 8228,
           which only make sense self-hosted. The outer #onboard's hidden= still
-          governs visibility, so projected content shows only on an empty board. */}
+          governs visibility, so projected content shows only on an empty workspace. */}
       <slot name={SLOTS.empty}>
         <Show
           when={!isReadonly()}
           fallback={
             <>
               <h1>Nothing here yet</h1>
-              <p class="sub">This sideshow board does not have any sessions yet.</p>
+              <p class="sub">This sideshow workspace does not have any sessions yet.</p>
             </>
           }
         >
@@ -759,8 +759,8 @@ function ConnectModal(props: { onClose: () => void }) {
         <h3>what it runs</h3>
         <p class="note">
           The plugin connects the sideshow MCP server and runs <code>sideshow watch</code> against
-          your board as a background process — unsandboxed, the same trust level as hooks, with no
-          per-comment prompt. Comments are delivered to the agent exactly once.
+          your workspace as a background process — unsandboxed, the same trust level as hooks, with
+          no per-comment prompt. Comments are delivered to the agent exactly once.
         </p>
         <p class="caveat">
           Requires Claude Code ≥ 2.1.105. It&rsquo;s two commands, not a true one-click — Claude
@@ -771,8 +771,9 @@ function ConnectModal(props: { onClose: () => void }) {
   );
 }
 
-// Board-level theme selector. Persists via PUT /api/theme; the choice re-themes
-// chrome, markdown/diff syntax, and html surfaces together (see theme.ts).
+// Workspace-level theme selector. Persists via PUT /api/theme; the choice
+// re-themes chrome, markdown/diff syntax, and html surfaces together (see
+// theme.ts).
 function ModeIcon(props: { mode: ColorModePreference }) {
   if (props.mode === "dark") return <MoonIcon />;
   if (props.mode === "light") return <SunIcon />;

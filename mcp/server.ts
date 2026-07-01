@@ -119,9 +119,9 @@ server.registerTool(
   async ({ title, parts, sessionTitle }) => {
     const session = await ensureSession(sessionTitle);
     const created = JSON.parse(
-      await api("/api/surfaces", {
+      await api("/api/posts", {
         method: "POST",
-        body: JSON.stringify({ title, parts, session }),
+        body: JSON.stringify({ title, surfaces: parts, session }),
       }),
     );
     return text({ ...created, url: `${API}/s/${created.id}` });
@@ -136,7 +136,10 @@ server.registerTool(
   },
   async ({ id, parts, title }) => {
     const updated = JSON.parse(
-      await api(`/api/surfaces/${id}`, { method: "PUT", body: JSON.stringify({ parts, title }) }),
+      await api(`/api/posts/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ surfaces: parts, title }),
+      }),
     );
     return text({ ...updated, url: `${API}/s/${updated.id}` });
   },
@@ -151,9 +154,9 @@ server.registerTool(
   async ({ title, html, kits, sessionTitle }) => {
     const session = await ensureSession(sessionTitle);
     const created = JSON.parse(
-      await api("/api/surfaces", {
+      await api("/api/posts", {
         method: "POST",
-        body: JSON.stringify({ title, parts: [{ kind: "html", html, kits }], session }),
+        body: JSON.stringify({ title, surfaces: [{ kind: "html", html, kits }], session }),
       }),
     );
     return text({ ...created, url: `${API}/s/${created.id}` });
@@ -167,9 +170,9 @@ server.registerTool(
     inputSchema: STDIO_MCP_INPUT_SCHEMAS.updateSnippet,
   },
   async ({ id, html, title, kits }) => {
-    const parts = html === undefined ? undefined : [{ kind: "html", html, kits }];
+    const surfaces = html === undefined ? undefined : [{ kind: "html", html, kits }];
     const updated = JSON.parse(
-      await api(`/api/surfaces/${id}`, { method: "PUT", body: JSON.stringify({ parts, title }) }),
+      await api(`/api/posts/${id}`, { method: "PUT", body: JSON.stringify({ surfaces, title }) }),
     );
     return text({ ...updated, url: `${API}/s/${updated.id}` });
   },

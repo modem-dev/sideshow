@@ -69,7 +69,7 @@ export const selected = selectedState;
 // Standalone (direct-link) mode: a bare /s/:id route with no session shows that
 // one post full-page — no sidebar, no session feed, no comments — instead of
 // resolving it into its session's stream. Holds the fetched post while in
-// that mode; null is the normal board. The server serves the same SPA shell for
+// that mode; null is the normal workspace. The server serves the same SPA shell for
 // /s/:id (with link-preview metadata, see server/app.ts); the viewer decides the
 // layout from the route here.
 const [standaloneState, setStandaloneInternal] = createSignal<Post | null>(null);
@@ -84,10 +84,10 @@ const [traceStepsState, setTraceStepsInternal] = createSignal<TraceStep[]>([]);
 export const traceSteps = traceStepsState;
 const [streamLoadingState, setStreamLoadingInternal] = createSignal(false);
 export const streamLoading = streamLoadingState;
-// False until the first session list has been fetched, so the board's
+// False until the first session list has been fetched, so the workspace's
 // onboard/session panes aren't decided — and so rendered — before we know which
 // to show. Flipped once (in App.onMount, after the initial refreshSessions
-// resolves); the empty-board onboarding is gated on it so it never flashes
+// resolves); the empty-workspace onboarding is gated on it so it never flashes
 // during that first fetch (an embedding host also keys its loading overlay off
 // the matching host.onReady signal).
 const [initialLoadedState, setInitialLoadedInternal] = createSignal(false);
@@ -97,7 +97,7 @@ const [liveState, setLiveInternal] = createSignal(false);
 export const live = liveState;
 export const [navOpen, setNavOpen] = createSignal(false);
 // Stream (cards top-to-bottom) vs. timeline (treatment E: posts on a center
-// spine with the trace steps between them). Per-board view preference.
+// spine with the trace steps between them). Per-workspace view preference.
 export type ViewMode = "stream" | "timeline";
 export const [viewMode, setViewMode] = createSignal<ViewMode>("stream");
 // Post id the next mounted card should scroll to (set for SSE arrivals
@@ -168,8 +168,8 @@ function syntheticSession(id: string): SessionRow {
 }
 
 // Entry point on load: a bare post route (/s/:id, no session) opens the
-// full-page standalone view; anything else falls through to the normal board.
-// If the post can't be fetched (deleted / bad id) we drop to the board so the
+// full-page standalone view; anything else falls through to the normal workspace.
+// If the post can't be fetched (deleted / bad id) we drop to the workspace so the
 // user lands somewhere usable rather than a blank page.
 export async function bootstrap() {
   const route = host().router.get();
@@ -298,10 +298,10 @@ export function focusPost(postId: string) {
 
 // Return to "home" — the session-less base route — and drop the current
 // selection. Drives the clickable sidebar brand: a guaranteed way back to the
-// empty board from anywhere. Always asks the host to navigate (never short-
+// empty workspace from anywhere. Always asks the host to navigate (never short-
 // circuits on the engine's own state): an embedding host may layer its own view
-// over the board — e.g. sideshow cloud's full-page Settings, which has no
-// session links to click out of on an empty board — and only this navigate()
+// over the workspace — e.g. sideshow cloud's full-page Settings, which has no
+// session links to click out of on an empty workspace — and only this navigate()
 // clears it. The host itself dedupes a no-op move. applyRoute ignores a null
 // sessionId (back/forward to home shouldn't thrash a load), so we deselect here.
 export function goHome() {
@@ -509,7 +509,7 @@ function connectSse(): () => void {
   es.onopen = async () => {
     setLiveInternal(true);
     // events that fired during a gap are gone for good — refetch so the
-    // board can't silently go stale while still looking live
+    // workspace can't silently go stale while still looking live
     if (everConnected) await resyncSelected();
     everConnected = true;
   };
@@ -545,7 +545,7 @@ function connectWebSocket(): () => void {
         if (ws?.readyState === WebSocket.OPEN) ws.send("ping");
       }, WS_HEARTBEAT_MS);
       // events that fired during a gap are gone for good — refetch so the
-      // board can't silently go stale while still looking live
+      // workspace can't silently go stale while still looking live
       if (everConnected) await resyncSelected();
       everConnected = true;
     };
