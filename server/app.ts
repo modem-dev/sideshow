@@ -1052,7 +1052,11 @@ export function createApp({
     const session = await store.getSession(c.req.param("id"));
     if (!session) return c.json({ error: "session not found" }, 404);
     const posts = await store.listPosts(session.id);
-    return c.json(posts.map(sessionPostListRowView));
+    return c.json(
+      c.req.query("hydrate") === "1"
+        ? posts.map(postDetailView)
+        : posts.map(sessionPostListRowView),
+    );
   };
   app.get("/api/sessions/:id/surfaces", listSessionPosts); // legacy alias
   app.get("/api/sessions/:id/posts", listSessionPosts);

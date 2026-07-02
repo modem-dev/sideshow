@@ -2303,6 +2303,30 @@ test("GET /api/sessions/:id/posts lists lean surfaces with ids and omitted html 
   assert.deepEqual(list[0].parts, list[0].surfaces, "legacy parts aliases surfaces");
 });
 
+test("GET /api/sessions/:id/posts?hydrate=1 returns full post details in one response", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Hydrated", surfaces: [{ kind: "html", html: "<p>heavy</p>" }] }),
+    )
+  ).json()) as any;
+  await app.request(`/api/posts/${created.id}`, {
+    ...json({ title: "Hydrated v2", surfaces: [{ kind: "html", html: "<p>new</p>" }] }),
+    method: "PUT",
+  });
+
+  const list = (await (
+    await app.request(`/api/sessions/${created.sessionId}/posts?hydrate=1`)
+  ).json()) as any[];
+  assert.equal(list.length, 1);
+  assert.equal(list[0].id, created.id);
+  assert.equal(list[0].surfaces[0].html, "<p>new</p>");
+  assert.equal(list[0].surfaces[0].index, 0);
+  assert.equal(list[0].history[0].surfaces[0].html, "<p>heavy</p>");
+  assert.equal(list[0].history[0].surfaces[0].index, 0);
+});
+
 test("read responses expose derived surface indexes and renumber after edits", async () => {
   const app = makeApp();
   const created = (await (

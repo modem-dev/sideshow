@@ -74,13 +74,19 @@ test("a surface kind this viewer doesn't know shows a refresh hint, not a broken
   // server returns a valid surface, but rewrite the surface kind to one THIS
   // viewer build has no Match for. It must degrade to a neutral hint, never
   // the diff fallback.
-  await page.route(/\/api\/posts\/[^/?]+(\?|$)/, async (route) => {
+  await page.route(/\/api\/(posts\/[^/?]+|sessions\/[^/]+\/posts)(\?|$)/, async (route) => {
     const res = await route.fetch();
-    const surface = await res.json();
-    if (Array.isArray(surface.surfaces)) {
-      surface.surfaces = surface.surfaces.map(() => ({ kind: "futurething" }));
-    }
-    await route.fulfill({ response: res, json: surface });
+    const body = await res.json();
+    const rewrite = (post: any) => {
+      if (Array.isArray(post.surfaces)) {
+        post.surfaces = post.surfaces.map(() => ({ kind: "futurething" }));
+      }
+      return post;
+    };
+    await route.fulfill({
+      response: res,
+      json: Array.isArray(body) ? body.map(rewrite) : rewrite(body),
+    });
   });
 
   await page.goto(server.url);
@@ -92,6 +98,46 @@ test("a surface kind this viewer doesn't know shows a refresh hint, not a broken
   const card = page.locator(".card:not(#whatsNew)").first();
   await expect(card.locator(".surface-unsupported")).toBeVisible();
   await expect(card.locator(".diff-error")).toHaveCount(0);
+});
+
+test("opening a session hydrates posts without N+1 post detail fetches", async ({
+  page,
+  server,
+}) => {
+  const first = await publish(server.url, {
+    html: "<p>one</p>",
+    title: "One",
+    agent: "e2e",
+    sessionTitle: "Hydrate",
+  });
+  await publish(server.url, {
+    html: "<p>two</p>",
+    title: "Two",
+    agent: "e2e",
+    session: first.sessionId,
+  });
+  await publish(server.url, {
+    html: "<p>three</p>",
+    title: "Three",
+    agent: "e2e",
+    session: first.sessionId,
+  });
+
+  const postDetailRequests: string[] = [];
+  const hydratedListRequests: string[] = [];
+  page.on("request", (req) => {
+    if (req.method() !== "GET") return;
+    const url = new URL(req.url());
+    if (/^\/api\/posts\/[^/]+$/.test(url.pathname)) postDetailRequests.push(req.url());
+    if (url.pathname === `/api/sessions/${first.sessionId}/posts`) {
+      hydratedListRequests.push(url.searchParams.get("hydrate") ?? "");
+    }
+  });
+
+  await page.goto(`${server.url}/session/${first.sessionId}`);
+  await expect(page.locator(".card:not(#whatsNew)")).toHaveCount(3);
+  expect(hydratedListRequests).toContain("1");
+  expect(postDetailRequests).toEqual([]);
 });
 
 test("resize bridge grows the iframe beyond its 120px default", async ({ page, server }) => {

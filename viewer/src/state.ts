@@ -246,6 +246,29 @@ export async function refreshSessions(targetPostId?: string | null) {
   }
 }
 
+function isHydratedPost(value: unknown): value is Post {
+  return !!value && typeof value === "object" && Array.isArray((value as Post).history);
+}
+
+async function fetchSessionPostDetails(id: string): Promise<Post[]> {
+  const rows = await api<unknown[]>(`/api/sessions/${id}/posts?hydrate=1`).catch(() => []);
+  const hydrated: Post[] = [];
+  for (const row of rows) {
+    if (isHydratedPost(row)) hydrated.push(row);
+  }
+  if (hydrated.length === rows.length) return hydrated;
+  const details = await Promise.all(
+    rows.map((row) =>
+      row && typeof row === "object" && typeof (row as { id?: unknown }).id === "string"
+        ? api<Post>(`/api/posts/${encodeURIComponent((row as { id: string }).id)}`).catch(
+            () => null,
+          )
+        : null,
+    ),
+  );
+  return details.filter((post): post is Post => post !== null);
+}
+
 export async function select(
   id: string,
   opts?: { fromPopState?: boolean; replace?: boolean; initialPostId?: string },
@@ -272,10 +295,7 @@ export async function select(
   setCommentsInternal([]);
   setTraceStepsInternal([]);
   void fetchTrace(id);
-  const metas = await api<{ id: string }[]>(`/api/sessions/${id}/posts`).catch(() => []);
-  const details = (
-    await Promise.all(metas.map((m) => api<Post>(`/api/posts/${m.id}`).catch(() => null)))
-  ).filter((s) => s !== null);
+  const details = await fetchSessionPostDetails(id);
   if (selected() !== id) return; // user switched away mid-load
   setPostsInternal(reconcile(details, { key: "id" }));
   // Scroll to a specific post if requested (deep link).
@@ -577,8 +597,8 @@ async function resyncSelected() {
   await refreshSessions();
   if (!before || selected() !== before) return; // select() rebuilt the stream
   void fetchTrace(before);
-  const metas = await api<{ id: string }[]>(`/api/sessions/${before}/posts`).catch(() => []);
-  const ids = new Set(metas.map((m) => m.id));
+  const details = await fetchSessionPostDetails(before);
+  const ids = new Set(details.map((post) => post.id));
   setPostsInternal(
     produce((arr) => {
       for (let i = arr.length - 1; i >= 0; i--) {
@@ -586,7 +606,7 @@ async function resyncSelected() {
       }
     }),
   );
-  for (const meta of metas) await upsertPost(meta.id, { scroll: false });
+  if (selected() === before) setPostsInternal(reconcile(details, { key: "id" }));
   const res = await api<{ comments: Comment[] }>(`/api/comments?session=${before}`).catch(
     () => null,
   );
