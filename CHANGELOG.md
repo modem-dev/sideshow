@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.11.0
+
+### Minor Changes
+
+- 2bc9db6: Return per-surface ids, kinds, and indexes in write responses without echoing surface payload bodies, and remove the redundant top-level `kinds` array. Read kinds from `surfaces.map((surface) => surface.kind)` instead.
+- 28a3a6d: Add a host-overridable `ss:aside-head` slot at the top of the sidebar, above the session list (mirrors `ss:aside-foot`). Self-hosted rendering is unchanged; an embedder can project a sidebar header — e.g. a workspace picker and a pinned Home link — above the session list.
+- 71bf606: Add a `hideBrand` flag to the embed host contract. When set, the engine omits its own "sideshow" wordmark (the sidebar/header home-link brand) so a host that supplies its own branding — e.g. a workspace picker atop the sidebar and a wordmark in the footer — isn't doubled up. Self-hosted leaves it unset and shows the wordmark as before.
+- 1b7a28c: Add a `homeView` flag to the embed host contract. When a host owns its own session-less landing (e.g. a "home" feed), the engine no longer auto-selects a session on boot — it honors a deep-linked route session but otherwise stays session-less so nothing is highlighted behind the host's landing, and it clears the selection when the route later becomes session-less. Self-hosted leaves the flag unset and is unchanged (auto-selects the latest session on boot).
+- 5eba65a: Add a server `onEvent` feed tap for hosts and a `liveTransport: "ws"` viewer-embed option so hosted wrappers can provide hibernation-friendly WebSocket live updates while self-hosted sideshow keeps using SSE by default.
+- ffe7099: Embed host contract: `onThemeChange` now receives a second `meta` argument —
+  `{ theme, mode }` — naming the resolved theme id and light/dark scheme behind the
+  tokens it already reports. Hosts that re-render surfaces out-of-band (e.g.
+  server-side preview frames they can't theme from the token values alone) can pass
+  those identifiers to `/s/:id?theme=&mode=` to reproduce the exact look; hosts that
+  only paint from the token values ignore it. Additive — the tokens argument is
+  unchanged and the default self-hosted host is unaffected.
+
+### Patch Changes
+
+- ed8b987: Validate `sideshow surface add` has at least one surface flag before resolving or creating a session, and resolve long-poll waits promptly when clients disconnect.
+- 7698b1f: Hydrate session post streams from the session list endpoint to avoid N+1 post detail requests on open.
+- 23dad90: Lazy-load sandboxed surface iframes to reduce initial viewer work on long sessions.
+- 46cf918: Fix markdown/code/diff/mermaid surfaces rendering on a white canvas (washed-out
+  text) on a dark board. These rich-part frames are sandboxed opaque-origin
+  iframes, which default to `color-scheme: normal` (light), so in dark mode the UA
+  painted a white backdrop behind the transparent body. They now pin `color-scheme`
+  to the resolved scheme — like html surfaces already do — so the frame's canvas
+  tracks the card in both light and dark.
+- 2bc9db6: List session posts with canonical `surfaces` entries that include surface ids and omit elided html bodies.
+- cc6504c: Slides kit now grid-stacks its deck so it cross-fades in normal flow. Previously
+  it swapped slides with `display:none`, which can't fade — so decks were hand-rolled
+  with `position:absolute` slides over a `min-height` stage, an out-of-flow layout the
+  surface-page height bridge can't measure (the overlay grows `scrollHeight` but not
+  the box its ResizeObserver watches), leaving the frame clipped/frozen. The kit now
+  stacks slides in one grid cell (in flow, sized to the tallest slide) and fades with
+  opacity/visibility, so the frame follows it. DESIGN_GUIDE documents the out-of-flow
+  trap and the grid-stack recipe alongside the existing `position: fixed` ban.
+- 2bc9db6: Expose derived 0-based surface indexes on post detail, session post list, and post history read responses.
+- 0a094ac: Let direct rich-surface renders without an explicit mode follow the browser's system color scheme.
+- 565c85f: Fix intermittent clipping in surface iframes when async content settles after the initial resize pass.
+
 ## 0.10.0
 
 ### Minor Changes
