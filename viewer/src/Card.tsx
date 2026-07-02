@@ -321,6 +321,7 @@ export function Card(props: { post: Post; standalone?: boolean }) {
                       });
                     }}
                     sandbox="allow-scripts"
+                    loading="lazy"
                     class={SURFACE_FRAME_CLASSES[surface.kind]}
                     title={
                       props.post.surfaces.length > 1

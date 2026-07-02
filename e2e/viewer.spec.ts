@@ -101,6 +101,7 @@ test("resize bridge grows the iframe beyond its 120px default", async ({ page, s
   await page.goto(server.url);
   const iframe = page.locator(".card iframe");
   await expect(iframe).toBeVisible();
+  await expect(iframe).toHaveAttribute("loading", "lazy");
   // the sandboxed bridge must report content height via postMessage; this is
   // the WebKit-quirk regression test (see CLAUDE.md)
   await expect
