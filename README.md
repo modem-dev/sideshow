@@ -1,7 +1,11 @@
 # sideshow
 
-[![CI](https://github.com/modem-dev/sideshow/actions/workflows/ci.yml/badge.svg)](https://github.com/modem-dev/sideshow/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<p>
+  <a href="https://github.com/modem-dev/sideshow/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/modem-dev/sideshow/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
+  <a href="https://www.npmjs.com/package/sideshow"><img src="https://img.shields.io/node/v/sideshow?style=for-the-badge&logo=node.js&logoColor=white" alt="Node version"></a>
+  <a href="docs/connecting-agents.md#mcp"><img src="https://img.shields.io/badge/MCP-compatible-7c3aed?style=for-the-badge" alt="MCP compatible"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+</p>
 
 **A live visual surface for your terminal coding agent.**
 
