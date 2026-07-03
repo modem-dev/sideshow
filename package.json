@@ -65,8 +65,8 @@
     "access": "public"
   },
   "scripts": {
-    "dev": "vite build && (vite build --watch & node --watch server/index.ts)",
-    "start": "vite build && node server/index.ts",
+    "dev": "npm run build:viewer && (npm run build:viewer -- --watch & node --watch server/index.ts)",
+    "start": "npm run build:viewer && node server/index.ts",
     "build:viewer": "vite build",
     "build:embed": "vite build -c viewer/vite.embed.config.ts",
     "mcp": "node mcp/server.ts",
@@ -81,7 +81,7 @@
     "changeset:status": "changeset status",
     "release:version": "changeset version",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.workers.json --noEmit && tsc -p tsconfig.viewer.json --noEmit",
-    "build": "tsc -p tsconfig.build.json && vite build && npm run build:embed",
+    "build": "tsc -p tsconfig.build.json && npm run build:viewer && npm run build:embed",
     "deploy": "npm run build:viewer && wrangler deploy",
     "dev:cloud": "npm run build:viewer && wrangler dev",
     "prepack": "npm run build",

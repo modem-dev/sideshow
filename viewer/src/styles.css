@@ -1594,10 +1594,10 @@ iframe {
 
 /* phone native surfaces: prevent each built-in renderer from forcing page overflow */
 @media (max-width: 700px) {
-  .imagepart,
-  .tracepart,
-  .jsonpart,
-  .part-unsupported,
+  .image-surface,
+  .trace-surface,
+  .json-surface,
+  .surface-unsupported,
   .cmts {
     padding-left: 10px;
     padding-right: 10px;

@@ -53,9 +53,9 @@ function randomParts(r: () => number): unknown[] {
       case 2:
         return { kind: "code", code: text(r), language: pick(r, ["ts", "py", "text"]) };
       case 3:
-        return { kind: "json", json: { v: int(r, 1000), s: text(r) } };
+        return { kind: "json", data: { v: int(r, 1000), s: text(r) } };
       default:
-        return { kind: "terminal", terminal: text(r) };
+        return { kind: "terminal", text: text(r) };
     }
   });
 }
