@@ -132,6 +132,7 @@ usage:
   sideshow show <id>                      show a single post (surfaces, indexes, ids, version, history)
   sideshow sessions                       list sessions
   sideshow demo                           seed two example sessions to explore the viewer
+  sideshow test-post [--agent <name>]     publish the built-in welcome post (idempotent)
   sideshow guide                          print the design contract for posts
   sideshow setup                          print the AGENTS.md integration block
   sideshow agent-howto             print current agent how-to
@@ -1586,6 +1587,19 @@ const commands = {
       }
     }
     console.log(`Seeded ${DEMO_SESSIONS.length} demo sessions — open ${BASE} to look around.`);
+  },
+
+  // Publish the built-in welcome/test post (server/welcomePost.ts) — the same
+  // fixed card the MCP send_test_post tool sends. Idempotent server-side: if
+  // the card is already on the board, the server returns it instead of
+  // publishing a duplicate.
+  async "test-post"() {
+    const { values: flags } = parse({ options: { agent: { type: "string" } } });
+    const created = await api("/api/test-post", {
+      method: "POST",
+      body: JSON.stringify({ agent: agentName(flags) }),
+    });
+    console.log(JSON.stringify({ ...created, url: `${BASE}/p/${created.id}` }, null, 2));
   },
 
   async guide() {

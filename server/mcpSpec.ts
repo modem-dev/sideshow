@@ -22,7 +22,9 @@ export const MCP_INSTRUCTIONS =
   'publish, also pass sessionTitle to name the session after the task (e.g. "Auth refactor"). The ' +
   "user can comment in their browser; call wait_for_feedback after publishing something you want a " +
   "reaction to. Any publish/update/reply result may carry a userFeedback array — comments the user " +
-  "left since your last call, delivered once.";
+  "left since your last call, delivered once. Just connected, or asked for a test? Call " +
+  "send_test_post once — it publishes a small fixed welcome card that confirms the connection " +
+  "works and shows the user example prompts to try.";
 
 const d = {
   title: "Short human-readable title shown above the card",
@@ -186,6 +188,8 @@ export const MCP_TOOL_DESCRIPTIONS = {
     "Upload a binary asset (image, trace file, any file) and get back its id and URL. base64-encode the bytes in `data`. Then reference it: put {kind:'image', assetId} or {kind:'trace', assetId} in a post's surfaces, or embed the returned url in an html surface (<img src=\"...\">). Attached to this conversation's session.",
   getDesignGuide:
     "Fetch the design contract: post surfaces, html fragment rules, theme CSS variables, CDN allowlist, and the interactivity bridge. Call once per session before publishing.",
+  sendTestPost:
+    "Publish sideshow's built-in welcome post — fixed content shipped with sideshow that confirms the connection works and shows the user example prompts to try. Use it when the user asks for a test post, or right after connecting to a fresh/empty board. Idempotent: if the welcome post is already on the board it is returned (alreadySent: true), never duplicated.",
   addSurface:
     "Append a surface to an existing post (same card, new version). Optionally pass before/after (surface id or 0-based index) to control insert position; default is append at the end. If the result includes userFeedback, read it.",
   editSurface:
@@ -364,6 +368,16 @@ export const HTTP_MCP_TOOLS = [
     name: "get_design_guide",
     description: MCP_TOOL_DESCRIPTIONS.getDesignGuide,
     inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "send_test_post",
+    description: MCP_TOOL_DESCRIPTIONS.sendTestPost,
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent: { type: "string", description: d.agent },
+      },
+    },
   },
   {
     name: "add_surface",

@@ -258,6 +258,23 @@ server.registerTool(
 );
 
 server.registerTool(
+  "send_test_post",
+  {
+    description: MCP_TOOL_DESCRIPTIONS.sendTestPost,
+    inputSchema: {},
+  },
+  async () => {
+    // The server owns the fixed content and the already-sent check; this tool
+    // is just the trigger. The welcome card lives in its own "Getting started"
+    // session, so the conversation's lazy session is deliberately not used.
+    const created = JSON.parse(
+      await api("/api/test-post", { method: "POST", body: JSON.stringify({ agent: AGENT }) }),
+    );
+    return text({ ...created, url: `${API}/p/${created.id}` });
+  },
+);
+
+server.registerTool(
   "add_surface",
   {
     description: MCP_TOOL_DESCRIPTIONS.addSurface,

@@ -44,6 +44,12 @@ import {
   type TraceStep,
 } from "./types.ts";
 import { validateSurfaces } from "./postSurfaces.ts";
+import {
+  findWelcomePost,
+  WELCOME_POST_TITLE,
+  WELCOME_SESSION_TITLE,
+  welcomeSurfaces,
+} from "./welcomePost.ts";
 
 export type { FeedEvent } from "./events.ts";
 export type { Feedback } from "./apiViews.ts";
@@ -1137,6 +1143,34 @@ export function createApp({
     const parsed = await validateSurfaces([htmlSurface(body.html, body.kits)]);
     if (!parsed.ok) return c.json({ error: parsed.error }, 400);
     return publish(c, body, parsed.surfaces);
+  });
+
+  // The built-in welcome/test post (server/welcomePost.ts): the same fixed card
+  // the MCP send_test_post tool publishes, reachable from the CLI and raw-HTTP
+  // tiers (`sideshow test-post`, `curl -X POST .../api/test-post`). The body is
+  // optional (`{agent?}` labels a newly created session). Idempotent — if the
+  // card is already on the board it is returned (200 + alreadySent) rather than
+  // duplicated; a fresh publish is a 201 like any other post.
+  app.post("/api/test-post", async (c) => {
+    const existing = await findWelcomePost(store);
+    if (existing) {
+      return c.json({ ...postWriteView(existing), alreadySent: true });
+    }
+    const body = await c.req.json().catch(() => null);
+    const result = await publishPostFlow({
+      surfaces: welcomeSurfaces(),
+      title: WELCOME_POST_TITLE,
+      sessionTitle: WELCOME_SESSION_TITLE,
+      agent: typeof body?.agent === "string" ? body.agent : undefined,
+    });
+    if ("error" in result) return c.json({ error: result.error }, result.status);
+    return c.json(
+      {
+        ...postWriteView(result.post),
+        ...(result.userFeedback && { userFeedback: result.userFeedback }),
+      },
+      201,
+    );
   });
 
   async function publish(c: any, body: any, surfaces: Surface[]) {

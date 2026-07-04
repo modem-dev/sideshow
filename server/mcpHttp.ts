@@ -13,6 +13,12 @@ import {
 } from "./types.ts";
 import { HTTP_MCP_TOOLS, MCP_INSTRUCTIONS, MCP_SERVER_INFO } from "./mcpSpec.ts";
 import { coerceSurfaces } from "./postSurfaces.ts";
+import {
+  findWelcomePost,
+  WELCOME_POST_TITLE,
+  WELCOME_SESSION_TITLE,
+  welcomeSurfaces,
+} from "./welcomePost.ts";
 
 // Stateless MCP over streamable HTTP: every request is self-contained, which
 // is what a serverless deployment needs. Session continuity is explicit —
@@ -210,6 +216,33 @@ export function registerMcp(app: Hono, deps: McpDeps) {
       }
       case "get_design_guide":
         return deps.guide;
+      case "send_test_post": {
+        // Idempotent: a board only ever needs one welcome card. If it's already
+        // there, hand back the existing post instead of stacking duplicates —
+        // agents are told to call this right after connecting, and an eager one
+        // may call it more than once.
+        const existing = await findWelcomePost(deps.store);
+        if (existing) {
+          return JSON.stringify(
+            {
+              ...postWriteView(existing),
+              url: `${origin}/p/${existing.id}`,
+              alreadySent: true,
+              note: "the welcome post is already on this board — returning it, not republishing",
+            },
+            null,
+            2,
+          );
+        }
+        const result = await deps.publishPost({
+          surfaces: welcomeSurfaces(),
+          title: WELCOME_POST_TITLE,
+          sessionTitle: WELCOME_SESSION_TITLE,
+          agent: typeof args.agent === "string" ? args.agent : undefined,
+        });
+        if ("error" in result) throw new Error(result.error);
+        return postResult(result, origin, "p");
+      }
       case "add_surface": {
         const surfaces = await coerceSurfaces([args.surface]);
         if (surfaces.length === 0) throw new Error("invalid surface");

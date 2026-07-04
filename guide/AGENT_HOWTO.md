@@ -28,6 +28,8 @@ sideshow guide        # or: curl -s ${SIDESHOW_URL:-http://localhost:8228}/guide
 
 If `SIDESHOW_URL` is unset, the surface is at `http://localhost:8228`. If it is not running, start it: `sideshow serve` (or `npx sideshow serve`). If the `sideshow` command is not on PATH but you are inside this repo, use `node bin/sideshow.js ...` as the CLI command.
 
+Just connected, or the user asked for a test? Send the built-in welcome post once — it confirms the connection works and shows the user example prompts to try. MCP: `send_test_post`; CLI: `sideshow test-post`; raw HTTP: `POST /api/test-post`. It is idempotent (an existing welcome card is returned, never duplicated).
+
 ## Publishing
 
 Prefer MCP tools if the sideshow MCP server is connected: `publish_post` `{title, surfaces, sessionTitle?}`, `update_post` `{id, title?, surfaces?}`, `wait_for_feedback`, `reply_to_user` `{postId, message}`, `list_posts`. (`publish_surface` / `update_surface` remain as deprecated aliases; `publish_snippet` / `update_snippet` remain as html-only sugar aliases.) Otherwise use the CLI — session grouping is automatic:
