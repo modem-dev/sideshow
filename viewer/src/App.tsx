@@ -46,7 +46,6 @@ import {
   setNavOpen,
   setPillTarget,
   setUnread,
-  setViewMode,
   standalonePost,
   streamLoading,
   posts,
@@ -583,7 +582,9 @@ function SessionView() {
           {current() ? `${current()!.agent} · started ${relTime(current()!.createdAt)}` : ""}
         </span>
         <span class="head-sp"></span>
-        <ViewToggle />
+        {/* Stream/timeline view toggle disabled for now — the timeline view
+            (SessionTimeline + ViewToggle below) is kept but unreachable; viewMode
+            stays "stream". Re-enable by restoring <ViewToggle /> here. */}
         {/* Host-overridable region (SLOTS.sessionActions): session-scoped controls
             an embedder projects beside the toggle (e.g. cloud "Share"). Empty
             fallback — self-hosted renders nothing here. */}
@@ -613,26 +614,33 @@ function SessionView() {
 
 // Stream ↔ timeline switch in the session head. Timeline is treatment E — the
 // session's posts on a center spine with the trace steps between them.
-function ViewToggle() {
-  return (
-    <div class="view-toggle" role="group" aria-label="View mode">
-      <button
-        classList={{ on: viewMode() === "stream" }}
-        aria-pressed={viewMode() === "stream"}
-        onClick={() => setViewMode("stream")}
-      >
-        Stream
-      </button>
-      <button
-        classList={{ on: viewMode() === "timeline" }}
-        aria-pressed={viewMode() === "timeline"}
-        onClick={() => setViewMode("timeline")}
-      >
-        Timeline
-      </button>
-    </div>
-  );
-}
+//
+// Disabled for now: the toggle is not rendered (see SessionView) so viewMode
+// stays "stream" and the timeline view is unreachable. The component is kept
+// commented rather than deleted so it can be restored. Re-enable by uncommenting
+// this and the <ViewToggle /> render, and re-adding `setViewMode` to the
+// ./state.ts import.
+//
+// function ViewToggle() {
+//   return (
+//     <div class="view-toggle" role="group" aria-label="View mode">
+//       <button
+//         classList={{ on: viewMode() === "stream" }}
+//         aria-pressed={viewMode() === "stream"}
+//         onClick={() => setViewMode("stream")}
+//       >
+//         Stream
+//       </button>
+//       <button
+//         classList={{ on: viewMode() === "timeline" }}
+//         aria-pressed={viewMode() === "timeline"}
+//         onClick={() => setViewMode("timeline")}
+//       >
+//         Timeline
+//       </button>
+//     </div>
+//   );
+// }
 
 function SessionTitle(props: { current: SessionRow | undefined }) {
   let el!: HTMLSpanElement;
