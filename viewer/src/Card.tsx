@@ -417,6 +417,7 @@ export function Card(props: { post: Post; standalone?: boolean }) {
               <a
                 class="act icon open"
                 target="_blank"
+                rel="noopener"
                 href={postLink(props.post.id)}
                 title="Open in a new tab"
                 aria-label="Open in a new tab"
@@ -443,6 +444,7 @@ export function Card(props: { post: Post; standalone?: boolean }) {
                 <a
                   class="act icon shot"
                   target="_blank"
+                  rel="noopener"
                   href={postImageLink(props.post.id)}
                   title="Open first surface as an image (PNG)"
                   aria-label="Open first surface as an image (PNG)"
