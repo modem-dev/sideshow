@@ -335,7 +335,7 @@ function StandaloneView(props: { post: Post }) {
       <main class="standalone-main">
         <Card post={props.post} standalone />
         <footer class="standalone-foot">
-          <a href="https://sideshow.sh" target="_blank" rel="noopener">
+          <a href="https://sideshow.sh" target="_blank" rel="noopener noreferrer">
             made with <strong>sideshow</strong>
           </a>
         </footer>
@@ -465,7 +465,7 @@ async function onBridgeMessage(ev: MessageEvent) {
     }
     if (link.protocol !== "http:" && link.protocol !== "https:") return;
     if (confirm(`Open external link?\n\n${link.href}`))
-      window.open(link.href, "_blank", "noopener");
+      window.open(link.href, "_blank", "noopener,noreferrer");
   } else if (d.type === "copy" && isOwnFrame(ev.source)) {
     void navigator.clipboard?.writeText(String(d.text)).catch(() => {});
   }

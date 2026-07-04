@@ -923,6 +923,14 @@ export function createApp({
   };
 
   const configuredViewerHtml = (c: Context, opts: { post?: Post; title?: string | null } = {}) => {
+    // The viewer HTML is the trusted app origin — it shares that origin with the
+    // authenticated API and the comment→agent channel, so a cross-origin page
+    // that frames it could clickjack actions or the prompt-injection channel.
+    // Refuse cross-origin framing (same-origin embedding still allowed). This is
+    // the trusted shell only; the sandboxed surface documents at /s/:id?part=N
+    // are *meant* to be framed and carry their own `sandbox` CSP header instead,
+    // so they never pass through here and are unaffected.
+    c.header("Content-Security-Policy", "frame-ancestors 'self'");
     const pageTitle = opts.post?.title ?? opts.title;
     const html = withDocumentTitle(
       withViewerConfig(

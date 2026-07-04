@@ -28,7 +28,7 @@ export function TraceSurface(props: { surface: TraceSurfaceData }) {
         <span class="trace-title">{props.surface.title ?? "Agent trace"}</span>
         <Show when={assetUrl()} keyed>
           {(url) => (
-            <a class="trace-dl" href={url} target="_blank" rel="noopener">
+            <a class="trace-dl" href={url} target="_blank" rel="noopener noreferrer">
               download ↓
             </a>
           )}

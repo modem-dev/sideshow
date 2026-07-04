@@ -14,7 +14,7 @@ export function ImageSurface(props: { surface: ImageSurfaceData }) {
         when={!failed()}
         fallback={<div class="asset-gone">Image unavailable — it may have been evicted.</div>}
       >
-        <a href={src()} target="_blank" rel="noopener">
+        <a href={src()} target="_blank" rel="noopener noreferrer">
           <img
             class="asset-img"
             src={src()}
