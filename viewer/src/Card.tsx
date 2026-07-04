@@ -25,7 +25,16 @@ import {
   postImageLink,
 } from "./api.ts";
 import { isSandboxedSurfaceKind, SURFACE_FRAME_CLASSES } from "../../server/types.ts";
-import { CommentIcon, ImageIcon, LinkIcon, OpenIcon, PinIcon, TrashIcon } from "./icons.tsx";
+import {
+  CommentIcon,
+  ImageIcon,
+  LinkIcon,
+  MaximizeIcon,
+  OpenIcon,
+  PinIcon,
+  TrashIcon,
+} from "./icons.tsx";
+import { root } from "./host.ts";
 import { ImageSurface } from "./ImageSurface.tsx";
 import { JsonSurface } from "./JsonSurface.tsx";
 import { activeTheme, resolvedMode } from "./theme.ts";
@@ -65,6 +74,12 @@ const MAX_FRAME_H = 4000;
 export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unknown): void {
   iframe.style.height = Math.min(Math.max(Number(reportedHeight), MIN_FRAME_H), MAX_FRAME_H) + "px";
 }
+
+type FullscreenSurface = {
+  src: string;
+  title: string;
+  frameClass?: string;
+};
 
 // While a deep-link scroll poll is active, IntersectionObserver callbacks on
 // other cards must not call focusPost — they would overwrite the URL with
@@ -160,16 +175,46 @@ function pollScrollIntoView(el: HTMLElement, postId: string): () => void {
 
 export function Card(props: { post: Post; standalone?: boolean }) {
   let card!: HTMLDivElement;
+  let fullscreenDialog: HTMLDivElement | undefined;
+  let fullscreenCloseButton: HTMLButtonElement | undefined;
+  let fullscreenOpener: HTMLButtonElement | undefined;
   const iframes = new Set<HTMLIFrameElement>();
   // Absolute surface index -> its sandboxed-surface iframe. Lets the version
   // dropdown rebuild each `/s/:id?part=N` src across every surface with a frame.
   const surfaceFrames = new Map<number, HTMLIFrameElement>();
   const [annotating, setAnnotating] = createSignal(false);
   const [anchorDraft, setAnchorDraft] = createSignal<CommentAnchor | null>(null);
+  const [fullscreenSurface, setFullscreenSurface] = createSignal<FullscreenSurface | null>(null);
   let stopPoll: (() => void) | undefined;
+
+  const surfaceTitle = (surfaceIndex: number) =>
+    props.post.surfaces.length > 1
+      ? `${props.post.title} (surface ${surfaceIndex + 1})`
+      : props.post.title;
+
+  const surfaceSrc = (surfaceIndex: number) =>
+    appPath(
+      `/s/${props.post.id}?part=${surfaceIndex}&ver=${props.post.version}&cb=${props.post.version}&theme=${activeTheme()}&mode=${resolvedMode()}`,
+    );
 
   const anchoredComments = (surfaceIndex: number) =>
     comments().filter((c) => c.postId === props.post.id && c.anchor?.surfaceIndex === surfaceIndex);
+
+  const closeFullscreen = () => {
+    const opener = fullscreenOpener;
+    fullscreenOpener = undefined;
+    setFullscreenSurface(null);
+    queueMicrotask(() => {
+      if (opener?.isConnected) opener.focus();
+    });
+  };
+
+  const focusableFullscreenEls = () =>
+    Array.from(
+      fullscreenDialog?.querySelectorAll<HTMLElement>(
+        'button, iframe, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    ).filter((el) => !el.hasAttribute("disabled") && el.tabIndex >= 0);
 
   const sendPinnedComment = async (text: string) => {
     const anchor = anchorDraft();
@@ -195,6 +240,37 @@ export function Card(props: { post: Post; standalone?: boolean }) {
 
   createEffect(scrollIfTarget);
   onCleanup(() => stopPoll?.());
+
+  createEffect(() => {
+    if (!fullscreenSurface()) return;
+    queueMicrotask(() => fullscreenCloseButton?.focus());
+    const onKey = (event: Event) => {
+      const e = event as KeyboardEvent;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeFullscreen();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = focusableFullscreenEls();
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = root().activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (!active || !fullscreenDialog?.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    root().addEventListener("keydown", onKey);
+    onCleanup(() => root().removeEventListener("keydown", onKey));
+  });
 
   onMount(() => {
     cardEls.set(props.post.id, { card, iframes });
@@ -323,14 +399,8 @@ export function Card(props: { post: Post; standalone?: boolean }) {
                     sandbox="allow-scripts"
                     loading="lazy"
                     class={SURFACE_FRAME_CLASSES[surface.kind]}
-                    title={
-                      props.post.surfaces.length > 1
-                        ? `${props.post.title} (surface ${i() + 1})`
-                        : props.post.title
-                    }
-                    src={appPath(
-                      `/s/${props.post.id}?part=${i()}&ver=${props.post.version}&cb=${props.post.version}&theme=${activeTheme()}&mode=${resolvedMode()}`,
-                    )}
+                    title={surfaceTitle(i())}
+                    src={surfaceSrc(i())}
                   ></iframe>
                 </Match>
                 <Match when={surface.kind === "image"}>
@@ -343,6 +413,24 @@ export function Card(props: { post: Post; standalone?: boolean }) {
                   <JsonSurface surface={surface as JsonSurfaceData} />
                 </Match>
               </Switch>
+              <Show when={surface.kind === "mermaid"}>
+                <button
+                  class="surface-fullscreen"
+                  type="button"
+                  title="Open diagram fullscreen"
+                  aria-label="Open diagram fullscreen"
+                  onClick={(e) => {
+                    fullscreenOpener = e.currentTarget;
+                    setFullscreenSurface({
+                      src: surfaceFrames.get(i())?.src ?? surfaceSrc(i()),
+                      title: surfaceTitle(i()),
+                      frameClass: SURFACE_FRAME_CLASSES[surface.kind],
+                    });
+                  }}
+                >
+                  <MaximizeIcon />
+                </button>
+              </Show>
               <div class="surface-pins">
                 <For each={anchoredComments(i())}>{(c) => <AnchoredComment comment={c} />}</For>
                 <Show when={anchorDraft()?.surfaceIndex === i() ? anchorDraft() : null} keyed>
@@ -368,6 +456,40 @@ export function Card(props: { post: Post; standalone?: boolean }) {
           );
         }}
       </For>
+      <Show when={fullscreenSurface()} keyed>
+        {(surface) => (
+          <div class="surface-fullscreen-backdrop" onClick={closeFullscreen}>
+            <div
+              ref={(el) => (fullscreenDialog = el)}
+              class="surface-fullscreen-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Fullscreen view of ${surface.title}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div class="surface-fullscreen-head">
+                <h2>{surface.title}</h2>
+                <button
+                  ref={(el) => (fullscreenCloseButton = el)}
+                  class="x"
+                  type="button"
+                  aria-label="Close fullscreen diagram"
+                  onClick={closeFullscreen}
+                >
+                  ✕
+                </button>
+              </div>
+              <iframe
+                sandbox="allow-scripts"
+                loading="eager"
+                class={`surface-fullscreen-frame ${surface.frameClass ?? ""}`}
+                title={`${surface.title} fullscreen`}
+                src={surface.src}
+              ></iframe>
+            </div>
+          </div>
+        )}
+      </Show>
       <Show when={!props.standalone}>
         <Thread
           postId={props.post.id}

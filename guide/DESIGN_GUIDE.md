@@ -24,12 +24,15 @@ a `kind`:
 - **`mermaid`** — diagram source you hand over as _text_; the viewer renders it
   to an SVG (flowcharts, sequence diagrams, ERDs, gantt, state, …). Reach for it
   when the _shape_ of a system is the point and you'd rather describe it than
-  draw SVG by hand. Renders as data, not sandboxed markup (securityLevel
-  `strict`); for bespoke vector art hand-write inline `<svg>` in an `html` surface
-  instead. The viewer themes the diagram (light and dark) automatically — **don't
-  set your own colors**. Highlight flowchart nodes with `:::accent` (or
-  `class A,B accent`) and edges with `accentLine` (pair with `linkStyle`);
-  sequence diagrams style actors globally only.
+  draw SVG by hand. The source travels as data and renders in a sandboxed Mermaid
+  frame (securityLevel `strict`); for bespoke vector art hand-write inline `<svg>`
+  in an `html` surface instead. Prefer vertical flowcharts (`flowchart TD`/`TB`)
+  for sideshow cards;
+  wide `LR` system maps shrink to fit the card and become unreadable. The viewer
+  themes the diagram (light and dark) automatically — **don't set your own
+  colors**. Highlight flowchart nodes with `:::accent` (or `class A,B accent`)
+  and edges with `accentLine` (pair with `linkStyle`); sequence diagrams style
+  actors globally only.
 - **`diff`** — a patch you hand over as _data_; the trusted viewer renders it
   natively as a syntax-highlighted code review (split or unified). Reach for it
   to show a changeset or review code, not to draw.
@@ -91,6 +94,46 @@ A **`Surface`** is one of:
 For a diff, send a `patch` — it carries only the changed lines, so it is the
 compact, preferred form. Use `files` (full before/after contents) only when you
 don't have a patch. A diff surface takes an optional `"layout": "unified" | "split"`.
+
+### Mermaid layout tips
+
+Mermaid diagrams render inside the same card column as everything else, so huge
+left-to-right canvases are scaled down until the text is tiny. Optimize for the
+card first:
+
+- Default to `flowchart TD` or `flowchart TB`. Use `LR` only for short, truly
+  linear flows with a handful of columns.
+- Split whole-system architecture maps into multiple diagrams/posts: context,
+  data flow, deploy/runtime, and ownership are usually easier to read separately.
+- Keep node labels short; put explanation in a markdown surface above or below
+  the diagram. Use `<br/>` in labels when a name needs wrapping.
+- Use `subgraph` blocks to group layers vertically rather than stretching one
+  row across the screen.
+- If a diagram still needs to be wide, it is okay: the viewer offers a fullscreen
+  control on Mermaid surfaces, but the inline card should remain legible enough
+  to preview.
+
+Prefer this shape:
+
+```mermaid
+flowchart TD
+  subgraph Product[Product surface]
+    Dashboard[Dashboard<br/>Next.js]
+    Agent[Agent gateway<br/>MCP tools]
+  end
+  subgraph Backend[Backend]
+    API[API<br/>oRPC]
+    Ingest[Ingest pipeline]
+    DB[(Postgres)]
+  end
+  Dashboard --> API
+  Agent --> API
+  API --> Ingest
+  Ingest --> DB
+```
+
+Avoid one-screen maps that put every package/service in a single `flowchart LR`
+row; they will fit the width by shrinking the text.
 
 ## Uploads (images, traces, files)
 

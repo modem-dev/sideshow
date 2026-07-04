@@ -10,7 +10,7 @@ A post is a card built from ordered **surfaces**, each with a `kind`:
 
 - **`html`** — markup you write, rendered in a sandboxed iframe. Reach for it to draw: diagrams, UI sketches, data viz, explainers.
 - **`markdown`** — trusted viewer-rendered prose.
-- **`mermaid`** — diagram source rendered by the trusted viewer.
+- **`mermaid`** — diagram source rendered in a sandboxed Mermaid frame. Prefer vertical `flowchart TD`/`TB`; wide `LR` maps shrink in the card and should be split or opened fullscreen.
 - **`diff`** — a patch you send as _data_, rendered natively by the trusted viewer as a syntax-highlighted code review.
 - **`terminal`** — monospace/ANSI output.
 - **`image`** — an uploaded image asset.
@@ -52,6 +52,7 @@ Rules of thumb:
 - One concept per post, with a clear title. A series of small posts beats one giant page.
 - **Iterate with `sideshow update <id>`** (same card, new version) instead of publishing near-duplicates. Versions are kept; the user can flip between them.
 - For html surfaces, use the built-in kit from the guide (pre-styled form elements, SVG utility classes) before writing CSS; for anything else use the theme CSS variables so posts work in dark mode.
+- For Mermaid, start with vertical `flowchart TD`/`TB`, short wrapped labels, and `subgraph` grouping. Use `LR` only for compact pipelines; split big architecture maps into several diagrams.
 
 ## The feedback loop
 

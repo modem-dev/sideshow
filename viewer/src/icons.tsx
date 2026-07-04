@@ -70,6 +70,18 @@ export function ImageIcon() {
   );
 }
 
+// lucide: maximize-2
+export function MaximizeIcon() {
+  return (
+    <Icon>
+      <path d="M15 3h6v6" />
+      <path d="m21 3-7 7" />
+      <path d="m3 21 7-7" />
+      <path d="M9 21H3v-6" />
+    </Icon>
+  );
+}
+
 // lucide: plug — a connect glyph for the empty-sidebar affordance.
 export function PlugIcon() {
   return (

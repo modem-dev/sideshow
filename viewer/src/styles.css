@@ -578,6 +578,41 @@ select.vbadge {
 .surface-shell {
   position: relative;
 }
+.surface-fullscreen {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 0.5px solid var(--border-2);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    background-color 0.15s,
+    color 0.15s;
+}
+.surface-shell:hover .surface-fullscreen,
+.surface-shell:focus-within .surface-fullscreen {
+  opacity: 1;
+}
+.surface-fullscreen:hover,
+.surface-fullscreen:focus-visible {
+  color: var(--text);
+  background: var(--surface);
+}
+.surface-fullscreen svg {
+  width: 15px;
+  height: 15px;
+}
 .surface-shell.annotating {
   outline: 1px solid var(--accent);
   outline-offset: -1px;
@@ -827,6 +862,68 @@ iframe {
   border: none;
   border-top: 0.5px solid var(--border);
   background: transparent;
+}
+.surface-fullscreen-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.72);
+}
+.surface-fullscreen-dialog {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 0.5px solid var(--border-2);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+}
+.surface-fullscreen-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 9px 12px 9px 16px;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--panel);
+}
+.surface-fullscreen-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.surface-fullscreen-head .x {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--faint);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.surface-fullscreen-head .x:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.surface-fullscreen-frame {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  border-top: 0;
 }
 /* Shown when a surface's kind isn't recognized by this (possibly stale) viewer. */
 .surface-unsupported {
@@ -1684,7 +1781,8 @@ iframe {
 }
 /* narrow or touch: hover-revealed actions must stay reachable */
 @media (max-width: 700px), (hover: none) {
-  .card-head .act {
+  .card-head .act,
+  .surface-fullscreen {
     opacity: 1;
   }
   .sess .x {
@@ -1728,6 +1826,12 @@ iframe {
   #toast {
     width: calc(100vw - 24px);
     max-width: none;
+  }
+  .surface-fullscreen-backdrop {
+    padding: 8px;
+  }
+  .surface-fullscreen-dialog {
+    border-radius: 12px;
   }
 }
 
