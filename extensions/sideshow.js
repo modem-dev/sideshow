@@ -187,7 +187,7 @@ function rememberSession(state, sessionId) {
 }
 
 function urlForSurface(surfaceId) {
-  return `${baseUrl()}/s/${surfaceId}`;
+  return `${baseUrl()}/p/${surfaceId}`;
 }
 
 function feedbackSummary(feedback) {
