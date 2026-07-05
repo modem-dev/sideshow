@@ -44,7 +44,7 @@ export interface SideshowHost {
   // Live-update transport. Self-hosted defaults to SSE; embedders can opt into
   // WebSocket when their host implements `/api/events` as a hibernatable socket.
   liveTransport?: LiveTransport;
-  // Whether this deployment can render a surface as a PNG (the /s/:id.png route).
+  // Whether this deployment can render a surface as a PNG (the /p/:id.png route).
   // That route is served only by a Cloudflare Worker with the Browser Rendering
   // binding; a plain Node server (local dev, `npm start`) has no way to drive a
   // headless browser, so it is absent there. The engine always shows a
@@ -189,8 +189,9 @@ export function host(): SideshowHost {
 }
 
 // Self-hosted default host: base path from the hosted-wrapper global (set by any
-// wrapper before the engine loads; empty at root), routing over the History API
-// with URL shapes identical to before (/session/:id and /session/:id/s/:sid).
+// wrapper before the engine loads; empty at root), routing over the History API.
+// Writes canonical URL shapes (/session/:id and /session/:id/p/:pid) and still
+// parses the legacy /s/ spellings on the way in.
 export function createDefaultHost(): SideshowHost {
   const basePath = window.__SIDESHOW_BASE_PATH__ ?? "";
   const subs = new Set<(r: Route) => void>();
@@ -200,17 +201,17 @@ export function createDefaultHost(): SideshowHost {
       ? location.pathname.slice(basePath.length)
       : location.pathname;
     const qSurface = new URLSearchParams(location.search).get("surface") ?? undefined;
-    const m = rest.match(/^\/session\/([^/]+)(?:\/s\/([^/]+))?/);
+    const m = rest.match(/^\/session\/([^/]+)(?:\/[sp]\/([^/]+))?/);
     if (m) return { sessionId: m[1], surfaceId: m[2] ?? qSurface };
-    const surfaceOnly = rest.match(/^\/s\/([^/]+)/);
+    const surfaceOnly = rest.match(/^\/[sp]\/([^/]+)/);
     if (surfaceOnly) return { surfaceId: surfaceOnly[1] };
     return { surfaceId: qSurface };
   };
 
   const urlFor = (to: Route): string => {
-    if (!to.sessionId) return to.surfaceId ? `${basePath}/s/${to.surfaceId}` : basePath || "/";
+    if (!to.sessionId) return to.surfaceId ? `${basePath}/p/${to.surfaceId}` : basePath || "/";
     return to.surfaceId
-      ? `${basePath}/session/${to.sessionId}/s/${to.surfaceId}`
+      ? `${basePath}/session/${to.sessionId}/p/${to.surfaceId}`
       : `${basePath}/session/${to.sessionId}`;
   };
 

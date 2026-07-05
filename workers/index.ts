@@ -34,7 +34,7 @@ export class SideshowBoard extends DurableObject<Env> {
       authToken: env.SIDESHOW_TOKEN,
       publicRead,
       // This Worker deploys with the Browser Rendering binding (wrangler.jsonc),
-      // so /s/:id.png is live — tell the viewer to enable the screenshot action.
+      // so /p/:id.png is live — tell the viewer to enable the screenshot action.
       screenshots: true,
       version: pkg.version,
       upgradeCommand: "git pull && npm run deploy",
@@ -56,7 +56,7 @@ export default {
     }
     const workspace = env.BOARD.get(env.BOARD.idFromName("default"));
 
-    // Screenshot: GET /s/:id.png → PNG of the rendered post page.
+    // Screenshot: GET /p/:id.png (or legacy /s/:id.png) → PNG of the rendered post page.
     // Auth is decided by the app — we forward the user's credentials to the DO
     // and only proceed if it returns 200.
     const url = new URL(request.url);
@@ -64,7 +64,7 @@ export default {
     if (!postId) return workspace.fetch(request);
 
     // Let the app decide auth: forward the request (with user cookies/headers)
-    // to the real /s/:id?part=0 renderer. We pass theme/mode so the rendered
+    // to the real /p/:id?part=0 renderer. We pass theme/mode so the rendered
     // page matches what the viewer shows; the width is configurable via ?w=
     // (default 800). Social card mode is fixed at 1200x630.
     const plan = planPostScreenshot(url, postId, request.headers.get("cookie"));

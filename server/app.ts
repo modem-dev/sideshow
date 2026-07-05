@@ -908,8 +908,8 @@ export function createApp({
   const postPreviewHead = (post: Post, request: Request) => {
     const origin = new URL(request.url).origin;
     const publicBasePath = requestBasePath(request);
-    const canonical = `${origin}${publicBasePath}/s/${post.id}`;
-    const image = `${origin}${publicBasePath}/s/${post.id}.png?card=1`;
+    const canonical = `${origin}${publicBasePath}/p/${post.id}`;
+    const image = `${origin}${publicBasePath}/p/${post.id}.png?card=1`;
     const title = escapeHtml(post.title);
     const description = "A https://sideshow.sh surface";
     return [

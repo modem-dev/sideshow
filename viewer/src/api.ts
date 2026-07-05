@@ -96,19 +96,18 @@ export function layoutMode(): "full" | "stream" {
   return host().layout ?? (publicReadMode() === "session" ? "stream" : "full");
 }
 
-// `/s/:id` is the legacy wire alias for a post's permalink.
+// `/p/:id` is a post's canonical permalink (`/s/:id` is the legacy alias).
 export function postLink(id: string): string {
-  return `${location.origin}${appPath(`/s/${encodeURIComponent(id)}`)}`;
+  return `${location.origin}${appPath(`/p/${encodeURIComponent(id)}`)}`;
 }
 
-// The PNG screenshot of a post (the same /s/:id page, captured server-side).
+// The PNG screenshot of a post (the same /p/:id page, captured server-side).
 // Only reachable where `canScreenshot()` is true — see that helper.
-// `/s/:id.png` is the legacy wire alias.
 export function postImageLink(id: string): string {
-  return `${location.origin}${appPath(`/s/${encodeURIComponent(id)}.png`)}`;
+  return `${location.origin}${appPath(`/p/${encodeURIComponent(id)}.png`)}`;
 }
 
-// Whether the deployment can render post screenshots (the /s/:id.png route).
+// Whether the deployment can render post screenshots (the /p/:id.png route).
 // Host-first (cloud embed), falling back to the self-hosted global, mirroring
 // isReadonly(). False on a plain Node server, which has no Browser Rendering.
 export function canScreenshot(): boolean {

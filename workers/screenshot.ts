@@ -14,8 +14,9 @@ export function matchPostScreenshot(method: string, pathname: string): string | 
   // Keep this independent of the post id alphabet. The store owns id validity;
   // the Worker only recognizes the stable one-segment screenshot shape and
   // forwards the captured id to the app for the real existence/auth check. That
-  // way a future id alphabet change doesn't break link previews.
-  return pathname.match(/^\/s\/([^/]+)\.png$/)?.[1] ?? null;
+  // way a future id alphabet change doesn't break link previews. Both the
+  // canonical /p/:id.png and the legacy /s/:id.png shapes are recognized.
+  return pathname.match(/^\/[sp]\/([^/]+)\.png$/)?.[1] ?? null;
 }
 
 export function planPostScreenshot(
@@ -36,7 +37,7 @@ export function planPostScreenshot(
       : (modeCookie as "light" | "dark" | undefined);
 
   const checkUrl = new URL(requestUrl);
-  checkUrl.pathname = `/s/${postId}`;
+  checkUrl.pathname = `/p/${postId}`;
   checkUrl.search = ""; // clear .png query params, including tokens
   checkUrl.searchParams.set("part", "0");
   if (theme) checkUrl.searchParams.set("theme", theme);

@@ -310,8 +310,8 @@ test("GET /s/:id emits absolute token-free canonical and preview image URLs", as
   const surface = (await res.json()) as any;
 
   const body = await (await app.request(`https://board.test/s/${surface.id}?key=secret`)).text();
-  const canonical = `https://board.test/s/${surface.id}`;
-  const image = `https://board.test/s/${surface.id}.png?card=1`;
+  const canonical = `https://board.test/p/${surface.id}`;
+  const image = `https://board.test/p/${surface.id}.png?card=1`;
   assert.match(body, new RegExp(`<link rel="canonical" href="${canonical}">`));
   assert.match(body, new RegExp(`<meta property="og:url" content="${canonical}">`));
   assert.match(
@@ -367,12 +367,12 @@ test("GET /s/:id preview metadata respects configured base path", async () => {
   const body = await (await app.request(`https://board.test/s/${surface.id}`)).text();
   assert.match(
     body,
-    new RegExp(`<link rel="canonical" href="https://board.test/u/alice/s/${surface.id}">`),
+    new RegExp(`<link rel="canonical" href="https://board.test/u/alice/p/${surface.id}">`),
   );
   assert.match(
     body,
     new RegExp(
-      `<meta property="og:image" content="https://board.test/u/alice/s/${surface.id}\\.png\\?card=1">`,
+      `<meta property="og:image" content="https://board.test/u/alice/p/${surface.id}\\.png\\?card=1">`,
     ),
   );
   assert.match(body, /window\.__SIDESHOW_BASE_PATH__="\/u\/alice"/);
@@ -1359,7 +1359,7 @@ test("mcp endpoint: initialize, tools/list, publish round trip", async () => {
   const payload = JSON.parse(published.result.content[0].text);
   assert.ok(payload.id);
   assert.ok(payload.sessionId);
-  assert.ok(payload.url.includes(`/s/${payload.id}`));
+  assert.ok(payload.url.includes(`/p/${payload.id}`));
 
   // session continuity: second publish into the returned session
   const second = (await (
@@ -2557,7 +2557,7 @@ test("publish_surface MCP tool still accepts legacy parts", async () => {
     )
   ).json()) as any;
   const payload = JSON.parse(published.result.content[0].text);
-  assert.ok(payload.url.includes(`/s/${payload.id}`));
+  assert.ok(payload.url.includes(`/p/${payload.id}`));
   const full = (await (await app.request(`/api/surfaces/${payload.id}`)).json()) as any;
   assert.equal(full.surfaces[0].html, "<p>old</p>");
 });

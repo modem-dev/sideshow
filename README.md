@@ -158,7 +158,7 @@ agent and your browser live on different machines (or you want the viewer on you
 phone). See **[docs/deploying.md](docs/deploying.md)**.
 
 Each surface has an **open-as-image** action in its footer that renders the
-surface to a PNG (`/s/:id.png`) — handy for pasting into a doc or a chat. The
+surface to a PNG (`/p/:id.png`) — handy for pasting into a doc or a chat. The
 image is captured by a headless browser, so it needs Cloudflare's [Browser
 Rendering](https://developers.cloudflare.com/browser-rendering/) binding and
 only works on a Workers deployment. On the local Node server there is no headless

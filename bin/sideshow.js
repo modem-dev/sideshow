@@ -343,7 +343,7 @@ function out(value) {
 }
 
 function outPost(post) {
-  out({ ...post, url: `${BASE}/s/${post.id}` });
+  out({ ...post, url: `${BASE}/p/${post.id}` });
 }
 
 const CONTENT_TYPES = {
