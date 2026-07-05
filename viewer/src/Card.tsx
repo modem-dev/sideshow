@@ -71,6 +71,7 @@ export function frameForSource(source: unknown): { id: string; iframe: HTMLIFram
 // one line, max generous enough for a long diff/markdown without runaway growth.
 const MIN_FRAME_H = 24;
 const MAX_FRAME_H = 4000;
+const RECENT_UPDATE_MS = 2 * 60 * 1000;
 export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unknown): void {
   iframe.style.height = Math.min(Math.max(Number(reportedHeight), MIN_FRAME_H), MAX_FRAME_H) + "px";
 }
@@ -185,6 +186,7 @@ export function Card(props: { post: Post; standalone?: boolean }) {
   const [annotating, setAnnotating] = createSignal(false);
   const [anchorDraft, setAnchorDraft] = createSignal<CommentAnchor | null>(null);
   const [fullscreenSurface, setFullscreenSurface] = createSignal<FullscreenSurface | null>(null);
+  const [recentUpdateNow, setRecentUpdateNow] = createSignal(Date.now());
   let stopPoll: (() => void) | undefined;
 
   const surfaceTitle = (surfaceIndex: number) =>
@@ -199,6 +201,15 @@ export function Card(props: { post: Post; standalone?: boolean }) {
 
   const anchoredComments = (surfaceIndex: number) =>
     comments().filter((c) => c.postId === props.post.id && c.anchor?.surfaceIndex === surfaceIndex);
+
+  const isRecentRevision = () => {
+    const updatedAt = new Date(props.post.updatedAt).getTime();
+    return (
+      props.post.version > 1 &&
+      Number.isFinite(updatedAt) &&
+      recentUpdateNow() - updatedAt < RECENT_UPDATE_MS
+    );
+  };
 
   const closeFullscreen = () => {
     const opener = fullscreenOpener;
@@ -240,6 +251,20 @@ export function Card(props: { post: Post; standalone?: boolean }) {
 
   createEffect(scrollIfTarget);
   onCleanup(() => stopPoll?.());
+
+  createEffect(() => {
+    const version = props.post.version;
+    const updatedAt = new Date(props.post.updatedAt).getTime();
+    if (version <= 1 || !Number.isFinite(updatedAt)) return;
+
+    const now = Date.now();
+    setRecentUpdateNow(now);
+    const remaining = RECENT_UPDATE_MS - (now - updatedAt);
+    if (remaining <= 0) return;
+
+    const timer = setTimeout(() => setRecentUpdateNow(Date.now()), remaining + 50);
+    onCleanup(() => clearTimeout(timer));
+  });
 
   createEffect(() => {
     if (!fullscreenSurface()) return;
@@ -349,6 +374,10 @@ export function Card(props: { post: Post; standalone?: boolean }) {
                   <For each={versionRange(latest)}>{(v) => <option value={v}>v{v}</option>}</For>
                 </select>
               )}
+            </Show>
+            <Show when={isRecentRevision()}>
+              <span class="update-dot" title="updated just now" aria-hidden="true"></span>
+              <span class="update-status">updated recently</span>
             </Show>
           </span>
           <span class="sp"></span>

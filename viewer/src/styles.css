@@ -514,6 +514,12 @@ main {
   font-weight: 500;
   font-size: 14px;
 }
+.card-head .vslot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
 .vbadge {
   font-size: 11px;
   color: var(--muted);
@@ -528,6 +534,36 @@ main {
 select.vbadge {
   cursor: pointer;
   appearance: none;
+}
+.card-head .update-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+  animation: update-dot-pulse 1.6s ease-out infinite;
+}
+.card-head .update-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@keyframes update-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  60% {
+    opacity: 0.48;
+    transform: scale(0.82);
+  }
 }
 .card-meta {
   font-size: 12px;
@@ -1860,6 +1896,9 @@ iframe {
   color: var(--accent);
 }
 @media (prefers-reduced-motion: reduce) {
+  .card-head .update-dot {
+    animation: none;
+  }
   .topbar .menu,
   aside,
   #scrim,
