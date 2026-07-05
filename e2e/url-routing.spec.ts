@@ -8,7 +8,7 @@ test("clicking a session updates the URL to /session/:id", async ({ page, server
 
   // Selecting a session pushes /session/:id. The topmost surface auto-focuses
   // internally, but the engine no longer pins it in the URL — only an explicit
-  // surface open (a deep link, or scrolling into one) writes /session/:id/s/:id.
+  // surface open (a deep link, or scrolling into one) writes /session/:id/p/:id.
   await page.locator(`#sessionList .sess[data-id="${s2.sessionId}"]`).click();
   await expect(page).toHaveURL(new RegExp(`/session/${s2.sessionId}$`));
 
@@ -22,7 +22,7 @@ test("auto-selecting a session on boot does not pin the default surface in the U
   server,
 }) => {
   // A session with a post: landing at root auto-selects it. The topmost surface
-  // auto-focuses internally, but the URL must stay /session/:id — no /s/:id —
+  // auto-focuses internally, but the URL must stay /session/:id — no /p/:id —
   // because the user didn't open a specific surface.
   const s = await publish(server.url, { html: "<p>hi</p>", title: "Top", agent: "pi" });
   await page.goto(server.url);
@@ -125,8 +125,9 @@ test("navigating to /session/:id/s/:surfaceId selects session and scrolls to sur
       { timeout: 6000 },
     )
     .toBe(true);
-  // URL should include the surface id
-  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}/s/${s3.id}`));
+  // URL should include the surface id (either the legacy inbound shape or the
+  // canonical /p/ shape the router writes)
+  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}/[sp]/${s3.id}`));
 });
 
 test("browser back/forward navigates between sessions", async ({ page, server }) => {
@@ -210,11 +211,11 @@ test("scrolling through surfaces updates the URL", async ({ page, server }) => {
 
   // scroll the last surface into view
   await page.locator(`.card[data-id="${s3.id}"]`).scrollIntoViewIfNeeded();
-  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}/s/${s3.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}/p/${s3.id}$`));
 
   // scroll back to the first surface
   await page.locator(`.card[data-id="${s1.id}"]`).scrollIntoViewIfNeeded();
-  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}/s/${s1.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/session/${s1.sessionId}/p/${s1.id}$`));
 });
 
 test("/s/:id bare surface route shows the standalone full-page surface", async ({
@@ -241,5 +242,24 @@ test("/s/:id bare surface route shows the standalone full-page surface", async (
   // The authored HTML is still rendered only inside the sandboxed part iframe.
   await expect(page.frameLocator(`.card[data-id="${s.id}"] iframe`).locator("h2")).toHaveText(
     "Standalone",
+  );
+});
+
+test("/p/:id canonical post route shows the standalone full-page surface", async ({
+  page,
+  server,
+}) => {
+  // The canonical link shape agents hand out (publish_post, the CLI, copy-link).
+  // Regression guard: in 0.11.0 the server resolved /p/:id but the viewer's
+  // router didn't parse it, so the link landed on the workspace instead of the post.
+  const s = await publish(server.url, { html: "<h2>Canonical</h2>", title: "Perma" });
+  await page.goto(`${server.url}/p/${s.id}`);
+
+  await expect(page.locator("#standalone")).toHaveCount(1);
+  await expect(page.locator("#sessionList")).toHaveCount(0);
+  await expect(page.locator(`.card[data-id="${s.id}"] .card-title`)).toHaveText("Perma");
+  await expect(page).toHaveURL(new RegExp(`/p/${s.id}$`));
+  await expect(page.frameLocator(`.card[data-id="${s.id}"] iframe`).locator("h2")).toHaveText(
+    "Canonical",
   );
 });

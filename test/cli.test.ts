@@ -531,7 +531,7 @@ test("publish posts an html file and prints id + url + surface metadata", async 
     assert.equal(out.title, "Card");
     assert.equal(out.sessionId, server.session.id);
     assert.deepEqual(surfaceKinds(out), ["html"]);
-    assert.equal(out.url, `${server.url}/s/${out.id}`);
+    assert.equal(out.url, `${server.url}/p/${out.id}`);
     assert.equal(out.version, 1);
   } finally {
     await server.close();

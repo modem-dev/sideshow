@@ -68,17 +68,13 @@ export interface McpDeps {
 export const coerceParts = coerceSurfaces;
 
 export function registerMcp(app: Hono, deps: McpDeps) {
-  // The view URL's path segment: legacy tools emit /s/<id>; the new post tools
-  // emit the canonical /p/<id>. Both resolve to the same post page.
-  const postResult = (
-    result: { post: Post; userFeedback?: Feedback[] },
-    origin: string,
-    seg: "s" | "p" = "s",
-  ) =>
+  // All tools emit the canonical /p/<id> view URL (the legacy /s/<id> route
+  // remains accepted inbound and resolves to the same post page).
+  const postResult = (result: { post: Post; userFeedback?: Feedback[] }, origin: string) =>
     JSON.stringify(
       {
         ...postWriteView(result.post),
-        url: `${origin}/${seg}/${result.post.id}`,
+        url: `${origin}/p/${result.post.id}`,
         ...(result.userFeedback && { userFeedback: result.userFeedback }),
       },
       null,
@@ -107,7 +103,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           agent: typeof args.agent === "string" ? args.agent : undefined,
         });
         if ("error" in result) throw new Error(result.error);
-        return postResult(result, origin, name === "publish_post" ? "p" : "s");
+        return postResult(result, origin);
       }
       case "update_post":
       case "update_surface":
@@ -124,7 +120,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         }
         const result = await deps.revisePost(String(args.id ?? ""), patch);
         if ("error" in result) throw new Error(result.error);
-        return postResult(result, origin, name === "update_post" ? "p" : "s");
+        return postResult(result, origin);
       }
       case "wait_for_feedback": {
         const result = await deps.waitForComments({
@@ -218,7 +214,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           after: typeof args.after === "string" ? args.after : undefined,
         });
         if ("error" in result) throw new Error(result.error);
-        return postResult(result, origin, "p");
+        return postResult(result, origin);
       }
       case "edit_surface": {
         let surface: Surface | undefined;
@@ -237,7 +233,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           },
         );
         if ("error" in result) throw new Error(result.error);
-        return postResult(result, origin, "p");
+        return postResult(result, origin);
       }
       case "remove_surface": {
         const result = await deps.removePostSurface(
@@ -245,7 +241,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           String(args.target ?? ""),
         );
         if ("error" in result) throw new Error(result.error);
-        return postResult(result, origin, "p");
+        return postResult(result, origin);
       }
       case "reorder_surfaces": {
         const result = await deps.reorderPostSurfaces(
@@ -253,7 +249,7 @@ export function registerMcp(app: Hono, deps: McpDeps) {
           Array.isArray(args.order) ? args.order : [],
         );
         if ("error" in result) throw new Error(result.error);
-        return postResult(result, origin, "p");
+        return postResult(result, origin);
       }
       default:
         throw new Error(`unknown tool: ${name}`);
