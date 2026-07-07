@@ -6,6 +6,7 @@ import {
   initialPageTitle,
   isReadonly,
   layoutMode,
+  publicReadMode,
   relTime,
   sessionLabel,
   type Post,
@@ -118,14 +119,35 @@ export default function App() {
     // nor a host's loading overlay flips to real content before we know what to
     // show. .catch keeps it unblocking — a failed fetch still resolves to the
     // (empty) onboarding view, and the host overlay still clears.
-    void bootstrap()
-      .catch(() => {})
-      .finally(() => {
-        setInitialLoaded(true);
-        host().onReady?.();
-      });
-    const disconnect = connect();
-    onCleanup(disconnect);
+    // On a session-scoped publicRead workspace, the SSE connection requires a
+    // ?session= param. For standalone post permalinks (/p/:id) the session ID
+    // is only discovered during bootstrap (enterStandalone fetches the post).
+    // Connecting before that resolves sends /api/events without a session and
+    // the server returns 401. Defer the SSE connection until bootstrap finishes
+    // so eventsPath() can read the resolved session ID.
+    let disconnect: (() => void) | undefined;
+    let unmounted = false;
+    if (isReadonly() && publicReadMode() === "session") {
+      void bootstrap()
+        .catch(() => {})
+        .finally(() => {
+          setInitialLoaded(true);
+          host().onReady?.();
+          if (!unmounted) disconnect = connect();
+        });
+    } else {
+      void bootstrap()
+        .catch(() => {})
+        .finally(() => {
+          setInitialLoaded(true);
+          host().onReady?.();
+        });
+      disconnect = connect();
+    }
+    onCleanup(() => {
+      unmounted = true;
+      disconnect?.();
+    });
     checkVersion();
     void initTheme();
     const timer = setInterval(() => {

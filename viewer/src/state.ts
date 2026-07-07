@@ -478,7 +478,7 @@ const WS_RECONNECT_MS = 1000;
 
 function eventsPath(): string {
   const route = host().router.get();
-  const sessionId = route.sessionId ?? selected();
+  const sessionId = route.sessionId ?? selected() ?? standalonePost()?.sessionId;
   return isReadonly() && publicReadMode() === "session" && sessionId
     ? `/api/events?session=${encodeURIComponent(sessionId)}`
     : "/api/events";
