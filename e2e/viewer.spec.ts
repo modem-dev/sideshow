@@ -66,6 +66,32 @@ test("snippet published over HTTP appears live via SSE, no reload", async ({ pag
   await expect(page.locator(".sess-title")).toContainText("e2e session");
 });
 
+test("empty onboarding polls into Home when the first post arrives", async ({ page, server }) => {
+  await page.route("**/api/events", (route) => route.abort());
+  await page.goto(server.url);
+  await expect(page.locator("#onboard")).toBeVisible();
+
+  await publish(server.url, { html: "<p>first</p>", title: "First post", agent: "e2e" });
+
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible({ timeout: 6_000 });
+  await expect(page.locator(".home-card-title")).toHaveText("First post");
+  await expect(page.locator("#onboard")).toBeHidden();
+});
+
+test("an empty session alone keeps first-run onboarding visible", async ({ page, server }) => {
+  await fetch(`${server.url}/api/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agent: "idle", title: "Empty one" }),
+  });
+
+  await page.goto(server.url);
+
+  await expect(page.locator("#onboard")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connect your first agent" })).toBeVisible();
+  await expect(page.locator(".sess.sel")).toHaveCount(0);
+});
+
 test("a surface kind this viewer doesn't know shows a refresh hint, not a broken diff", async ({
   page,
   server,
@@ -100,6 +126,33 @@ test("a surface kind this viewer doesn't know shows a refresh hint, not a broken
   await expect(card.locator(".diff-error")).toHaveCount(0);
 });
 
+test("the workspace root shows a recent posts home page", async ({ page, server }) => {
+  const first = await publish(server.url, {
+    html: "<h2>first preview</h2>",
+    title: "First recent",
+    agent: "alpha",
+    sessionTitle: "Alpha work",
+  });
+  await publish(server.url, {
+    html: "<h2>second preview</h2>",
+    title: "Second recent",
+    agent: "beta",
+    sessionTitle: "Beta work",
+  });
+
+  await page.goto(server.url);
+
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  await expect(page.locator(".home-card")).toHaveCount(2);
+  await expect(page.locator(".home-card-title")).toContainText(["Second recent", "First recent"]);
+  await expect(page.locator(".home-card").nth(1)).toContainText("Alpha work");
+  await expect(page.locator("#sessionView")).toHaveCount(0);
+
+  await page.locator(".home-card", { hasText: "First recent" }).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${first.sessionId}/p/${first.id}$`));
+  await expect(page.locator(`.card[data-id="${first.id}"] .card-title`)).toHaveText("First recent");
+});
+
 test("opening a session shows a skeleton while posts load", async ({ page, server }) => {
   const first = await publish(server.url, {
     html: "<p>slow</p>",
@@ -111,7 +164,7 @@ test("opening a session shows a skeleton while posts load", async ({ page, serve
     await new Promise((resolve) => setTimeout(resolve, 500));
     await route.continue();
   });
-  await page.goto(server.url);
+  await page.goto(`${server.url}/session/${first.sessionId}`);
 
   await expect(page.getByRole("status", { name: "Loading posts" })).toBeVisible();
   await expect(page.locator(".sk-card")).toHaveCount(3);
@@ -358,10 +411,13 @@ test("Cmd+Option+Up/Down switches between sessions, wrapping at the ends", async
   await publish(server.url, { html: "<p>b</p>", title: "Second", agent: "two" });
 
   await page.goto(server.url);
-  // the newest session sits at the top of the list and is selected on load
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+
+  // With no selected session on Home, Down opens the first (newest) session.
+  await page.keyboard.press("Meta+Alt+ArrowDown");
   await expect(page.locator(".sess.sel .sess-title")).toContainText("two session");
 
-  // Down moves to the next (older) session down the list
+  // Down moves to the next (older) session down the list.
   await page.keyboard.press("Meta+Alt+ArrowDown");
   await expect(page.locator(".sess.sel .sess-title")).toContainText("one session");
 

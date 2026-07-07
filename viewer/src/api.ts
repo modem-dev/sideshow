@@ -54,6 +54,22 @@ export interface VersionInfo {
   notes?: string | null;
 }
 
+export type RecentSurface = Surface & { index: number; truncated?: boolean };
+
+export interface RecentPostRow {
+  id: string;
+  sessionId: string;
+  sessionTitle: string | null;
+  agent: string | null;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+  surfaces: RecentSurface[];
+  parts: RecentSurface[];
+  partKinds: string[];
+}
+
 declare global {
   interface Window {
     // __SIDESHOW_BASE_PATH__ lives in host.ts (the default host reads it).
@@ -124,6 +140,10 @@ export async function api<T = unknown>(path: string, init?: RequestInit): Promis
     throw new Error(body.error || String(res.status));
   }
   return res.json() as Promise<T>;
+}
+
+export function getRecentPosts(limit = 30): Promise<RecentPostRow[]> {
+  return api<RecentPostRow[]>(`/api/posts/recent?limit=${limit}`);
 }
 
 export const sessionLabel = (s: Session) => s.title || s.agent + " session";
