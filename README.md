@@ -64,8 +64,8 @@ surfaces and read your comments. Ask it to "sketch this on sideshow" and watch
 the card appear.
 
 The running viewer has the same handoff built in: its sidebar footer carries an
-**agent setup** link (the block above) and a **Connect Claude Code** button, so
-you can grab it without leaving the browser.
+**agent setup** link (the block above) and a polished **connect agent** screen, so
+you can grab the right MCP command without leaving the browser.
 
 No agent handy? `npx sideshow demo` seeds two example sessions to look around.
 

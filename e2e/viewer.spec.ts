@@ -464,22 +464,36 @@ test("timeline traces wrap cleanly at iPhone 14 Pro width", async ({ page, serve
   await expectNoHorizontalOverflow(page, ".timeline");
 });
 
-test("the Connect Claude Code modal shows the plugin install commands", async ({
+test("the Connect an agent page shows the add-mcp logo picker", async ({ page, server }) => {
+  await page.goto(server.url);
+
+  await page.getByRole("link", { name: "connect agent" }).click();
+  await expect(page).toHaveURL(`${server.url}/connect`);
+  await expect(page.getByRole("heading", { name: "Connect an agent" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Connect an agent" })).toHaveCount(0);
+  await expect(page.getByRole("radiogroup", { name: "Choose how to connect" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Most agents" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(page.locator(".connect-page")).toContainText(`npx add-mcp ${server.url}/mcp`);
+
+  await page.getByRole("radio", { name: "Other" }).click();
+  await expect(page.locator(".connect-page")).toContainText('"mcpServers"');
+  await expect(page.locator(".connect-page")).toContainText(`${server.url}/mcp`);
+});
+
+test("the Connect an agent page is reachable directly when sessions already exist", async ({
   page,
   server,
 }) => {
-  await page.goto(server.url);
+  await publish(server.url, { html: "<p>connected</p>", title: "Existing", agent: "e2e" });
 
-  await page.getByRole("link", { name: "connect Claude Code" }).click();
-  const modal = page.getByRole("dialog", { name: "Connect Claude Code" });
-  await expect(modal).toBeVisible();
-  await expect(modal).toContainText("/plugin marketplace add modem-dev/sideshow");
-  await expect(modal).toContainText("/plugin install sideshow@sideshow");
-  await expect(modal).toContainText("sideshow watch");
+  await page.goto(`${server.url}/connect`);
 
-  // Escape dismisses it
-  await page.keyboard.press("Escape");
-  await expect(modal).toBeHidden();
+  await expect(page).toHaveURL(`${server.url}/connect`);
+  await expect(page.getByRole("heading", { name: "Connect an agent" })).toBeVisible();
+  await expect(page.locator(".connect-page")).toContainText(`npx add-mcp ${server.url}/mcp`);
 });
 
 test("version select appears live after an update", async ({ page, server }) => {

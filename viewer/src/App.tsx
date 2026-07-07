@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show }
 import { AgentMark } from "./agentMarks.tsx";
 import {
   api,
+  appPath,
   initialPageTitle,
   isReadonly,
   layoutMode,
@@ -12,6 +13,7 @@ import {
 } from "./api.ts";
 import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
 import { applyFrameHeight, Card, cardEls, frameForSource } from "./Card.tsx";
+import { ConnectInstructions } from "./Connect.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
 import { MoonIcon, PlugIcon, SunIcon, SystemIcon } from "./icons.tsx";
@@ -58,9 +60,15 @@ import {
   viewMode,
 } from "./state.ts";
 
-// The "Connect Claude Code" integrations modal — module-level so the sidebar
-// footer, the onboarding screen, and the overlay can all reach it.
-const [connectOpen, setConnectOpen] = createSignal(false);
+function isConnectPath() {
+  const basePath = window.__SIDESHOW_BASE_PATH__ ?? "";
+  const rest = location.pathname.startsWith(basePath)
+    ? location.pathname.slice(basePath.length)
+    : location.pathname;
+  return rest === "/connect";
+}
+const [connectPath, setConnectPath] = createSignal(isConnectPath());
+
 // Stream-only layout: no sidebar, session list, or session chrome — just the
 // current session's stream. Driven by the host's `layout` (cloud embed) or the
 // self-hosted public-read "session" link (see api.ts `layoutMode`).
@@ -74,7 +82,15 @@ const streamMode = () => layoutMode() === "stream";
 // showing a full-page view over an empty workspace.
 function Brand() {
   return (
-    <button class="brand" type="button" aria-label="sideshow — home" onClick={() => goHome()}>
+    <button
+      class="brand"
+      type="button"
+      aria-label="sideshow — home"
+      onClick={() => {
+        setConnectPath(false);
+        goHome();
+      }}
+    >
       <span class="livedot" classList={{ on: live() }}></span>sideshow
     </button>
   );
@@ -94,16 +110,6 @@ function pageTitle(
 }
 
 export default function App() {
-  // Escape closes the integrations modal while it is open.
-  createEffect(() => {
-    if (!connectOpen()) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setConnectOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    onCleanup(() => document.removeEventListener("keydown", onKey));
-  });
-
   onMount(() => {
     // Await the initial route resolution (the standalone post fetch, or the
     // first session fetch), then mark the workspace decided and tell the host
@@ -156,7 +162,16 @@ export default function App() {
     window.addEventListener("keydown", onKeydown);
     onCleanup(() => window.removeEventListener("keydown", onKeydown));
     // Routing: the host tells us when the route changes (back/forward).
-    onCleanup(host().router.subscribe(applyRoute));
+    onCleanup(
+      host().router.subscribe((route) => {
+        setConnectPath(isConnectPath());
+        applyRoute(route);
+      }),
+    );
+  });
+
+  createEffect(() => {
+    if (selected()) setConnectPath(false);
   });
 
   // unseen activity badges the tab title — self-hosted only; an embedding host
@@ -264,16 +279,7 @@ export default function App() {
                       agent setup
                     </a>{" "}
                     <Show when={!isReadonly()}>
-                      &nbsp;·&nbsp;{" "}
-                      <a
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setConnectOpen(true);
-                        }}
-                      >
-                        connect Claude Code
-                      </a>
+                      &nbsp;·&nbsp; <a href={appPath("/connect")}>connect agent</a>
                     </Show>
                   </slot>
                 </div>
@@ -288,18 +294,24 @@ export default function App() {
               workspace; an embedder projects a `slot="ss:main"` child to take over the
               pane (e.g. a cloud Settings page) while the sidebar stays. */}
               <slot name={SLOTS.main}>
-                <Show when={!streamMode()}>
-                  <Onboard />
+                <Show
+                  when={connectPath()}
+                  fallback={
+                    <>
+                      <Show when={!streamMode()}>
+                        <Onboard />
+                      </Show>
+                      <SessionView />
+                    </>
+                  }
+                >
+                  <ConnectPage />
                 </Show>
-                <SessionView />
               </slot>
             </main>
           </div>
           <Show when={!streamMode()}>
             <div id="scrim" onClick={() => setNavOpen(false)}></div>
-          </Show>
-          <Show when={connectOpen()}>
-            <ConnectModal onClose={() => setConnectOpen(false)} />
           </Show>
           <div id="toast" role="status" aria-live="polite" classList={{ show: toastShow() }}>
             {toastText()}
@@ -497,10 +509,14 @@ function SessionItem(props: { session: SessionRow }) {
       role="button"
       tabIndex={0}
       aria-current={props.session.id === selected() ? "true" : undefined}
-      onClick={() => select(props.session.id)}
+      onClick={() => {
+        setConnectPath(false);
+        select(props.session.id);
+      }}
       onKeyDown={(e) => {
         if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
           e.preventDefault();
+          setConnectPath(false);
           select(props.session.id);
         }
       }}
@@ -675,13 +691,6 @@ function SessionTitle(props: { current: SessionRow | undefined }) {
   );
 }
 
-// withOrigin on the server rewrites these localhost URLs to the deployed
-// origin when serving the built document — keep them as plain literals.
-const SETUP_SNIP = "curl -s http://localhost:8228/setup >> AGENTS.md";
-const TRY_SNIP =
-  "curl -s -X POST http://localhost:8228/api/snippets -H 'content-type: application/json' " +
-  `-d '{"agent": "me", "title": "Hello", "html": "<h2>It works</h2>"}'`;
-
 function Onboard() {
   return (
     <div id="onboard" hidden={!initialLoaded() || sessions.length > 0}>
@@ -700,74 +709,42 @@ function Onboard() {
             </>
           }
         >
-          <h1>The show hasn&rsquo;t started yet</h1>
-          <p class="sub">
-            sideshow is a live stage where coding agents post HTML — diagrams, sketches, explainers
-            — while they work in your terminal.
-          </p>
-          <h2>teach your agent about it</h2>
-          <Snip text={SETUP_SNIP} />
-          <h2>or try it yourself</h2>
-          <Snip text={TRY_SNIP} />
-          <h2>using claude code?</h2>
-          <button class="connect-btn" onClick={() => setConnectOpen(true)}>
-            Connect Claude Code →
-          </button>
+          <ConnectInstructions
+            variant="card"
+            title="Connect your first agent"
+            subtitle="Sideshow is a live stage where coding agents post HTML — diagrams, sketches, explainers — while they work in your terminal."
+            awaiting
+          />
         </Show>
       </slot>
     </div>
   );
 }
 
-// Install instructions for the Claude Code plugin: a background monitor that
-// streams the user's comments to the agent as notifications, plus the sideshow
-// MCP server. There is no browser→terminal handoff, so "connect" is two
-// copy-paste commands, stated honestly.
-const MARKETPLACE_CMD = "/plugin marketplace add modem-dev/sideshow";
-const INSTALL_CMD = "/plugin install sideshow@sideshow";
-
-function ConnectModal(props: { onClose: () => void }) {
+function ConnectPage() {
   return (
-    <div class="modal-backdrop" onClick={props.onClose}>
-      <div
-        class="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Connect Claude Code"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div class="modal-head">
-          <h2>Connect Claude Code</h2>
-          <button class="x" aria-label="Close" onClick={props.onClose}>
-            ✕
-          </button>
-        </div>
-        <p class="sub">
-          Install the sideshow plugin so your comments reach the agent on their own. A background
-          monitor streams each comment to Claude Code as a notification — no copy-pasting, no
-          re-arming a watcher.
-        </p>
-        <h3>1 · add the marketplace</h3>
-        <Snip text={MARKETPLACE_CMD} />
-        <h3>2 · install the plugin</h3>
-        <Snip text={INSTALL_CMD} />
-        <p class="note">
-          Run both inside Claude Code. On install it asks for your <strong>Sideshow URL</strong>{" "}
-          (default <code>http://localhost:8228</code>, or your deployed instance) and an optional
-          token.
-        </p>
-        <h3>what it runs</h3>
-        <p class="note">
-          The plugin connects the sideshow MCP server and runs <code>sideshow watch</code> against
-          your workspace as a background process — unsandboxed, the same trust level as hooks, with
-          no per-comment prompt. Comments are delivered to the agent exactly once.
-        </p>
-        <p class="caveat">
-          Requires Claude Code ≥ 2.1.105. It&rsquo;s two commands, not a true one-click — Claude
-          Code has no browser-to-terminal handoff yet.
-        </p>
+    <section class="settings-page connect-page" aria-label="Connect an agent">
+      <div class="settings-col">
+        <header class="settings-top">
+          <h1>Connect an agent</h1>
+          <Show
+            when={!isReadonly()}
+            fallback={<p>This workspace is read-only, so new agents cannot connect from here.</p>}
+          >
+            <p>
+              One command wires sideshow into Claude Code, Cursor, Codex, VS Code, opencode, and
+              other MCP-capable agents. New posts show up here automatically.
+            </p>
+          </Show>
+        </header>
+        <Show when={!isReadonly()}>
+          <section class="settings-sec">
+            <h2>MCP setup</h2>
+            <ConnectInstructions />
+          </section>
+        </Show>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -822,25 +799,6 @@ function ThemePicker() {
         </select>
       </span>
       <ColorModeSwitcher />
-    </div>
-  );
-}
-
-function Snip(props: { text: string }) {
-  const [label, setLabel] = createSignal("copy");
-  return (
-    <div class="snip">
-      {props.text}
-      <button
-        class="copy"
-        onClick={() => {
-          navigator.clipboard.writeText(props.text);
-          setLabel("copied");
-          setTimeout(() => setLabel("copy"), 1500);
-        }}
-      >
-        {label()}
-      </button>
     </div>
   );
 }

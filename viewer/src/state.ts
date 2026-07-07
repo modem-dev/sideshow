@@ -187,6 +187,10 @@ export async function enterStandalone(id: string) {
   if (post) setStandaloneInternal(post);
 }
 
+function isConnectRoute(): boolean {
+  return location.pathname === appPath("/connect");
+}
+
 export async function refreshSessions(targetPostId?: string | null) {
   if (isReadonly() && publicReadMode() === "session") {
     const route = host().router.get();
@@ -231,9 +235,10 @@ export async function refreshSessions(targetPostId?: string | null) {
     // host's home shows with nothing selected (no auto-open, no highlight).
     const route = host().router.get();
     const lastId = localStorage.getItem(LAST_SESSION_KEY);
-    const fallback = host().homeView
-      ? null
-      : (lastId && sessions.some((s) => s.id === lastId) && lastId) || sessions[0].id;
+    const fallback =
+      host().homeView || isConnectRoute()
+        ? null
+        : (lastId && sessions.some((s) => s.id === lastId) && lastId) || sessions[0].id;
     const target =
       (route.sessionId && sessions.some((s) => s.id === route.sessionId) && route.sessionId) ||
       fallback;

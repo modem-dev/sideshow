@@ -950,6 +950,7 @@ export function createApp({
     return opts.post ? injectHead(html, postPreviewHead(opts.post, c.req.raw)) : html;
   };
   app.get("/", (c) => c.html(configuredViewerHtml(c)));
+  app.get("/connect", (c) => c.html(configuredViewerHtml(c, { title: "Connect an agent" })));
   app.get("/session/:id", async (c) => {
     const session = await store.getSession(c.req.param("id"));
     if (isUnauthenticatedSessionRead(c) && !session) {

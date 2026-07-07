@@ -86,8 +86,8 @@ watcher:
 On install it asks for your **Sideshow URL** (default `http://localhost:8228`, or
 your deployed instance) and an optional token. The monitor runs `sideshow watch`
 against your workspace; comments are delivered to the agent exactly once. Requires
-Claude Code ≥ 2.1.105. The viewer's "connect Claude Code" link (sidebar footer)
-shows the same steps. The plugin lives in [`../plugin/`](../plugin/).
+Claude Code ≥ 2.1.105. The viewer's "connect agent" link (sidebar footer) shows
+generic MCP client setup; the Claude Code plugin lives in [`../plugin/`](../plugin/).
 
 ## The design contract
 

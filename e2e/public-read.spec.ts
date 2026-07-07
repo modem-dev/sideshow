@@ -155,7 +155,7 @@ test("readonly full-mode chrome hides sidebar write controls", async ({
 
   await expect(page.locator("#sessionList .sess .x")).toHaveCount(0);
   await expect(page.locator(".theme-picker")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "connect Claude Code" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "connect agent" })).toHaveCount(0);
   await expect(page.locator("#sessTitle")).toHaveAttribute("contenteditable", "false");
 });
 
@@ -165,7 +165,7 @@ test("readonly empty board shows a simple empty state", async ({ page, publicRea
   await expect(page.locator("#onboard")).toBeVisible();
   await expect(page.locator("#onboard h1")).toHaveText("Nothing here yet");
   await expect(page.locator("#onboard .snip")).toHaveCount(0);
-  await expect(page.locator("#onboard .connect-btn")).toHaveCount(0);
+  await expect(page.locator("#onboard .connect-block")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "design guide" })).toBeVisible();
   await expect(page.getByRole("link", { name: "agent setup" })).toBeVisible();
 });

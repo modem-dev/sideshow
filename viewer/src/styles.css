@@ -1417,21 +1417,301 @@ iframe {
   color: var(--text);
 }
 
-.connect-btn {
-  font:
-    13px -apple-system,
-    sans-serif;
-  color: var(--text);
+.settings-page {
+  width: 100%;
+}
+.settings-col {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+}
+.settings-top {
+  padding-bottom: 18px;
+  border-bottom: 0.5px solid var(--border);
+}
+.settings-top h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+.settings-top p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 8px 0 0;
+  max-width: 620px;
+}
+.settings-sec {
+  padding: 22px 0;
+  border-bottom: 0.5px solid var(--border);
+}
+.settings-sec:last-child {
+  border-bottom: none;
+}
+.settings-sec > h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+.connect-block {
+  max-width: 46rem;
+}
+.connect-block.connect-card {
+  margin: 4px 0 0;
+  padding: 24px;
   background: var(--surface);
   border: 0.5px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 14px;
-  cursor: pointer;
+  border-radius: 12px;
+  text-align: left;
 }
-.connect-btn:hover {
+.connect-block .muted {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0 0 8px;
+}
+.connect-block code {
+  font:
+    12px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.connect-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.connect-badge svg {
+  width: 22px;
+  height: 22px;
+}
+.connect-hero-title {
+  font-size: 19px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: var(--text);
+}
+.connect-hero-sub {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0 0 20px;
+}
+.copy-field {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.copy-field pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow: auto;
+  font:
+    12.5px/1.6 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.copy-field .copy {
+  flex: none;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font:
+    12px -apple-system,
+    sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.copy-field .copy:hover {
   border-color: var(--muted);
 }
-/* the "Connect Claude Code" integrations modal */
+.connect-pick-label {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+.connect-logos {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 24px;
+}
+@media (max-width: 480px) {
+  .connect-logos {
+    grid-template-columns: 1fr;
+  }
+}
+.connect-logo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+  height: 76px;
+  padding: 0 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 0.5px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+}
+.connect-logo:hover {
+  color: var(--text);
+  border-color: var(--border-2);
+}
+.connect-logo svg {
+  width: 22px;
+  height: 22px;
+}
+.connect-logo-name {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1;
+}
+.connect-logo.on {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.connect-logo.on .connect-logo-name {
+  color: var(--accent);
+  font-weight: 500;
+}
+.connect-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.connect-logo-row svg {
+  width: 20px;
+  height: 20px;
+}
+.connect-flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.connect-step {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 14px;
+  padding: 2px 0 18px;
+  position: relative;
+}
+.connect-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 12.5px;
+  top: 30px;
+  bottom: 0;
+  width: 1.5px;
+  background: var(--border);
+}
+.connect-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12.5px;
+  font-weight: 500;
+  z-index: 1;
+  background: var(--panel);
+  border: 0.5px solid var(--border);
+  color: var(--muted);
+}
+.connect-num.live {
+  background: var(--accent-bg);
+  border-color: transparent;
+  color: var(--accent);
+}
+.connect-step-body {
+  min-width: 0;
+}
+.connect-slabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  margin: 3px 0 8px;
+}
+.connect-wait {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.connect-pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--accent);
+  position: relative;
+}
+.connect-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0.5;
+  animation: connect-pulse 1.6s ease-out infinite;
+}
+@keyframes connect-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .connect-pulse::after {
+    animation: none;
+  }
+}
+.connect-token-note {
+  margin: 4px 0 0;
+  padding-top: 16px;
+  border-top: 0.5px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
+}
+/* the "Connect an agent" integrations modal */
 .modal-backdrop {
   position: fixed;
   inset: 0;
