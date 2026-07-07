@@ -16,6 +16,7 @@ import { applyFrameHeight, Card, cardEls, frameForSource } from "./Card.tsx";
 import { ConnectInstructions } from "./Connect.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
+import { StreamSkeleton } from "./Skeleton.tsx";
 import { MoonIcon, PlugIcon, SunIcon, SystemIcon } from "./icons.tsx";
 import {
   activeTheme,
@@ -611,6 +612,9 @@ function SessionView() {
           fallback={
             <>
               <WhatsNewCard />
+              <Show when={streamLoading()}>
+                <StreamSkeleton />
+              </Show>
               <Show when={!streamLoading() && posts.length === 0}>
                 <div class="empty" id="streamEmpty">
                   No posts in this session yet.

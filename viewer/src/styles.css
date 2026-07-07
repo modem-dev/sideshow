@@ -504,6 +504,98 @@ main {
   margin-bottom: 22px;
   overflow: hidden;
 }
+
+/* Shared skeleton primitives for async viewer UI. The visible bars are
+   decorative; components wrap them in one role=status announcement. */
+.sk-feed,
+.sk-rows {
+  display: grid;
+  gap: 12px;
+}
+.sk-card,
+.sk-framed {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.sk-card {
+  margin-bottom: 10px;
+}
+.sk-card-head,
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sk-card-head {
+  padding: 10px 14px;
+}
+.sk-row {
+  padding: 10px 12px;
+}
+.sk-framed .sk-row + .sk-row {
+  border-top: 0.5px solid var(--border);
+}
+.sk-av,
+.sk-line,
+.sk-block {
+  display: block;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--hover), var(--border), var(--hover));
+  background-size: 200% 100%;
+  animation: sk-pulse 1.4s ease-in-out infinite;
+}
+.sk-av {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+}
+.sk-row-text {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 7px;
+}
+.sk-line {
+  width: 40%;
+  height: 12px;
+}
+.sk-line.thin {
+  height: 9px;
+  opacity: 0.72;
+}
+.sk-line.w25 {
+  width: 25%;
+}
+.sk-line.w40 {
+  width: 40%;
+}
+.sk-line.w55 {
+  width: 55%;
+}
+.sk-line.w70 {
+  width: 70%;
+}
+.sk-block {
+  margin: 0 14px 14px;
+  border-radius: 10px;
+}
+@keyframes sk-pulse {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: -200% 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk-av,
+  .sk-line,
+  .sk-block {
+    animation: none;
+  }
+}
 .card-head {
   display: flex;
   align-items: center;

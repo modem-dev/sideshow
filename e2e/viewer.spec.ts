@@ -100,6 +100,25 @@ test("a surface kind this viewer doesn't know shows a refresh hint, not a broken
   await expect(card.locator(".diff-error")).toHaveCount(0);
 });
 
+test("opening a session shows a skeleton while posts load", async ({ page, server }) => {
+  const first = await publish(server.url, {
+    html: "<p>slow</p>",
+    title: "Slow load",
+    agent: "e2e",
+  });
+
+  await page.route(`**/api/sessions/${first.sessionId}/posts**`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.continue();
+  });
+  await page.goto(server.url);
+
+  await expect(page.getByRole("status", { name: "Loading posts" })).toBeVisible();
+  await expect(page.locator(".sk-card")).toHaveCount(3);
+  await expect(page.locator(".card:not(#whatsNew) .card-title")).toHaveText("Slow load");
+  await expect(page.getByRole("status", { name: "Loading posts" })).toHaveCount(0);
+});
+
 test("opening a session hydrates posts without N+1 post detail fetches", async ({
   page,
   server,
