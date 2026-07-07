@@ -14,6 +14,7 @@ import {
 import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
 import { applyFrameHeight, Card, cardEls, frameForSource } from "./Card.tsx";
 import { ConnectInstructions } from "./Connect.tsx";
+import { HomeView } from "./Home.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
 import { StreamSkeleton } from "./Skeleton.tsx";
@@ -69,6 +70,8 @@ function isConnectPath() {
   return rest === "/connect";
 }
 const [connectPath, setConnectPath] = createSignal(isConnectPath());
+const homePath = () =>
+  !streamMode() && !connectPath() && initialLoaded() && sessions.length > 0 && !selected();
 
 // Stream-only layout: no sidebar, session list, or session chrome — just the
 // current session's stream. Driven by the host's `layout` (cloud embed) or the
@@ -298,12 +301,19 @@ export default function App() {
                 <Show
                   when={connectPath()}
                   fallback={
-                    <>
-                      <Show when={!streamMode()}>
-                        <Onboard />
-                      </Show>
-                      <SessionView />
-                    </>
+                    <Show
+                      when={homePath()}
+                      fallback={
+                        <>
+                          <Show when={!streamMode()}>
+                            <Onboard />
+                          </Show>
+                          <SessionView />
+                        </>
+                      }
+                    >
+                      <HomeView />
+                    </Show>
                   }
                 >
                   <ConnectPage />

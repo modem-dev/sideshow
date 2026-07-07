@@ -100,6 +100,33 @@ test("a surface kind this viewer doesn't know shows a refresh hint, not a broken
   await expect(card.locator(".diff-error")).toHaveCount(0);
 });
 
+test("the workspace root shows a recent posts home page", async ({ page, server }) => {
+  const first = await publish(server.url, {
+    html: "<h2>first preview</h2>",
+    title: "First recent",
+    agent: "alpha",
+    sessionTitle: "Alpha work",
+  });
+  await publish(server.url, {
+    html: "<h2>second preview</h2>",
+    title: "Second recent",
+    agent: "beta",
+    sessionTitle: "Beta work",
+  });
+
+  await page.goto(server.url);
+
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  await expect(page.locator(".home-card")).toHaveCount(2);
+  await expect(page.locator(".home-card-title")).toContainText(["Second recent", "First recent"]);
+  await expect(page.locator(".home-card").nth(1)).toContainText("Alpha work");
+  await expect(page.locator("#sessionView")).toHaveCount(0);
+
+  await page.locator(".home-card", { hasText: "First recent" }).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${first.sessionId}/p/${first.id}$`));
+  await expect(page.locator(`.card[data-id="${first.id}"] .card-title`)).toHaveText("First recent");
+});
+
 test("opening a session shows a skeleton while posts load", async ({ page, server }) => {
   const first = await publish(server.url, {
     html: "<p>slow</p>",
@@ -111,7 +138,7 @@ test("opening a session shows a skeleton while posts load", async ({ page, serve
     await new Promise((resolve) => setTimeout(resolve, 500));
     await route.continue();
   });
-  await page.goto(server.url);
+  await page.goto(`${server.url}/session/${first.sessionId}`);
 
   await expect(page.getByRole("status", { name: "Loading posts" })).toBeVisible();
   await expect(page.locator(".sk-card")).toHaveCount(3);
@@ -358,10 +385,13 @@ test("Cmd+Option+Up/Down switches between sessions, wrapping at the ends", async
   await publish(server.url, { html: "<p>b</p>", title: "Second", agent: "two" });
 
   await page.goto(server.url);
-  // the newest session sits at the top of the list and is selected on load
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+
+  // With no selected session on Home, Down opens the first (newest) session.
+  await page.keyboard.press("Meta+Alt+ArrowDown");
   await expect(page.locator(".sess.sel .sess-title")).toContainText("two session");
 
-  // Down moves to the next (older) session down the list
+  // Down moves to the next (older) session down the list.
   await page.keyboard.press("Meta+Alt+ArrowDown");
   await expect(page.locator(".sess.sel .sess-title")).toContainText("one session");
 

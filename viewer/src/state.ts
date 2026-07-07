@@ -191,6 +191,10 @@ function isConnectRoute(): boolean {
   return location.pathname === appPath("/connect");
 }
 
+function isSessionlessHomeRoute(route = host().router.get()): boolean {
+  return !route.sessionId && !route.surfaceId && !isConnectRoute();
+}
+
 export async function refreshSessions(targetPostId?: string | null) {
   if (isReadonly() && publicReadMode() === "session") {
     const route = host().router.get();
@@ -235,10 +239,13 @@ export async function refreshSessions(targetPostId?: string | null) {
     // host's home shows with nothing selected (no auto-open, no highlight).
     const route = host().router.get();
     const lastId = localStorage.getItem(LAST_SESSION_KEY);
+    const validLastId = lastId && sessions.some((s) => s.id === lastId) ? lastId : null;
     const fallback =
-      host().homeView || isConnectRoute()
+      host().homeView ||
+      isConnectRoute() ||
+      (isSessionlessHomeRoute(route) && !validLastId && sessions.length > 1)
         ? null
-        : (lastId && sessions.some((s) => s.id === lastId) && lastId) || sessions[0].id;
+        : validLastId || sessions[0].id;
     const target =
       (route.sessionId && sessions.some((s) => s.id === route.sessionId) && route.sessionId) ||
       fallback;
@@ -349,11 +356,9 @@ export function applyRoute(route: Route) {
       fromPopState: true,
       initialPostId: route.surfaceId ?? undefined,
     });
-  } else if (!route.sessionId && host().homeView && selected()) {
-    // A host that owns a session-less landing: a route with no session IS that
-    // home view, so clear the selection — otherwise the previously-open session
-    // stays highlighted behind the host's home. (Self-hosted leaves homeView off
-    // and keeps ignoring a null route here; it deselects explicitly via goHome.)
+  } else if (!route.sessionId && (host().homeView || isSessionlessHomeRoute(route)) && selected()) {
+    // A session-less route is a home view, so clear the selection — otherwise the
+    // previously-open session stays highlighted behind the home screen.
     setSelectedInternal(null);
   }
 }
