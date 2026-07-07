@@ -70,8 +70,10 @@ function isConnectPath() {
   return rest === "/connect";
 }
 const [connectPath, setConnectPath] = createSignal(isConnectPath());
+const hasPosts = () => sessions.some((s) => s.surfaceCount > 0);
+const emptyWorkspace = () => initialLoaded() && !selected() && !hasPosts();
 const homePath = () =>
-  !streamMode() && !connectPath() && initialLoaded() && sessions.length > 0 && !selected();
+  !streamMode() && !connectPath() && initialLoaded() && hasPosts() && !selected();
 
 // Stream-only layout: no sidebar, session list, or session chrome — just the
 // current session's stream. Driven by the host's `layout` (cloud embed) or the
@@ -706,8 +708,16 @@ function SessionTitle(props: { current: SessionRow | undefined }) {
 }
 
 function Onboard() {
+  createEffect(() => {
+    if (!emptyWorkspace() || isReadonly() || connectPath()) return;
+    const poll = setInterval(() => {
+      if (!document.hidden) void refreshSessionsQuiet();
+    }, 1500);
+    onCleanup(() => clearInterval(poll));
+  });
+
   return (
-    <div id="onboard" hidden={!initialLoaded() || sessions.length > 0}>
+    <div id="onboard" hidden={!emptyWorkspace()}>
       {/* Host-overridable region (SLOTS.empty): an embedder projects its own
           first-run onboarding here. The fallback below is the self-hosted
           default — setup snippets that assume a local sideshow on port 8228,
@@ -719,7 +729,7 @@ function Onboard() {
           fallback={
             <>
               <h1>Nothing here yet</h1>
-              <p class="sub">This sideshow workspace does not have any sessions yet.</p>
+              <p class="sub">This sideshow workspace does not have any posts yet.</p>
             </>
           }
         >

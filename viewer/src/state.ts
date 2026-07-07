@@ -233,19 +233,20 @@ export async function refreshSessions(targetPostId?: string | null) {
   }
 
   if (!selected() && sessions.length > 0) {
-    // Check the route first, then localStorage, then fall back to first session.
-    // A host that owns a session-less landing (homeView) skips that fallback: it
-    // honors a deep-linked route session but otherwise stays session-less so the
-    // host's home shows with nothing selected (no auto-open, no highlight).
+    // Check the route first, then localStorage, then fall back to the first
+    // session with posts. Empty sessions alone keep the first-run onboarding up:
+    // the useful transition is from "connect an agent" to real output.
     const route = host().router.get();
+    const sessionsWithPosts = sessions.filter((s) => s.surfaceCount > 0);
     const lastId = localStorage.getItem(LAST_SESSION_KEY);
-    const validLastId = lastId && sessions.some((s) => s.id === lastId) ? lastId : null;
+    const validLastId = lastId && sessionsWithPosts.some((s) => s.id === lastId) ? lastId : null;
     const fallback =
       host().homeView ||
       isConnectRoute() ||
-      (isSessionlessHomeRoute(route) && !validLastId && sessions.length > 1)
+      sessionsWithPosts.length === 0 ||
+      (isSessionlessHomeRoute(route) && !validLastId && sessionsWithPosts.length > 1)
         ? null
-        : validLastId || sessions[0].id;
+        : validLastId || sessionsWithPosts[0].id;
     const target =
       (route.sessionId && sessions.some((s) => s.id === route.sessionId) && route.sessionId) ||
       fallback;
