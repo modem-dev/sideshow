@@ -66,6 +66,32 @@ test("snippet published over HTTP appears live via SSE, no reload", async ({ pag
   await expect(page.locator(".sess-title")).toContainText("e2e session");
 });
 
+test("empty onboarding polls into Home when the first post arrives", async ({ page, server }) => {
+  await page.route("**/api/events", (route) => route.abort());
+  await page.goto(server.url);
+  await expect(page.locator("#onboard")).toBeVisible();
+
+  await publish(server.url, { html: "<p>first</p>", title: "First post", agent: "e2e" });
+
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible({ timeout: 6_000 });
+  await expect(page.locator(".home-card-title")).toHaveText("First post");
+  await expect(page.locator("#onboard")).toBeHidden();
+});
+
+test("an empty session alone keeps first-run onboarding visible", async ({ page, server }) => {
+  await fetch(`${server.url}/api/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agent: "idle", title: "Empty one" }),
+  });
+
+  await page.goto(server.url);
+
+  await expect(page.locator("#onboard")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connect your first agent" })).toBeVisible();
+  await expect(page.locator(".sess.sel")).toHaveCount(0);
+});
+
 test("a surface kind this viewer doesn't know shows a refresh hint, not a broken diff", async ({
   page,
   server,
