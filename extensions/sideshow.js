@@ -104,6 +104,10 @@ function agentName() {
   return process.env.SIDESHOW_AGENT || "pi";
 }
 
+function showTuiStatus() {
+  return process.env.SIDESHOW_TUI_STATUS !== "0";
+}
+
 function authHeaders(extra = {}) {
   return {
     ...(process.env.SIDESHOW_TOKEN
@@ -379,12 +383,16 @@ export default function sideshowExtension(pi) {
 
   pi.on("session_start", (_event, ctx) => {
     state.sessionId = reconstructSession(ctx);
-    ctx.ui.setStatus(
-      "sideshow",
-      state.sessionId
-        ? `sideshow ${state.sessionId}`
-        : `sideshow ${baseUrl().replace(/^https?:\/\//, "")}`,
-    );
+    if (showTuiStatus()) {
+      ctx.ui.setStatus(
+        "sideshow",
+        state.sessionId
+          ? `sideshow ${state.sessionId}`
+          : `sideshow ${baseUrl().replace(/^https?:\/\//, "")}`,
+      );
+    } else {
+      ctx.ui.setStatus("sideshow", undefined);
+    }
   });
 
   pi.on("turn_end", async (_event, ctx) => {
@@ -403,7 +411,11 @@ export default function sideshowExtension(pi) {
       const command = args.trim();
       if (command === "reset") {
         state.sessionId = process.env.SIDESHOW_SESSION || undefined;
-        ctx.ui.setStatus("sideshow", `sideshow ${baseUrl().replace(/^https?:\/\//, "")}`);
+        if (showTuiStatus()) {
+          ctx.ui.setStatus("sideshow", `sideshow ${baseUrl().replace(/^https?:\/\//, "")}`);
+        } else {
+          ctx.ui.setStatus("sideshow", undefined);
+        }
         ctx.ui.notify("Reset remembered sideshow session", "info");
         return;
       }
