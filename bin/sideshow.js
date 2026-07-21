@@ -132,6 +132,9 @@ usage:
       --post <id>       post to attach the comment to (required;
                         --surface is a deprecated alias)
   sideshow list [--session <id>|--all]    list posts
+  sideshow export [--session <id>] [--out <file>] [--theme <id>] [--mode <m>]
+                                          export a session as one self-contained HTML file
+                                          (default: auto session, never created; stdout)
   sideshow show <id>                      show a single post (surfaces, indexes, ids, version, history)
   sideshow sessions                       list sessions
   sideshow demo                           seed two example sessions to explore the viewer
@@ -160,13 +163,15 @@ function fail(msg) {
   process.exit(1);
 }
 
-async function api(path, init = {}) {
+// Raw fetch with the CLI's standard failure handling — unreachable server and
+// non-2xx (JSON error body) both exit via fail(). Callers own the body read:
+// api() parses JSON; export reads HTML text; uploads send raw bytes.
+async function rawFetch(path, init = {}) {
   let res;
   try {
     res = await fetch(`${BASE}${path}`, {
       ...init,
       headers: {
-        "content-type": "application/json",
         ...(TOKEN ? { authorization: `Bearer ${TOKEN}` } : {}),
         ...init.headers,
       },
@@ -174,9 +179,19 @@ async function api(path, init = {}) {
   } catch {
     fail(`server not reachable at ${BASE} — start it with: sideshow serve`);
   }
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) fail(body.error ?? `${res.status} ${res.statusText}`);
-  return body;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    fail(body.error ?? `${res.status} ${res.statusText}`);
+  }
+  return res;
+}
+
+async function api(path, init = {}) {
+  const res = await rawFetch(path, {
+    ...init,
+    headers: { "content-type": "application/json", ...init.headers },
+  });
+  return res.json().catch(() => ({}));
 }
 
 // Like api(), but throws instead of exiting the process — for callers that must
@@ -457,22 +472,12 @@ async function uploadFile(file, { session, kind } = {}) {
   params.set("filename", file.split(/[\\/]/).pop() ?? "upload");
   if (session) params.set("session", session);
   if (kind) params.set("kind", kind);
-  let res;
-  try {
-    res = await fetch(`${BASE}/api/assets?${params}`, {
-      method: "POST",
-      headers: {
-        "content-type": contentTypeFor(file),
-        ...(TOKEN ? { authorization: `Bearer ${TOKEN}` } : {}),
-      },
-      body: bytes,
-    });
-  } catch {
-    fail(`server not reachable at ${BASE} — start it with: sideshow serve`);
-  }
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) fail(body.error ?? `${res.status} ${res.statusText}`);
-  return body;
+  const res = await rawFetch(`/api/assets?${params}`, {
+    method: "POST",
+    headers: { "content-type": contentTypeFor(file) },
+    body: bytes,
+  });
+  return res.json().catch(() => ({}));
 }
 
 // Normalize repeated/comma-joined --kit flags into a deduped id list (or
@@ -1543,6 +1548,37 @@ const commands = {
     const id = positionals[0];
     if (!id) fail("usage: sideshow show <id>");
     out(await api(`/api/posts/${id}`));
+  },
+
+  // Export a whole session as one self-contained HTML file (every surface
+  // embedded as a sandboxed srcdoc iframe). resolveSession WITHOUT create — an
+  // export must never mint a session — and rawFetch (not api(), which
+  // JSON-parses) since the body is HTML.
+  async export() {
+    const { values: flags } = parse({
+      options: {
+        session: { type: "string" },
+        out: { type: "string" },
+        theme: { type: "string" },
+        mode: { type: "string" },
+      },
+    });
+    const session = await resolveSession(flags);
+    if (!session) {
+      fail("no session to export — pass --session <id> (export never creates a session)");
+    }
+    const q = new URLSearchParams();
+    if (flags.theme) q.set("theme", flags.theme);
+    if (flags.mode) q.set("mode", flags.mode);
+    const qs = q.toString();
+    const res = await rawFetch(`/api/sessions/${session}/export${qs ? `?${qs}` : ""}`);
+    const html = await res.text();
+    if (flags.out) {
+      writeFileSync(flags.out, html);
+      console.log(`Wrote ${flags.out} (${html.length} bytes)`);
+    } else {
+      process.stdout.write(html);
+    }
   },
 
   async sessions() {

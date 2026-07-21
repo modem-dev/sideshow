@@ -25,7 +25,12 @@ import {
   postLink,
   postImageLink,
 } from "./api.ts";
-import { isSandboxedSurfaceKind, SURFACE_FRAME_CLASSES } from "../../server/types.ts";
+import {
+  isSandboxedSurfaceKind,
+  MAX_FRAME_H,
+  MIN_FRAME_H,
+  SURFACE_FRAME_CLASSES,
+} from "../../server/types.ts";
 import {
   CommentIcon,
   ImageIcon,
@@ -93,9 +98,8 @@ export function cardForPost(id: string): HTMLDivElement | null {
 }
 
 // Size a post's surface iframe from a height the in-frame bridge reported. Min
-// one line, max generous enough for a long diff/markdown without runaway growth.
-const MIN_FRAME_H = 24;
-const MAX_FRAME_H = 4000;
+// one line, max generous enough for a long diff/markdown without runaway growth
+// (bounds shared with the session export shell via server/types.ts).
 const RECENT_UPDATE_MS = 2 * 60 * 1000;
 export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unknown): void {
   iframe.style.height = Math.min(Math.max(Number(reportedHeight), MIN_FRAME_H), MAX_FRAME_H) + "px";

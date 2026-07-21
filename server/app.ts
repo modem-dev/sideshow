@@ -17,24 +17,18 @@ import {
 import { EventBus, type FeedEvent } from "./events.ts";
 import { kitSummaries } from "./kits.ts";
 import { registerMcp } from "./mcpHttp.ts";
-import {
-  escapeHtml,
-  renderHtmlPage,
-  renderMermaidPage,
-  renderSandboxedPart,
-} from "./surfacePage.ts";
-import { DEFAULT_THEME_ID, themeById, themeOptions } from "./themes.ts";
+import { escapeHtml, renderSurfaceDocument } from "./surfacePage.ts";
+import { MAX_EXPORT_SURFACE_BYTES, renderSessionExport } from "./exportPage.ts";
+import { DEFAULT_THEME_ID, type Mode, themeOptions } from "./themes.ts";
 import {
   type Asset,
   type AssetKind,
-  type CodeSurface,
   type Comment,
   type CommentAnchor,
-  type DiffSurface,
   htmlSurface,
   isSandboxedSurfaceKind,
+  INLINE_IMAGE_TYPES,
   reservedAgent,
-  type MarkdownSurface,
   MAX_ASSET_BYTES,
   surfacesByteLength,
   type Session,
@@ -42,7 +36,6 @@ import {
   type Post,
   type Surface,
   SURFACE_CONTENT_FIELDS,
-  type TerminalSurface,
   type TraceStep,
 } from "./types.ts";
 import { validateSurfaces } from "./postSurfaces.ts";
@@ -91,18 +84,12 @@ const MAX_TITLE = 500;
 // exercise the cap cheaply.
 const DEFAULT_MAX_HOLD_CONNECTIONS = 32;
 
-// Asset serving policy: only raster images are served inline; everything else
-// (incl. svg, json, text, the octet-stream catch-all) is an attachment, so a
-// top-level open of /a/:id can never execute an uploaded document as a live
-// same-origin script. <img>/fetch ignore Content-Disposition, so embedding and
-// inline trace rendering keep working regardless.
-const INLINE_IMAGE_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-  "image/avif",
-]);
+// Asset serving policy: only raster images (INLINE_IMAGE_TYPES, types.ts) are
+// served inline; everything else (incl. svg, json, text, the octet-stream
+// catch-all) is an attachment, so a top-level open of /a/:id can never execute
+// an uploaded document as a live same-origin script. <img>/fetch ignore
+// Content-Disposition, so embedding and inline trace rendering keep working
+// regardless.
 const ATTACH_SAFE_TYPES = new Set([
   "image/svg+xml",
   "application/json",
@@ -1097,6 +1084,81 @@ export function createApp({
   app.get("/api/sessions/:id/posts", listSessionPosts);
   app.get("/api/sessions/:id/snippets", listSessionPosts); // legacy alias
 
+  // Resolve the theme/scheme a rendered document should bake in: an explicit
+  // ?theme= (the viewer keys iframe srcs by it so a switch reloads the frame)
+  // wins over the persisted workspace theme. ?mode= must be an explicit scheme
+  // — the viewer passes the one it resolved so the frame can't diverge from the
+  // chrome; absent/invalid → follow the OS.
+  const resolveThemeMode = async (c: any): Promise<{ themeId: string; mode?: Mode }> => {
+    const themeId = c.req.query("theme") ?? (await store.getSetting("theme")) ?? DEFAULT_THEME_ID;
+    const modeParam = c.req.query("mode");
+    return {
+      themeId,
+      mode: modeParam === "light" || modeParam === "dark" ? modeParam : undefined,
+    };
+  };
+
+  // Export a whole session as one self-contained, shareable HTML file. Every
+  // surface is rendered with the exact /s/:id renderers and embedded as a
+  // sandboxed srcdoc iframe (see exportPage.ts) so the core isolation rule holds
+  // inside the saved file. Under /api/sessions/, so auth + publicRead: "session"
+  // gating (isPublicReadAllowed) come free. No load-restricting CSP on the
+  // response: srcdoc children inherit the parent's CSP, so a policy here would
+  // break the CDN loads html/mermaid frames need; frame-ancestors is a header
+  // (doesn't restrict subresource loads, and is meaningless in the saved file).
+  app.get("/api/sessions/:id/export", async (c) => {
+    const session = await store.getSession(c.req.param("id"));
+    if (!session) return c.json({ error: "session not found" }, 404);
+    const posts = await store.listPosts(session.id); // createdAt ASC → chronological
+    // Reject oversized sessions before any rendering: per-post text is capped
+    // (MAX_SURFACE_BYTES) but post count isn't, so without an aggregate bound
+    // one export could be made to render unbounded input — unauthenticated on a
+    // publicRead workspace. The check is a cheap string-length sum.
+    let inputBytes = 0;
+    for (const post of posts) inputBytes += surfacesByteLength(post.surfaces);
+    if (inputBytes > MAX_EXPORT_SURFACE_BYTES) {
+      return c.json(
+        { error: `session too large to export (over ${MAX_EXPORT_SURFACE_BYTES} surface bytes)` },
+        413,
+      );
+    }
+    // One comments query for the whole session, grouped by post — per-post
+    // listComments calls were N+1 (and JsonFileStore rescans every comment per
+    // call, so quadratic). Session-level comments (postId null) are excluded
+    // in v1 (a documented no-op).
+    const byPost = new Map<string, Comment[]>();
+    for (const comment of await store.listComments({ sessionId: session.id })) {
+      if (!comment.postId) continue;
+      const list = byPost.get(comment.postId);
+      if (list) list.push(comment);
+      else byPost.set(comment.postId, [comment]);
+    }
+    const items = posts.map((post) => ({ post, comments: byPost.get(post.id) ?? [] }));
+    const { themeId, mode } = await resolveThemeMode(c);
+    const origin = new URL(c.req.url).origin;
+    const html = await renderSessionExport({
+      session,
+      items,
+      origin,
+      themeId,
+      mode,
+      generatedAt: new Date().toISOString(),
+      getAsset: (id) => store.getAsset(id),
+    });
+    c.header("X-Content-Type-Options", "nosniff");
+    c.header("Content-Security-Policy", "frame-ancestors 'self'");
+    c.header("Cache-Control", "private, no-cache");
+    if (c.req.query("download") === "1") {
+      const slug =
+        (session.title || session.id)
+          .toLowerCase()
+          .replace(/[^a-z0-9-]+/g, "-")
+          .replace(/^-+|-+$/g, "") || session.id;
+      c.header("Content-Disposition", `attachment; filename="sideshow-${slug}.html"`);
+    }
+    return c.html(html);
+  });
+
   // --- session trace ---
 
   app.get("/api/sessions/:id/trace", async (c) => {
@@ -1558,15 +1620,7 @@ export function createApp({
     // allow-scripts so the bridge still runs, but no allow-same-origin, so agent
     // code can never touch the workspace origin. Mirrors the iframe's sandbox flags.
     c.header("Content-Security-Policy", "sandbox allow-scripts");
-    // Theme: an explicit ?theme= (the viewer keys iframe srcs by it so a switch
-    // reloads the frame) wins; otherwise the persisted workspace theme; else default.
-    const themeId = c.req.query("theme") ?? (await store.getSetting("theme")) ?? DEFAULT_THEME_ID;
-    const theme = themeById(themeId);
-    // Scheme: the viewer passes the light/dark mode it resolved so the iframe is
-    // pinned to it rather than re-deriving from the OS (which can diverge from
-    // the chrome across the frame boundary). Absent/invalid → follow the OS.
-    const modeParam = c.req.query("mode");
-    const mode = modeParam === "light" || modeParam === "dark" ? modeParam : undefined;
+    const { themeId, mode } = await resolveThemeMode(c);
     const origin = new URL(c.req.url).origin;
 
     // Cache the finished document. The key pins everything the output depends
@@ -1578,50 +1632,9 @@ export function createApp({
     if (immutable) c.header("Cache-Control", "public, max-age=31536000, immutable");
     else c.header("Cache-Control", "private, no-cache");
 
-    const doc = await cachedRender(cacheKey, async () => {
-      if (surface.kind === "html") {
-        return renderHtmlPage({
-          title,
-          html: surface.html,
-          origin,
-          theme,
-          mode,
-          kits: surface.kits,
-        });
-      }
-      if (surface.kind === "mermaid") {
-        return renderMermaidPage({ mermaid: surface.mermaid, origin, theme, mode });
-      }
-      // Load the rich renderers on first use, not at module load. richRender.ts
-      // pulls in shiki, @pierre/diffs, markdown-it and ansi_up — measured at ~48 MB
-      // of RSS and ~240 ms of import time (`npm run bench:all`, process suite), which
-      // every server paid at boot whether or not it ever rendered a rich surface.
-      // Deferring it past the html and mermaid branches above means an html-only
-      // workspace never loads any of it.
-      //
-      // The runtime's module cache makes every later call cheap, so there's no memo
-      // here to keep in sync. On the Worker the module is already inside the
-      // deployed bundle — the import defers evaluating it, not fetching it — so this
-      // needs no network at runtime. test/workerIntegration covers that on real
-      // workerd, because a dynamic import resolving differently there is exactly the
-      // way this optimization could break in production and nowhere else.
-      const { renderCode, renderDiff, renderMarkdown, renderTerminal } =
-        await import("./richRender.ts");
-      const rendered =
-        surface.kind === "markdown"
-          ? await renderMarkdown(surface as MarkdownSurface, { theme: themeId, mode })
-          : surface.kind === "code"
-            ? await renderCode(surface as CodeSurface, { theme: themeId, mode })
-            : surface.kind === "terminal"
-              ? renderTerminal(surface as TerminalSurface)
-              : await renderDiff(surface as DiffSurface, { theme: themeId, mode }).catch((e) => ({
-                  body: `<div class="rich-error">Couldn’t render diff — ${escapeHtml(
-                    e instanceof Error ? e.message : "render error",
-                  )}</div>`,
-                  css: `.rich-error{color:var(--danger);font:13px/1.5 ui-monospace,monospace;padding:8px 12px;}`,
-                }));
-      return renderSandboxedPart({ body: rendered.body, css: rendered.css, origin, theme, mode });
-    });
+    const doc = await cachedRender(cacheKey, () =>
+      renderSurfaceDocument(surface, { title, origin, themeId, mode }),
+    );
     return c.html(doc);
   };
   app.get("/s/:id", renderPostPage); // legacy alias

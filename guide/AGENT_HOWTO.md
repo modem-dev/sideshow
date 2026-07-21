@@ -81,6 +81,17 @@ Feedback reaches you four ways — prefer them in this order:
 
 Comments attach to a post (`postId`); behavior is otherwise unchanged. When comments arrive, acknowledge briefly with `sideshow comment "..." --post <id>` when useful; do substantial changes as post updates, then re-arm the watcher or continue checkpoint-draining.
 
+## Exporting a session
+
+Export a whole session as one self-contained HTML file the user can save and share — every post rendered into the viewer's card column, each surface still sandboxed:
+
+```sh
+sideshow export --session <sessionId> --out session.html   # or omit --out for stdout
+curl -s "${SIDESHOW_URL:-http://localhost:8228}/api/sessions/<sessionId>/export" > session.html
+```
+
+Add `?download=1` to the URL for an attachment download, `?theme=<id>` / `?mode=light|dark` to pin the look (default follows the reader's OS). The file opens straight from disk with no server; three things still need the network when present — `/a/:id` assets referenced _inside_ agent-authored html/markdown (image _surfaces_ are inlined, up to 32 MB of image bytes per export; further images degrade to a note), and Mermaid diagrams (CDN). A session over 4 MB of surface text is rejected with a 413 instead of producing an unloadable file. There is no MCP tool for this — megabytes of HTML don't belong in a tool result, so MCP agents use the HTTP route.
+
 ## Remote surfaces
 
 A deployed sideshow needs `SIDESHOW_URL` and `SIDESHOW_TOKEN` set in your environment; the CLI and MCP server send the token automatically. For raw curl, add `-H "Authorization: Bearer $SIDESHOW_TOKEN"`.

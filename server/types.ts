@@ -92,6 +92,11 @@ export const SURFACE_FRAME_CLASSES = Object.fromEntries(
   }),
 ) as Partial<Record<SurfaceKind, string>>;
 
+// Clamp bounds for bridge-reported sandboxed-iframe heights, shared by the
+// viewer (Card.tsx) and the session export shell so the two can't drift.
+export const MIN_FRAME_H = 24;
+export const MAX_FRAME_H = 4000;
+
 export function isSurfaceKind(kind: unknown): kind is SurfaceKind {
   return typeof kind === "string" && Object.hasOwn(SURFACE_KIND_METADATA, kind);
 }
@@ -474,6 +479,20 @@ export function stripNulStep(s: TraceStep): TraceStep {
 // the budget sits well under its ~10 GB SQLite ceiling.
 export const MAX_ASSET_BYTES = 5 * 1024 * 1024;
 export const MAX_WORKSPACE_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
+
+// The only content types trusted as-declared: raster image formats with no
+// script capability. /a/:id serves these inline (everything else is an
+// attachment — see assetServeHeaders in app.ts) and the session export inlines
+// them as data: URIs. contentType is upload-controlled and otherwise unvalidated,
+// so anything outside this set must never be interpolated into markup or served
+// inline. Shared here so the two policies can't drift.
+export const INLINE_IMAGE_TYPES: ReadonlySet<string> = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+]);
 
 // Short, unguessable id: 8 random bytes (64 bits) as 11 url-safe base64 chars —
 // YouTube-video-id sized. These double as bearer capabilities: in publicRead
