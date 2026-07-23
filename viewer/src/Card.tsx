@@ -51,19 +51,43 @@ import {
   type ViewComment,
 } from "./state.ts";
 
-// Card registry keyed by post id: the "new post" pill scrolls to the
-// card element, and each card tracks its sandboxed-surface iframes so the
-// postMessage bridge in App can resolve the source post + iframe by
-// contentWindow (a post may have several sandboxed surfaces → several frames).
-export const cardEls = new Map<string, { card: HTMLDivElement; iframes: Set<HTMLIFrameElement> }>();
+// Registry of live cards → their post id, card element, and sandboxed-surface
+// iframes, so the "new post" pill can scroll to a card and the postMessage bridge
+// in App can resolve the source post + iframe by contentWindow (a post may have
+// several sandboxed surfaces → several frames).
+//
+// Keyed by a per-Card TOKEN, deliberately NOT by post id. This module is a
+// singleton, and a HOST can mount two engine instances into ONE JS realm at once
+// — the cloud's double-buffered in-place workspace switch keeps the outgoing
+// engine mounted until the incoming one is ready. Both engines see the same URL,
+// so both render a Card for the SAME post. Keying by post id let those two Cards
+// clobber each other's entry, and when the outgoing engine tore down, its Card's
+// onCleanup deleted the shared entry the still-visible engine's Card needed — so
+// frameForSource could no longer resolve it and its surface iframes stayed stuck
+// at their seed height until a full reload. A unique token per Card keeps the two
+// registrations independent: frameForSource matches by contentWindow (key-
+// agnostic) and cardForPost scans by id, so neither instance can evict the other.
+export const cardEls = new Map<
+  object,
+  { id: string; card: HTMLDivElement; iframes: Set<HTMLIFrameElement> }
+>();
 
 // Resolve which post + iframe a postMessage came from, by contentWindow.
 export function frameForSource(source: unknown): { id: string; iframe: HTMLIFrameElement } | null {
-  for (const [id, { iframes }] of cardEls) {
+  for (const { id, iframes } of cardEls.values()) {
     for (const iframe of iframes) {
       if (iframe.contentWindow === source) return { id, iframe };
     }
   }
+  return null;
+}
+
+// The card element for a post, for scroll-into-view. Scans by id because the
+// registry is token-keyed (see cardEls). If two engine instances are briefly both
+// mounted, either card's position is equivalent (the visible one is what scrolls);
+// once the switch settles only one remains.
+export function cardForPost(id: string): HTMLDivElement | null {
+  for (const entry of cardEls.values()) if (entry.id === id) return entry.card;
   return null;
 }
 
@@ -298,8 +322,10 @@ export function Card(props: { post: Post; standalone?: boolean }) {
   });
 
   onMount(() => {
-    cardEls.set(props.post.id, { card, iframes });
-    onCleanup(() => cardEls.delete(props.post.id));
+    // Key by a token UNIQUE to this Card instance, never by post.id — see cardEls.
+    const token = {};
+    cardEls.set(token, { id: props.post.id, card, iframes });
+    onCleanup(() => cardEls.delete(token));
     // Standalone is a single, full-page post — there is no feed to scroll
     // through and no session route to track, so skip the deep-link scroll and
     // the URL-syncing observer. The cardEls registration above still runs so the

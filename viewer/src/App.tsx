@@ -13,7 +13,7 @@ import {
   type SessionRow,
 } from "./api.ts";
 import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
-import { applyFrameHeight, Card, cardEls, frameForSource } from "./Card.tsx";
+import { applyFrameHeight, Card, cardForPost, frameForSource } from "./Card.tsx";
 import { ConnectInstructions } from "./Connect.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
@@ -154,8 +154,8 @@ export default function App() {
       if (sessions.length > 0) refreshSessionsQuiet();
     }, 45_000);
     onCleanup(() => clearInterval(timer));
-    window.addEventListener("message", onBridgeMessage);
-    onCleanup(() => window.removeEventListener("message", onBridgeMessage));
+    acquireBridgeListener();
+    onCleanup(releaseBridgeListener);
     // returning to the tab counts as seeing the selected session
     const onVisibility = () => {
       const id = selected();
@@ -345,7 +345,7 @@ export default function App() {
             onClick={() => {
               const target = pillTarget();
               if (target)
-                cardEls.get(target)?.card.scrollIntoView({ behavior: "smooth", block: "start" });
+                cardForPost(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
               setPillTarget(null);
             }}
           >
@@ -435,6 +435,25 @@ function WhatsNewCard() {
       )}
     </Show>
   );
+}
+
+// The bridge listener is a single module-level function, so `addEventListener`
+// with it deduplicates to ONE registration no matter how many App instances mount
+// — and a host that mounts two engines at once (e.g. the cloud's double-buffered
+// in-place workspace switch keeps the outgoing engine mounted until the incoming
+// one is ready) shares this one module realm. Adding/removing per-mount would then
+// let the FIRST engine to unmount call removeEventListener and tear the shared
+// listener out from under the still-mounted second engine — after which its
+// sandboxed surfaces post `resize` to a window nobody is listening on, and every
+// frame stays stuck at its seed height until a full reload. Reference-count instead:
+// keep the one listener alive while ANY App is mounted, remove it only when the last
+// unmounts. Single registration throughout, so no message is ever handled twice.
+let bridgeListeners = 0;
+function acquireBridgeListener(): void {
+  if (bridgeListeners++ === 0) window.addEventListener("message", onBridgeMessage);
+}
+function releaseBridgeListener(): void {
+  if (--bridgeListeners === 0) window.removeEventListener("message", onBridgeMessage);
 }
 
 // Messages from sandboxed post iframes (see server/surfacePage.ts bridge).
