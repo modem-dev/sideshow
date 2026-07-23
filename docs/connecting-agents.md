@@ -41,9 +41,11 @@ pi install npm:sideshow
 pi -e npm:sideshow
 ```
 
-The extension shows its current server or session in Pi's TUI status area by
-default. Set `SIDESHOW_TUI_STATUS=0` before launching Pi to hide that status
-without disabling the native tools or automatic trace synchronization.
+After the current conversation connects to a Sideshow session, the extension
+shows that session in Pi's TUI status area and keeps it current when tools or
+conversation-tree navigation switch sessions. Idle conversations stay quiet. Set `SIDESHOW_TUI_STATUS=0` before
+launching Pi to hide the status entirely without disabling the native tools or
+automatic trace synchronization.
 
 ## MCP
 

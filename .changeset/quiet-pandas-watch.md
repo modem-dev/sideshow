@@ -2,4 +2,4 @@
 "sideshow": patch
 ---
 
-Allow Pi-compatible agents to hide the persistent Sideshow TUI status with `SIDESHOW_TUI_STATUS=0` while retaining native tools and trace synchronization.
+Keep Pi's TUI quiet until the current conversation connects to a Sideshow session, keep the status current when tools or conversation-tree navigation switch sessions, and allow hiding it entirely with `SIDESHOW_TUI_STATUS=0` without disabling native tools or trace synchronization.
