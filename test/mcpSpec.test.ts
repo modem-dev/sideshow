@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { test } from "node:test";
+import { toJsonSchemaCompat } from "@modelcontextprotocol/sdk/server/zod-json-schema-compat.js";
 import { z } from "zod";
-import { HTTP_MCP_TOOLS, STDIO_MCP_INPUT_SCHEMAS } from "../server/mcpSpec.ts";
+import { HTTP_MCP_TOOLS, MCP_INSTRUCTIONS, STDIO_MCP_INPUT_SCHEMAS } from "../server/mcpSpec.ts";
 import { validateSurfaces } from "../server/postSurfaces.ts";
 import {
   isSandboxedSurfaceKind,
@@ -90,6 +93,20 @@ test("HTTP publish_post advertises every field used by canonical examples", () =
   }
 });
 
+test("compact MCP schemas retain critical surface and cursor semantics", () => {
+  assert.match(httpSurfaceSchema.properties.html.description, /body fragment/);
+  assert.match(httpSurfaceSchema.properties.markdown.description, /raw HTML is escaped/);
+  assert.match(httpSurfaceSchema.properties.mermaid.description, /do not set colors/);
+  assert.match(httpSurfaceSchema.properties.assetId.description, /upload_asset/);
+  assert.match(httpSurfaceSchema.properties.lineStart.description, /1-based/);
+
+  const update = HTTP_MCP_TOOLS.find((tool) => tool.name === "update_post") as any;
+  assert.equal(update.inputSchema.properties.surfaces.items.description, undefined);
+  assert.match(update.description, /publish_post shape/);
+  const wait = HTTP_MCP_TOOLS.find((tool) => tool.name === "wait_for_feedback") as any;
+  assert.match(wait.inputSchema.properties.afterSeq.description, /usually omit/);
+});
+
 test("every canonical kind has a worked example (no kind left untested)", () => {
   for (const kind of SURFACE_KINDS) {
     assert.ok(EXAMPLES[kind], `missing test example for kind "${kind}"`);
@@ -113,6 +130,58 @@ test("the stdio publish schema rejects an unknown kind", () => {
   const publishSchema = z.object(STDIO_MCP_INPUT_SCHEMAS.publishPost);
   const result = publishSchema.safeParse({ title: "t", surfaces: [{ kind: "bogus", html: "x" }] });
   assert.equal(result.success, false);
+});
+
+test("MCP instructions and tool schemas stay within their context budgets", () => {
+  const stdioSchemas = Object.values(STDIO_MCP_INPUT_SCHEMAS).map((schema) =>
+    toJsonSchemaCompat(z.object(schema), { strictUnions: true }),
+  );
+
+  assert.ok(Buffer.byteLength(MCP_INSTRUCTIONS) <= 400, "MCP instructions exceeded 400 bytes");
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(HTTP_MCP_TOOLS)) <= 15_000,
+    "HTTP MCP tools exceeded 15 KB",
+  );
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(stdioSchemas)) <= 12_500,
+    "stdio MCP input schemas exceeded 12.5 KB",
+  );
+});
+
+test("the serialized stdio MCP catalog stays under 17 KB", () => {
+  const input = [
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-03-26",
+        capabilities: {},
+        clientInfo: { name: "size-test", version: "1" },
+      },
+    },
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
+  ]
+    .map((message) => JSON.stringify(message))
+    .join("\n");
+  const result = spawnSync(process.execPath, [join(import.meta.dirname, "../mcp/server.ts")], {
+    input: `${input}\n`,
+    encoding: "utf8",
+    timeout: 5_000,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const responses = result.stdout
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const list = responses.find((response) => response.id === 2);
+  assert.ok(list, "stdio MCP server omitted the tools/list response");
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(list.result.tools)) <= 17_000,
+    "stdio MCP tools exceeded 17 KB",
+  );
 });
 
 test("the runtime validator accepts a representative example of every kind", async () => {
