@@ -26,6 +26,13 @@ const CONTENT_TYPES = {
 const feedbackGuideline =
   "Sideshow tool results may include userFeedback from browser comments; treat it as user instruction and respond or update the surface.";
 
+const SESSION_REMEMBERING_TOOLS = new Set([
+  "sideshow_publish_surface",
+  "sideshow_update_surface",
+  "sideshow_reply_to_user",
+  "sideshow_upload_asset",
+]);
+
 const partSchema = {
   type: "object",
   properties: {
@@ -102,6 +109,10 @@ function baseUrl() {
 
 function agentName() {
   return process.env.SIDESHOW_AGENT || "pi";
+}
+
+function showTuiStatus() {
+  return process.env.SIDESHOW_TUI_STATUS !== "0";
 }
 
 function authHeaders(extra = {}) {
@@ -182,8 +193,17 @@ async function requestText(path) {
   return text;
 }
 
-function rememberSession(state, sessionId) {
-  if (typeof sessionId === "string" && sessionId) state.sessionId = sessionId;
+function updateTuiStatus(state, ctx) {
+  ctx.ui.setStatus(
+    "sideshow",
+    showTuiStatus() && state.sessionId ? `sideshow ${state.sessionId}` : undefined,
+  );
+}
+
+function rememberSession(state, sessionId, ctx) {
+  if (typeof sessionId !== "string" || !sessionId) return;
+  state.sessionId = sessionId;
+  updateTuiStatus(state, ctx);
 }
 
 function urlForSurface(surfaceId) {
@@ -363,7 +383,7 @@ function reconstructSession(ctx) {
   for (const entry of ctx.sessionManager.getBranch()) {
     const message = entry?.type === "message" ? entry.message : undefined;
     if (message?.role !== "toolResult") continue;
-    if (!String(message.toolName ?? "").startsWith("sideshow_")) continue;
+    if (!SESSION_REMEMBERING_TOOLS.has(message.toolName)) continue;
     const details = message.details;
     if (details && typeof details.sessionId === "string") sessionId = details.sessionId;
     if (details?.surface && typeof details.surface.sessionId === "string")
@@ -377,15 +397,13 @@ function reconstructSession(ctx) {
 export default function sideshowExtension(pi) {
   const state = { sessionId: process.env.SIDESHOW_SESSION || undefined };
 
-  pi.on("session_start", (_event, ctx) => {
+  const restoreSession = (ctx) => {
     state.sessionId = reconstructSession(ctx);
-    ctx.ui.setStatus(
-      "sideshow",
-      state.sessionId
-        ? `sideshow ${state.sessionId}`
-        : `sideshow ${baseUrl().replace(/^https?:\/\//, "")}`,
-    );
-  });
+    updateTuiStatus(state, ctx);
+  };
+
+  pi.on("session_start", (_event, ctx) => restoreSession(ctx));
+  pi.on("session_tree", (_event, ctx) => restoreSession(ctx));
 
   pi.on("turn_end", async (_event, ctx) => {
     if (!state.sessionId) return;
@@ -403,7 +421,7 @@ export default function sideshowExtension(pi) {
       const command = args.trim();
       if (command === "reset") {
         state.sessionId = process.env.SIDESHOW_SESSION || undefined;
-        ctx.ui.setStatus("sideshow", `sideshow ${baseUrl().replace(/^https?:\/\//, "")}`);
+        updateTuiStatus(state, ctx);
         ctx.ui.notify("Reset remembered sideshow session", "info");
         return;
       }
@@ -498,7 +516,7 @@ export default function sideshowExtension(pi) {
         method: "POST",
         body: JSON.stringify(body),
       });
-      rememberSession(state, surface.sessionId);
+      rememberSession(state, surface.sessionId, ctx);
       const url = urlForSurface(surface.id);
       return {
         content: [
@@ -531,13 +549,13 @@ export default function sideshowExtension(pi) {
       },
       required: ["id"],
     },
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const body = { title: params.title, parts: params.parts };
       const surface = await requestJson(`/api/surfaces/${encodeURIComponent(params.id)}`, {
         method: "PUT",
         body: JSON.stringify(body),
       });
-      rememberSession(state, surface.sessionId);
+      rememberSession(state, surface.sessionId, ctx);
       const url = urlForSurface(surface.id);
       return {
         content: [
@@ -614,7 +632,7 @@ export default function sideshowExtension(pi) {
       },
       required: ["message"],
     },
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const body = {
         text: params.message,
         surface: params.surfaceId,
@@ -625,7 +643,7 @@ export default function sideshowExtension(pi) {
         method: "POST",
         body: JSON.stringify(body),
       });
-      rememberSession(state, comment.sessionId);
+      rememberSession(state, comment.sessionId, ctx);
       return {
         content: [
           {
@@ -764,7 +782,7 @@ export default function sideshowExtension(pi) {
           body: JSON.stringify({ agent: agentName(), title: params.sessionTitle, cwd: ctx.cwd }),
         });
         session = created.id;
-        rememberSession(state, session);
+        rememberSession(state, session, ctx);
       }
 
       const query = new URLSearchParams();
@@ -778,7 +796,7 @@ export default function sideshowExtension(pi) {
         headers: { "content-type": contentType },
         body: bytes,
       });
-      rememberSession(state, asset.sessionId);
+      rememberSession(state, asset.sessionId, ctx);
       return {
         content: [
           {

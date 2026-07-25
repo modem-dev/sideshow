@@ -140,7 +140,7 @@
   "packageManager": "npm@11.17.0",
   "pi": {
     "extensions": [
-      "./extensions"
+      "./extensions/sideshow.js"
     ],
     "skills": [
       "./skills"
