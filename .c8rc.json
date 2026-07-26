@@ -1,0 +1,19 @@
+{
+  "all": true,
+  "include": [
+    "bin/**/*.js",
+    "extensions/**/*.js",
+    "mcp/**/*.ts",
+    "server/**/*.ts",
+    "workers/public.ts",
+    "workers/screenshot.ts"
+  ],
+  "reporter": ["text", "json-summary"],
+  "reports-dir": "coverage/node",
+  "temp-directory": "coverage/node/tmp",
+  "check-coverage": true,
+  "statements": 85.1,
+  "branches": 83.3,
+  "functions": 94.3,
+  "lines": 85.1
+}

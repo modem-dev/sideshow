@@ -180,7 +180,9 @@ consciously, not as a side effect):
 ## Validation
 
 ```sh
-npm test             # unit/API + store contract (node --test)
+npm test             # Node unit/API/store tests + viewer unit tests
+npm run coverage     # all-source Node/Pi + viewer unit reports and floors
+npm run test:worker  # real local workerd + Durable Object integration
 npm run typecheck    # three tsc programs: node + workers + viewer
 npm run lint         # oxlint, warnings are errors
 npm run format:check # oxfmt
@@ -189,12 +191,22 @@ npm run test:e2e     # Playwright, chromium + webkit (separate CI job);
                      # builds the viewer first via e2e/globalSetup.ts
 ```
 
-The first five must pass before committing; e2e should pass before merge for
+The first seven must pass before committing; e2e should pass before merge for
 viewer/rendering changes. CI also gates PRs on changeset status and smoke-tests
 the packed CLI. Pre-commit formats staged files (`npm run prepare` after a fresh clone).
 
 Testing notes:
 
+- Coverage is deliberately split by runtime. c8 uses `--all` for every shipped
+  Node/Pi source under `bin/`, `extensions/`, `mcp/`, and `server/`, plus the
+  Node-testable Worker exports/helpers; Vitest reports every executable
+  `viewer/src/` TypeScript/TSX file, including untested TSX. Do not combine those
+  percentages. `workers/index.ts`
+  runs in workerd (`npm run test:worker`) and browser behavior runs in Playwright;
+  both are required behavioral gates, not falsely attributed to Node coverage.
+  Coverage floors pin the honest baselines. Never lower one merely to make CI
+  green or hide shipped source to preserve a headline number; a reviewed reset is
+  allowed when the source inventory or instrumentation intentionally changes.
 - `runStoreContract()` runs the same suite against every store. SqlStore runs
   on `createSqliteStorage()` (`:memory:`), the same `node:sqlite` adapter the
   local server uses on disk — so the contract covers the real Node SQLite path.

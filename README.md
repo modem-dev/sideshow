@@ -178,7 +178,9 @@ browser, so the action is shown but disabled.
 
 ```sh
 npm run dev          # server with watch + viewer watch build
-npm test             # node --test (unit/API + store contract)
+npm test             # Node unit/API/store tests + viewer unit tests
+npm run coverage     # separate all-source Node and viewer-TS coverage reports
+npm run test:worker  # real local workerd + Durable Object integration
 npm run typecheck    # three tsc programs: node + workers + viewer
 npm run lint         # oxlint
 npm run format       # oxfmt
@@ -187,7 +189,10 @@ npm run format       # oxfmt
 The server and CLI have no build step — TypeScript runs directly on Node via
 native type-stripping, and the npm package ships compiled JS built on prepack.
 The viewer (`viewer/src/`, Solid) is Vite-built into a single self-contained
-`viewer/dist/index.html` (`npm run build:viewer`). See
+`viewer/dist/index.html` (`npm run build:viewer`). Coverage is reported separately
+for Node/Pi code and viewer unit tests rather than combining incompatible runtimes;
+the Worker entrypoint is exercised in `workerd` and browser behavior in Playwright,
+neither of which is folded into a misleading Node percentage. See
 [AGENTS.md](AGENTS.md) for the full architecture and rules.
 
 ## Sponsor
