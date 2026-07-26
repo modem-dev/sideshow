@@ -18,7 +18,10 @@ const SELF = fileURLToPath(import.meta.url);
 const HELP = `sideshow — a live visual surface for terminal coding agents
 
 usage:
-  sideshow serve [--port N] [--open]      start the surface (API + viewer)
+  sideshow serve [--port N] [--host H] [--open]
+                                          start the surface (API + viewer)
+      --host <addr>     bind to one address (e.g. 127.0.0.1); default is every
+                        interface
   sideshow publish <file|-> [options]     publish an HTML post (one html surface)
       --title <t>       post title
       --md <file|->     add a markdown surface (prose) — repeatable
@@ -146,6 +149,8 @@ environment:
   SIDESHOW_URL      server base URL (default http://localhost:8228; set to a
                     deployed instance, e.g. https://sideshow.you.workers.dev)
   SIDESHOW_TOKEN    bearer token for a deployed instance
+  SIDESHOW_HOST     address serve binds to (default: every interface). Set to
+                    127.0.0.1 to keep the server off the network entirely
   SIDESHOW_SESSION  fixed session id (overrides auto-detection)
   SIDESHOW_AGENT    agent name used when creating sessions
 `;
@@ -887,14 +892,21 @@ function readStdin() {
 const commands = {
   async serve() {
     const { values: flags } = parse({
-      options: { port: { type: "string" }, open: { type: "boolean" } },
+      options: {
+        port: { type: "string" },
+        host: { type: "string" },
+        open: { type: "boolean" },
+      },
     });
     const port = flags.port ?? process.env.PORT ?? "8228";
+    const host = flags.host ?? process.env.SIDESHOW_HOST;
     const child = spawn(process.execPath, [entrypoint("server", "index.ts")], {
       stdio: "inherit",
-      env: { ...process.env, PORT: port },
+      env: { ...process.env, PORT: port, ...(host ? { SIDESHOW_HOST: host } : {}) },
     });
     if (flags.open) {
+      // Always open localhost: a wildcard or loopback bind is reachable there,
+      // and it is the only address guaranteed to resolve on this machine.
       const url = `http://localhost:${port}`;
       const { opener, openerArgs } =
         process.platform === "darwin"

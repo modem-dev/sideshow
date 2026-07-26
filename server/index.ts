@@ -83,7 +83,20 @@ const app = createApp({
 });
 
 const port = Number(process.env.PORT ?? 8228);
+// SIDESHOW_HOST (or `serve --host`) restricts the listener to one address.
+// Unset keeps the previous behaviour — node's default, every interface — because
+// that is what a container or a LAN-shared instance needs. Set it to 127.0.0.1
+// when the server shares a host with anything you don't want reaching it; that
+// is stronger than the token, which is a single shared secret by design.
+const hostname = process.env.SIDESHOW_HOST || undefined;
 
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`sideshow listening on http://localhost:${info.port}`);
+serve({ fetch: app.fetch, port, hostname }, (info) => {
+  // Report the address actually bound. Printing "localhost" unconditionally hid
+  // the fact that the default listens on every interface.
+  const shown = hostname ?? "localhost";
+  const authority = shown.includes(":") ? `[${shown}]` : shown;
+  console.log(
+    `sideshow listening on http://${authority}:${info.port}` +
+      (hostname ? "" : " (all interfaces — set SIDESHOW_HOST to restrict)"),
+  );
 });
