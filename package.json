@@ -71,6 +71,7 @@
     "build:embed": "vite build -c viewer/vite.embed.config.ts",
     "mcp": "node mcp/server.ts",
     "test": "node --test 'test/**/*.test.ts'",
+    "test:worker": "npm run build:viewer && node --test test/workerIntegration.integration.ts",
     "coverage": "node --test --experimental-test-coverage 'test/**/*.test.ts'",
     "test:e2e": "playwright test",
     "format": "oxfmt --write .",
