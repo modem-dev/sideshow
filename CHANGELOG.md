@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.12.0
+
+### Minor Changes
+
+- a11db09: Add fullscreen Mermaid diagrams and guidance for vertical, card-friendly flowcharts.
+- 9e9eb90: Add `send_test_post` — a built-in welcome/test post for newly connected agents. One no-arg call publishes a fixed card (shipped with sideshow, themed for light/dark) that confirms the connection works and shows the user example prompts to try. Available on all three tiers: the `send_test_post` MCP tool (HTTP and stdio), `POST /api/test-post`, and `sideshow test-post`. Idempotent — if the welcome card is already on the board it is returned (`alreadySent: true`), never duplicated. The MCP initialize instructions now nudge freshly connected agents toward it.
+
+### Patch Changes
+
+- d6e56e0: Port the cleaner connect-an-agent onboarding screen from sideshow-cloud to the self-hosted viewer.
+- ef445fd: Show a pulsing sidecar dot next to the version pill when a post revision was updated recently.
+- b4d6a42: Harden the trusted viewer against clickjacking and referrer leaks. The viewer
+  HTML (the app origin, shared with the authenticated API and the comment→agent
+  channel) now sends `Content-Security-Policy: frame-ancestors 'self'`, refusing
+  cross-origin framing; the sandboxed `/s/:id` surface documents are unaffected
+  and keep their own `sandbox` CSP. External links the viewer opens — the
+  `openLink` bridge's `window.open`, the release-notes markdown links, and the
+  image/trace/footer anchors — now use `rel="noopener noreferrer"` (and the
+  `noreferrer` window feature), so the current URL (which can carry the `?key=`
+  deploy token) never rides an outbound `Referer`.
+- bf0dd67: Fix blank page when opening a post permalink (`/p/:id`) on a
+  `publicRead="session"` workspace without authentication. The SSE connection
+  fired before the viewer discovered the post's session ID, hitting `/api/events`
+  without the required `?session=` param and getting a 401. The connection is now
+  deferred until after the initial post fetch resolves.
+- 32ed841: Add reusable skeleton loading states for viewer streams and lists.
+- 5d2bd91: Reduce MCP instruction and tool-schema context overhead while preserving every canonical and deprecated tool.
+
 ## 0.11.1
 
 ### Patch Changes
