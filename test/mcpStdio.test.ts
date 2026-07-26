@@ -98,7 +98,7 @@ async function connectMcp(url: string, overrides: Record<string, string> = {}) {
 
   const client = new Client({ name: "sideshow-stdio-test", version: "1.0.0" });
   try {
-    await client.connect(transport);
+    await client.connect(transport, { timeout: 5_000 });
   } catch (error) {
     await transport.close();
     throw new Error(`failed to connect to stdio MCP server: ${stderr}`, { cause: error });
@@ -150,6 +150,20 @@ const json = (body: unknown, method = "POST"): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+type FeedbackResult = { userFeedback?: Array<{ text: string; postId: string }> };
+
+async function queueFeedback(url: string, postId: string, text: string) {
+  await fetchJson(url, "/api/comments", json({ surface: postId, text, author: "user" }));
+}
+
+function assertFeedback(result: FeedbackResult, text: string, postId: string) {
+  assert.deepEqual(
+    result.userFeedback?.map((feedback) => feedback.text),
+    [text],
+  );
+  assert.equal(result.userFeedback?.[0].postId, postId);
+}
+
 test(
   "stdio MCP exercises the complete tool catalog against a real Sideshow server",
   { timeout: 15_000 },
@@ -172,8 +186,8 @@ test(
 
       const listed = await mcp.client.listTools();
       assert.deepEqual(
-        listed.tools.map((tool) => tool.name),
-        HTTP_MCP_TOOLS.map((tool) => tool.name),
+        listed.tools.map((tool) => tool.name).sort(),
+        HTTP_MCP_TOOLS.map((tool) => tool.name).sort(),
       );
       assert.deepEqual(await callJson(mcp.client, "list_posts"), []);
       assert.deepEqual(await callJson(mcp.client, "list_surfaces"), []);
@@ -262,19 +276,23 @@ test(
       assert.equal(sessions[0].agent, "stdio-agent");
     });
 
-    await t.test("per-surface tools add, edit, reorder, and remove by stable id", async () => {
-      let updated = await callJson<PostResult>(mcp.client, "add_surface", {
+    await t.test("per-surface writes preserve feedback while mutating by stable id", async () => {
+      await queueFeedback(app.url, post.id, "feedback before add");
+      let updated = await callJson<PostResult & FeedbackResult>(mcp.client, "add_surface", {
         postId: post.id,
         surface: { kind: "terminal", text: "ready\n", title: "build" },
       });
+      assertFeedback(updated, "feedback before add", post.id);
       assert.equal(updated.surfaces.length, 3);
       addedSurfaceId = updated.surfaces[2].id;
 
-      updated = await callJson<PostResult>(mcp.client, "edit_surface", {
+      await queueFeedback(app.url, post.id, "feedback before edit");
+      updated = await callJson<PostResult & FeedbackResult>(mcp.client, "edit_surface", {
         postId: post.id,
         target: addedSurfaceId,
         content: "done\n",
       });
+      assertFeedback(updated, "feedback before edit", post.id);
       assert.equal(
         updated.surfaces.find((surface) => surface.id === addedSurfaceId)?.kind,
         "terminal",
@@ -286,19 +304,23 @@ test(
       );
 
       const originalIds = updated.surfaces.map((surface) => surface.id);
-      updated = await callJson<PostResult>(mcp.client, "reorder_surfaces", {
+      await queueFeedback(app.url, post.id, "feedback before reorder");
+      updated = await callJson<PostResult & FeedbackResult>(mcp.client, "reorder_surfaces", {
         postId: post.id,
         order: [addedSurfaceId, originalIds[0], originalIds[1]],
       });
+      assertFeedback(updated, "feedback before reorder", post.id);
       assert.deepEqual(
         updated.surfaces.map((surface) => surface.id),
         [addedSurfaceId, originalIds[0], originalIds[1]],
       );
 
-      updated = await callJson<PostResult>(mcp.client, "remove_surface", {
+      await queueFeedback(app.url, post.id, "feedback before remove");
+      updated = await callJson<PostResult & FeedbackResult>(mcp.client, "remove_surface", {
         postId: post.id,
         target: originalIds[1],
       });
+      assertFeedback(updated, "feedback before remove", post.id);
       assert.deepEqual(
         updated.surfaces.map((surface) => surface.id),
         [addedSurfaceId, originalIds[0]],
@@ -308,37 +330,45 @@ test(
     await t.test(
       "deprecated aliases remain callable and stay in the conversation session",
       async () => {
-        let legacy = await callJson<PostResult>(mcp.client, "publish_surface", {
+        await queueFeedback(app.url, post.id, "feedback before publish_surface");
+        let legacy = await callJson<PostResult & FeedbackResult>(mcp.client, "publish_surface", {
           title: "legacy surface",
           sessionTitle: "ignored after first publish",
           parts: [{ kind: "markdown", markdown: "legacy" }],
         });
+        assertFeedback(legacy, "feedback before publish_surface", post.id);
         assert.equal(legacy.sessionId, post.sessionId);
 
-        legacy = await callJson<PostResult>(mcp.client, "update_surface", {
+        await queueFeedback(app.url, post.id, "feedback before update_surface");
+        legacy = await callJson<PostResult & FeedbackResult>(mcp.client, "update_surface", {
           id: legacy.id,
           title: "legacy surface updated",
           parts: [{ kind: "terminal", text: "legacy updated" }],
         });
+        assertFeedback(legacy, "feedback before update_surface", post.id);
         assert.equal(legacy.title, "legacy surface updated");
         assert.equal(legacy.surfaces[0].kind, "terminal");
         const legacyDetail = await callJson<PostResult>(mcp.client, "get_post", { id: legacy.id });
         assert.equal(legacyDetail.surfaces[0].text, "legacy updated");
 
-        let snippet = await callJson<PostResult>(mcp.client, "publish_snippet", {
+        await queueFeedback(app.url, post.id, "feedback before publish_snippet");
+        let snippet = await callJson<PostResult & FeedbackResult>(mcp.client, "publish_snippet", {
           title: "legacy snippet",
           html: "<strong>v1</strong>",
           kits: ["issues"],
         });
+        assertFeedback(snippet, "feedback before publish_snippet", post.id);
         assert.equal(snippet.sessionId, post.sessionId);
         assert.equal(snippet.surfaces[0].kind, "html");
 
-        snippet = await callJson<PostResult>(mcp.client, "update_snippet", {
+        await queueFeedback(app.url, post.id, "feedback before update_snippet");
+        snippet = await callJson<PostResult & FeedbackResult>(mcp.client, "update_snippet", {
           id: snippet.id,
           title: "legacy snippet updated",
           html: "<strong>v2</strong>",
           kits: ["issues"],
         });
+        assertFeedback(snippet, "feedback before update_snippet", post.id);
         assert.equal(snippet.title, "legacy snippet updated");
         assert.equal(snippet.version, 2);
         const snippetDetail = await callJson<PostResult>(mcp.client, "get_post", {
@@ -433,7 +463,7 @@ test(
           comments: Array<{ author: string; text: string }>;
         }>(app.url, `/api/comments?surface=${post.id}`);
         assert.deepEqual(
-          comments.map(({ author, text }) => ({ author, text })),
+          comments.slice(-4).map(({ author, text }) => ({ author, text })),
           [
             { author: "user", text: "Piggyback on the next write" },
             { author: "user", text: "Please tighten this" },
@@ -470,6 +500,53 @@ test(
   },
 );
 
+test(
+  "stdio MCP wait and upload tools can create the lazy conversation session",
+  { timeout: 15_000 },
+  async (t) => {
+    const app = await serveApp();
+    const connections: Array<Awaited<ReturnType<typeof connectMcp>>> = [];
+    t.after(async () => {
+      for (const connection of connections.reverse()) await connection.close();
+      await app.close();
+    });
+
+    const waitClient = await connectMcp(app.url, { SIDESHOW_AGENT: "wait-first-agent" });
+    connections.push(waitClient);
+    const empty = await callJson<{ comments: unknown[] }>(waitClient.client, "wait_for_feedback", {
+      timeoutSeconds: 0,
+    });
+    assert.deepEqual(empty.comments, []);
+    const afterWait = await fetchJson<SessionRow[]>(app.url, "/api/sessions");
+    assert.equal(afterWait.length, 1);
+    assert.equal(afterWait[0].agent, "wait-first-agent");
+    const waitPost = await callJson<PostResult>(waitClient.client, "publish_post", {
+      title: "after wait",
+      surfaces: [{ kind: "markdown", markdown: "same session" }],
+    });
+    assert.equal(waitPost.sessionId, afterWait[0].id);
+
+    const uploadClient = await connectMcp(app.url, { SIDESHOW_AGENT: "upload-first-agent" });
+    connections.push(uploadClient);
+    const asset = await callJson<{ sessionId: string }>(uploadClient.client, "upload_asset", {
+      data: Buffer.from("upload first").toString("base64"),
+      contentType: "text/plain",
+    });
+    const uploadPost = await callJson<PostResult>(uploadClient.client, "publish_post", {
+      title: "after upload",
+      surfaces: [{ kind: "markdown", markdown: "same session" }],
+    });
+    assert.equal(uploadPost.sessionId, asset.sessionId);
+
+    const sessions = await fetchJson<SessionRow[]>(app.url, "/api/sessions");
+    assert.equal(sessions.length, 2);
+    assert.equal(
+      sessions.find((session) => session.id === asset.sessionId)?.agent,
+      "upload-first-agent",
+    );
+  },
+);
+
 test("stdio MCP honors a preconfigured conversation session", { timeout: 15_000 }, async (t) => {
   const app = await serveApp();
   const connections: Array<Awaited<ReturnType<typeof connectMcp>>> = [];
@@ -487,11 +564,22 @@ test("stdio MCP honors a preconfigured conversation session", { timeout: 15_000 
   connections.push(mcp);
   assert.deepEqual(await callJson(mcp.client, "list_posts"), []);
 
-  const post = await callJson<PostResult>(mcp.client, "publish_post", {
+  const seed = await fetchJson<PostResult>(
+    app.url,
+    "/api/posts",
+    json({
+      session: session.id,
+      title: "feedback seed",
+      surfaces: [{ kind: "markdown", markdown: "seed" }],
+    }),
+  );
+  await queueFeedback(app.url, seed.id, "feedback before publish_post");
+  const post = await callJson<PostResult & FeedbackResult>(mcp.client, "publish_post", {
     title: "fixed-session post",
     sessionTitle: "must not replace the existing title",
     surfaces: [{ kind: "markdown", markdown: "fixed" }],
   });
+  assertFeedback(post, "feedback before publish_post", seed.id);
   assert.equal(post.sessionId, session.id);
 
   const asset = await callJson<{ sessionId: string }>(mcp.client, "upload_asset", {
@@ -514,7 +602,7 @@ test("stdio MCP honors a preconfigured conversation session", { timeout: 15_000 
     feedback.comments.map((comment) => comment.text),
     ["fixed feedback"],
   );
-  assert.equal((await callJson<unknown[]>(mcp.client, "list_posts")).length, 1);
+  assert.equal((await callJson<unknown[]>(mcp.client, "list_posts")).length, 2);
 
   const sessions = await fetchJson<SessionRow[]>(app.url, "/api/sessions");
   assert.equal(sessions.length, 1);
