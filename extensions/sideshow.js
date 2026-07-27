@@ -31,7 +31,7 @@ const partSchema = {
   properties: {
     kind: {
       type: "string",
-      enum: ["html", "markdown", "mermaid", "diff", "image", "trace", "terminal"],
+      enum: ["html", "markdown", "mermaid", "diff", "image", "terminal", "json", "code"],
     },
     html: {
       type: "string",
@@ -61,30 +61,20 @@ const partSchema = {
     layout: { type: "string", enum: ["unified", "split"] },
     assetId: {
       type: "string",
-      description: "image/trace part: id returned by sideshow_upload_asset",
+      description: "image part: id returned by sideshow_upload_asset",
     },
     alt: { type: "string", description: "image alt text" },
     caption: { type: "string", description: "image caption" },
-    title: { type: "string", description: "trace or terminal part title" },
-    steps: {
-      type: "array",
-      description: "trace part: ordered timeline steps",
-      items: {
-        type: "object",
-        properties: {
-          label: { type: "string" },
-          kind: { type: "string" },
-          detail: { type: "string" },
-          ts: { type: "string" },
-        },
-        required: ["label"],
-      },
-    },
+    title: { type: "string", description: "terminal part title" },
     text: {
       type: "string",
       description: "terminal part: raw terminal output; ANSI SGR colors supported",
     },
     cols: { type: "number", description: "terminal render width hint" },
+    data: { description: "json part: any JSON-compatible value" },
+    code: { type: "string", description: "code part: source code to syntax-highlight" },
+    language: { type: "string", description: "code part: language id such as ts or python" },
+    lineStart: { type: "number", description: "code part: 1-based starting line number" },
   },
   required: ["kind"],
 };
@@ -92,7 +82,7 @@ const partSchema = {
 const partsSchema = {
   type: "array",
   description:
-    "Ordered sideshow surface parts. Combine html, markdown, mermaid, diff, image, trace, and terminal parts in one card.",
+    "Ordered sideshow surface parts. Combine html, markdown, mermaid, diff, image, terminal, json, and code parts in one card.",
   items: partSchema,
 };
 
@@ -398,32 +388,13 @@ export default function sideshowExtension(pi) {
 
   pi.registerCommand("sideshow", {
     description:
-      "Show sideshow extension status, reset its remembered session, or sync trace: /sideshow [reset|trace-sync]",
+      "Show sideshow extension status or reset its remembered session: /sideshow [reset]",
     handler: async (args, ctx) => {
       const command = args.trim();
       if (command === "reset") {
         state.sessionId = process.env.SIDESHOW_SESSION || undefined;
         ctx.ui.setStatus("sideshow", `sideshow ${baseUrl().replace(/^https?:\/\//, "")}`);
         ctx.ui.notify("Reset remembered sideshow session", "info");
-        return;
-      }
-      if (command === "trace-sync") {
-        if (!state.sessionId) {
-          ctx.ui.notify(
-            "No sideshow session yet. Publish first or set SIDESHOW_SESSION.",
-            "warning",
-          );
-          return;
-        }
-        try {
-          const result = await syncPiTrace(state, ctx);
-          ctx.ui.notify(
-            `Synced ${result.sent ?? 0} trace step(s) to sideshow session ${state.sessionId}`,
-            "info",
-          );
-        } catch (error) {
-          ctx.ui.notify(`Sideshow trace sync failed: ${error.message}`, "error");
-        }
         return;
       }
       ctx.ui.notify(
@@ -456,9 +427,9 @@ export default function sideshowExtension(pi) {
     name: "sideshow_publish_surface",
     label: "Sideshow Publish",
     description:
-      "Publish a live sideshow surface to the user's browser. A surface is an ordered list of parts: html, markdown, diff, image, trace, or terminal. Returns surfaceId, sessionId, and URL. On first publish, set sessionTitle to the task name. If userFeedback appears, treat it as user instruction.",
+      "Publish a live sideshow surface to the user's browser. A surface is an ordered list of parts: html, markdown, mermaid, diff, image, terminal, json, or code. Returns surfaceId, sessionId, and URL. On first publish, set sessionTitle to the task name. If userFeedback appears, treat it as user instruction.",
     promptSnippet:
-      "Publish diagrams, UI sketches, markdown, diffs, terminal output, images, or traces to sideshow.",
+      "Publish diagrams, UI sketches, markdown, diffs, terminal output, images, JSON trees, or code to sideshow.",
     promptGuidelines: [
       "Use sideshow_publish_surface when a visual preview, diagram, UI sketch, rendered markdown, terminal output, or diff would help the user.",
       "Pass sessionTitle on the first sideshow_publish_surface call and name the user's task, not the tool.",
@@ -595,7 +566,7 @@ export default function sideshowExtension(pi) {
     name: "sideshow_reply_to_user",
     label: "Sideshow Reply",
     description:
-      "Post a short agent reply into a sideshow surface thread or session thread. Use it to acknowledge browser feedback. If userFeedback appears, treat it as user instruction.",
+      "Post a short agent reply into a sideshow surface thread. Use it to acknowledge browser feedback. If userFeedback appears, treat it as user instruction.",
     promptSnippet: "Reply to the user in a sideshow comment thread.",
     promptGuidelines: [
       "Use sideshow_reply_to_user for brief acknowledgements in the browser thread; use sideshow_update_surface for substantive revisions.",
@@ -605,20 +576,15 @@ export default function sideshowExtension(pi) {
       type: "object",
       properties: {
         surfaceId: { type: "string", description: "Surface thread to reply under" },
-        session: {
-          type: "string",
-          description: "Session thread to reply in; defaults to remembered session if no surfaceId",
-        },
         message: { type: "string", description: "Plain-text reply" },
         author: { type: "string", description: 'Agent name; defaults to SIDESHOW_AGENT or "pi"' },
       },
-      required: ["message"],
+      required: ["surfaceId", "message"],
     },
     async execute(_toolCallId, params) {
       const body = {
         text: params.message,
         surface: params.surfaceId,
-        session: params.surfaceId ? undefined : (params.session ?? state.sessionId),
         author: params.author ?? agentName(),
       };
       const comment = await requestJson("/api/comments", {
@@ -626,11 +592,12 @@ export default function sideshowExtension(pi) {
         body: JSON.stringify(body),
       });
       rememberSession(state, comment.sessionId);
+      const surfaceId = comment.postId ?? comment.surfaceId;
       return {
         content: [
           {
             type: "text",
-            text: `Posted sideshow reply${comment.surfaceId ? ` on surface ${comment.surfaceId}` : ""}.${feedbackSummary(comment.userFeedback)}`,
+            text: `Posted sideshow reply${surfaceId ? ` on surface ${surfaceId}` : ""}.${feedbackSummary(comment.userFeedback)}`,
           },
         ],
         details: { ...comment, baseUrl: baseUrl() },
@@ -711,10 +678,10 @@ export default function sideshowExtension(pi) {
     name: "sideshow_upload_asset",
     label: "Sideshow Upload",
     description:
-      "Upload an asset to sideshow and get an assetId/URL. Use image assets in surface parts as {kind:'image', assetId}; use trace assets as {kind:'trace', assetId}; or embed the URL in an html part.",
-    promptSnippet: "Upload an image, trace, or file asset for use in sideshow surfaces.",
+      "Upload an asset to sideshow and get an assetId/URL. Use image assets in surface parts as {kind:'image', assetId}, or embed the URL in an html part.",
+    promptSnippet: "Upload an image or file asset for use in sideshow surfaces.",
     promptGuidelines: [
-      "Use sideshow_upload_asset before referencing local images or large trace files in sideshow_publish_surface parts.",
+      "Use sideshow_upload_asset before referencing local images or files in sideshow_publish_surface parts.",
     ],
     parameters: {
       type: "object",
@@ -723,7 +690,7 @@ export default function sideshowExtension(pi) {
         data: { type: "string", description: "Base64 bytes to upload when path is not provided" },
         contentType: { type: "string", description: "MIME type; inferred from path when omitted" },
         filename: { type: "string", description: "Original filename shown for downloads" },
-        kind: { type: "string", enum: ["image", "trace", "file"], description: "Asset kind" },
+        kind: { type: "string", enum: ["image", "file"], description: "Asset kind" },
         session: {
           type: "string",
           description: "Session id; defaults to remembered session or creates one",

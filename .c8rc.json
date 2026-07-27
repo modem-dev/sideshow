@@ -12,8 +12,8 @@
   "reports-dir": "coverage/node",
   "temp-directory": "coverage/node/tmp",
   "check-coverage": true,
-  "statements": 85.1,
-  "branches": 83.3,
-  "functions": 94.3,
-  "lines": 85.1
+  "statements": 92.9,
+  "branches": 83.6,
+  "functions": 95.1,
+  "lines": 92.9
 }
