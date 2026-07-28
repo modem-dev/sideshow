@@ -2320,7 +2320,7 @@ test("GET /api/sessions/:id/posts lists lean surfaces with ids and omitted html 
   assert.deepEqual(list[0].parts, list[0].surfaces, "legacy parts aliases surfaces");
 });
 
-test("GET /api/sessions/:id/posts?hydrate=1 returns full post details in one response", async () => {
+test("GET /api/sessions/:id/posts?hydrate=1 returns every post the viewer needs in one response", async () => {
   const app = makeApp();
   const created = (await (
     await app.request(
@@ -2338,10 +2338,66 @@ test("GET /api/sessions/:id/posts?hydrate=1 returns full post details in one res
   ).json()) as any[];
   assert.equal(list.length, 1);
   assert.equal(list[0].id, created.id);
-  assert.equal(list[0].surfaces[0].html, "<p>new</p>");
+  assert.equal(list[0].title, "Hydrated v2");
+  assert.equal(list[0].version, 2);
+  // The frame ref survives — it's what /s/:id?part=N is built from.
+  assert.equal(list[0].surfaces[0].kind, "html");
   assert.equal(list[0].surfaces[0].index, 0);
-  assert.equal(list[0].history[0].surfaces[0].html, "<p>heavy</p>");
+  // History is present (the viewer keys "hydrated" off it) and long enough to
+  // size the version dropdown, but carries no bodies.
+  assert.equal(list[0].history.length, 1);
   assert.equal(list[0].history[0].surfaces[0].index, 0);
+  assert.equal(list[0].history[0].surfaces[0].kind, "html");
+});
+
+test("hydrated posts omit sandboxed bodies the viewer never reads, and keep native ones", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Mixed",
+        surfaces: [
+          { kind: "html", html: "<p>heavy</p>" },
+          { kind: "markdown", markdown: "# heavy" },
+          { kind: "terminal", text: "heavy" },
+          { kind: "json", data: { keep: true } },
+        ],
+      }),
+    )
+  ).json()) as any;
+  await app.request(`/api/posts/${created.id}`, {
+    ...json({ title: "Mixed v2", surfaces: [{ kind: "diff", patch: "--- a\n+++ b\n" }] }),
+    method: "PUT",
+  });
+
+  const [post] = (await (
+    await app.request(`/api/sessions/${created.sessionId}/posts?hydrate=1`)
+  ).json()) as any[];
+
+  // Sandboxed kinds render in an iframe that fetches its own body from
+  // /s/:id?part=N — the content key is absent, not empty.
+  assert.ok(!("patch" in post.surfaces[0]), "diff patch body is absent");
+  // Native kinds render from inline data and must survive intact.
+  const [older] = post.history;
+  assert.ok(!("html" in older.surfaces[0]), "history html body is absent");
+  assert.ok(!("markdown" in older.surfaces[1]), "history markdown body is absent");
+  assert.ok(!("text" in older.surfaces[2]), "history terminal body is absent");
+  assert.ok(!("data" in older.surfaces[3]), "history drops native bodies too");
+
+  // A native surface in the CURRENT version keeps its payload — check via a post
+  // whose latest version holds one.
+  const native = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Native", surfaces: [{ kind: "json", data: { keep: true } }] }),
+    )
+  ).json()) as any;
+  const rows = (await (
+    await app.request(`/api/sessions/${native.sessionId}/posts?hydrate=1`)
+  ).json()) as any[];
+  const nativeRow = rows.find((r) => r.id === native.id);
+  assert.deepEqual(nativeRow.surfaces[0].data, { keep: true });
 });
 
 test("read responses expose derived surface indexes and renumber after edits", async () => {

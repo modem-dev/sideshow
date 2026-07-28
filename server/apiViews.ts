@@ -1,3 +1,4 @@
+import { isSandboxedSurfaceKind, SURFACE_CONTENT_FIELDS } from "./types.ts";
 import type { Comment, CommentAnchor, Post, Session, Surface } from "./types.ts";
 
 export interface Feedback {
@@ -23,6 +24,27 @@ export const fullSurfaceView = (surface: Surface, index: number) => ({ ...surfac
 export const sessionListSurfaceView = (surface: Surface, index: number) =>
   surface.kind === "html" ? surfaceRef(surface, index) : fullSurfaceView(surface, index);
 
+// A sandboxed surface renders as an opaque-origin iframe pointed at
+// /s/:id?part=N, which fetches the body itself — so the viewer builds the frame
+// from the ref alone and never reads the content field. Shipping the body in the
+// session hydrate too made every stream load carry a second, unread copy of every
+// surface, the larger half of the response. Drop just that field; the rest of the
+// surface (id, kits, …) is small and stays. Native kinds (image/trace/json) DO
+// render from inline data, so they keep everything.
+export const hydratedSurfaceView = (surface: Surface, index: number) => {
+  const field = isSandboxedSurfaceKind(surface.kind)
+    ? SURFACE_CONTENT_FIELDS[surface.kind]
+    : undefined;
+  if (!field) return fullSurfaceView(surface, index);
+  // Surface is a union of interfaces, so the content key can't be dropped through
+  // the union type (no implicit index signature). Widen to a bag, delete the one
+  // key, and let the result type stay the bag — the shape is kind-dependent and
+  // this value only ever gets serialized.
+  const view = { ...surface, index } as unknown as Record<string, unknown>;
+  delete view[field];
+  return view;
+};
+
 export const postWriteView = (post: Post) => ({
   id: post.id,
   sessionId: post.sessionId,
@@ -39,6 +61,21 @@ export const postDetailView = (post: Post) => ({
   history: post.history.map((version) => ({
     ...version,
     surfaces: version.surfaces.map(fullSurfaceView),
+  })),
+});
+
+// One session's whole stream, hydrated in a single response (`?hydrate=1`). Same
+// envelope as postDetailView — the viewer identifies a hydrated row by `history`
+// being an array — minus the bodies it never reads. History is here only to size
+// the version dropdown (`history.length`): picking an older version just re-points
+// each iframe at /s/:id?part=N&ver=N, so past surfaces are never rendered from
+// this payload and reduce to refs.
+export const sessionPostHydratedView = (post: Post) => ({
+  ...post,
+  surfaces: post.surfaces.map(hydratedSurfaceView),
+  history: post.history.map((version) => ({
+    ...version,
+    surfaces: version.surfaces.map(surfaceRef),
   })),
 });
 

@@ -8,6 +8,7 @@ import {
   postDetailView,
   postWriteView,
   recentPostRowView,
+  sessionPostHydratedView,
   sessionPostListRowView,
   sessionRowView,
   type Feedback,
@@ -1069,7 +1070,7 @@ export function createApp({
     const posts = await store.listPosts(session.id);
     return c.json(
       c.req.query("hydrate") === "1"
-        ? posts.map(postDetailView)
+        ? posts.map(sessionPostHydratedView)
         : posts.map(sessionPostListRowView),
     );
   };
