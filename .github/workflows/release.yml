@@ -108,16 +108,10 @@ jobs:
         if: github.event_name == 'push'
         run: node scripts/check-release-version.ts "${{ github.ref_name }}"
 
-      - name: Verify npm auth
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm whoami
-
       - name: Publish package
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.npm_tag || ((contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc')) && 'beta' || 'latest') }}
-        run: npm publish --tag "$NPM_TAG" --provenance
+        run: npm publish --tag "$NPM_TAG"
 
   create-github-release:
     name: Create GitHub release
