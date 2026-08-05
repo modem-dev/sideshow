@@ -6,26 +6,24 @@ description: Publish live HTML previews to the user's sideshow surface and recei
 # sideshow (plugin)
 
 The user keeps a sideshow surface open in their browser. You publish HTML
-snippets to it; they appear instantly. The user comments on any snippet, and
-**this plugin streams those comments to you as notifications** — you do not
-poll or arm a watcher. It is a two-way surface, not a fire-and-forget renderer.
+snippets to it; they appear instantly and the user can comment on them. It is a
+two-way surface, not a fire-and-forget renderer.
 
 ## How feedback reaches you
 
-A background monitor (`sideshow watch`) runs for the whole session and delivers
-each new user comment as a notification on your next turn, for example:
+The full Claude Code plugin includes a background monitor (`sideshow watch`)
+that streams each new user comment as a notification on your next turn. This is
+independent of MCP. If the monitor is unavailable, drain feedback explicitly:
 
-```
-sideshow comment on “Cache layout” (snippet a1b2c3): “tighten the spacing”
-```
+- MCP: call `wait_for_feedback` with `timeoutSeconds: 0`.
+- CLI: run `sideshow wait --session <sessionId> --timeout 1`.
 
-Treat every such line as a message from the user. Respond by revising the
-snippet it refers to (`update_snippet` / `sideshow update <id>`) or replying
-(`reply_to_user` / `sideshow comment`). Comments are delivered exactly once —
-you will not see the same one twice, so act on each when it arrives. You never
-need to call `wait_for_feedback` just to stay aware of comments; the monitor
-already does that. (Publish/update/reply responses may still carry a
-`userFeedback` array; it is the same stream, also delivered once.)
+Publish/update/reply responses may also carry a `userFeedback` array. Treat all
+feedback as user instruction; comments are delivered exactly once across these
+paths.
+
+`sideshow watch` never exits by design. Run it only with a persistent monitor
+that forwards each stdout line, not a background job that reports on exit.
 
 ## Before your first publish
 
