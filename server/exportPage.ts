@@ -23,6 +23,7 @@ import {
   SURFACE_FRAME_CLASSES,
 } from "./types.ts";
 import { encodeBase64 } from "./base64.ts";
+import { CARD_CHROME_CSS } from "./cardChrome.ts";
 import { colorSchemeCss, escapeHtml, renderSurfaceDocument } from "./surfacePage.ts";
 import { type Mode, type Theme, themeById, viewerThemeCss } from "./themes.ts";
 
@@ -208,43 +209,40 @@ const SHELL_JS = `
 })();
 `;
 
-// The shell's own chrome — a plain card column echoing the viewer's look, built
-// from the derived theme vars so light/dark tracks the theme. No load-restricting
-// CSP: srcdoc children inherit the parent document's CSP, so a policy here would
-// break the CDN loads html/mermaid frames need.
+// The shell's own chrome. The card column itself (container/head/title/meta) is
+// the SAME rules the live viewer injects — CARD_CHROME_CSS (server/cardChrome.ts)
+// over the derived theme vars — so the saved file tracks the real look instead of
+// drifting behind a copy; the rules below only adapt it to a static document and
+// style the export-only bits. No load-restricting CSP: srcdoc children inherit
+// the parent document's CSP, so a policy here would break the CDN loads
+// html/mermaid frames need.
 function shellCss(theme: Theme, mode?: Mode): string {
   return `
 ${viewerThemeCss(theme, mode)}
 ${colorSchemeCss(mode)}
+${CARD_CHROME_CSS}
 * { box-sizing: border-box; }
 body {
   margin: 0; padding: 24px 16px 64px;
   background: var(--bg); color: var(--text);
-  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 .ss-shell { max-width: 820px; margin: 0 auto; }
 .ss-header { margin: 0 0 24px; }
 .ss-header h1 { font-size: 1.4em; margin: 0 0 4px; font-weight: 600; }
 .ss-header .ss-sub { color: var(--muted); font-size: 0.85em; }
-.ss-card {
-  background: var(--surface); border: 0.5px solid var(--border);
-  border-radius: 12px; margin: 0 0 20px; overflow: hidden;
-}
-.ss-card-head {
-  display: flex; align-items: baseline; gap: 10px; justify-content: space-between;
-  padding: 12px 16px; border-bottom: 0.5px solid var(--border);
-}
-.ss-card-head h2 { font-size: 1.05em; margin: 0; font-weight: 600; }
-.ss-card-head .ss-meta { color: var(--faint); font-size: 0.78em; white-space: nowrap; }
-.ss-frame { display: block; width: 100%; border: 0; height: ${MIN_FRAME_H}px; }
-.ss-image { margin: 0; padding: 16px; }
+.card-head { justify-content: space-between; }
+.card-head .card-title { margin: 0; }
+.card-meta { white-space: nowrap; }
+.ss-frame { display: block; width: 100%; border: 0; border-top: 0.5px solid var(--border); height: ${MIN_FRAME_H}px; }
+.ss-image { margin: 0; padding: 16px; border-top: 0.5px solid var(--border); }
 .ss-image img { max-width: 100%; height: auto; border-radius: 8px; display: block; }
 .ss-caption { color: var(--muted); font-size: 0.85em; margin-top: 8px; }
 .ss-json {
-  margin: 0; padding: 14px 16px; overflow: auto; white-space: pre;
+  margin: 0; padding: 14px 16px; overflow: auto; white-space: pre; border-top: 0.5px solid var(--border);
   color: var(--text); font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
-.ss-note { margin: 0; padding: 14px 16px; color: var(--muted); font-size: 0.9em; font-style: italic; }
+.ss-note { margin: 0; padding: 14px 16px; border-top: 0.5px solid var(--border); color: var(--muted); font-size: 0.9em; font-style: italic; }
 .ss-thread { border-top: 0.5px solid var(--border); padding: 8px 16px 12px; }
 .ss-comment { padding: 8px 0; }
 .ss-comment + .ss-comment { border-top: 0.5px solid var(--border); }
@@ -274,8 +272,8 @@ function commentThread(comments: Comment[]): string {
 function card(item: RenderedPost): string {
   const meta = `v${item.post.version} · ${escapeHtml(item.post.createdAt)}`;
   const body = item.surfaces.join("\n");
-  return `<article class="ss-card">
-<header class="ss-card-head"><h2>${escapeHtml(item.post.title)}</h2><span class="ss-meta">${meta}</span></header>
+  return `<article class="card">
+<header class="card-head"><h2 class="card-title">${escapeHtml(item.post.title)}</h2><span class="card-meta">${meta}</span></header>
 <div class="ss-surfaces">${body}</div>
 ${commentThread(item.comments)}
 </article>`;

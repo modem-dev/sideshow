@@ -7,6 +7,7 @@
 import { render } from "solid-js/web";
 import App from "./App.tsx";
 import { createDefaultHost, setEngine, type SideshowHost } from "./host.ts";
+import { CARD_CHROME_CSS } from "../../server/cardChrome.ts";
 import stylesCss from "./styles.css?inline";
 
 export type { SideshowHost, HostRouter, Route, SlotName, LiveTransport } from "./host.ts";
@@ -54,7 +55,7 @@ export function mountViewer(el: Element, host?: SideshowHost): ViewerHandle {
   // in theme.ts.) EMBED_BASE_CSS then re-homes the document-level layout that
   // <html>/<body> carried.
   const style = document.createElement("style");
-  style.textContent = stylesCss.replace(/:root\b/g, ":host") + EMBED_BASE_CSS;
+  style.textContent = CARD_CHROME_CSS + stylesCss.replace(/:root\b/g, ":host") + EMBED_BASE_CSS;
   shadow.appendChild(style);
 
   const mount = document.createElement("div");

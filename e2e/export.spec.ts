@@ -32,7 +32,7 @@ const MD = [
 const PROBE = `<div id="r">running</div>
 <script>
   try {
-    var leaked = parent.document && parent.document.querySelector('.ss-card');
+    var leaked = parent.document && parent.document.querySelector('.card');
     document.getElementById('r').textContent = leaked ? 'LEAKED' : 'blocked';
   } catch (e) {
     document.getElementById('r').textContent = 'blocked';
@@ -67,8 +67,8 @@ test("a saved export lays out html and markdown while keeping frames isolated", 
   );
 
   // Two cards, chronological: the probe first, the markdown second.
-  await expect(page.locator(".ss-card")).toHaveCount(2);
-  await expect(page.locator(".ss-card h2")).toHaveText(["Probe card", "Markdown card"]);
+  await expect(page.locator(".card")).toHaveCount(2);
+  await expect(page.locator(".card h2")).toHaveText(["Probe card", "Markdown card"]);
 
   // Every embedded surface is sandboxed with no allow-same-origin.
   await expect(page.locator("iframe.ss-frame:not(.mdframe)")).toHaveAttribute(
