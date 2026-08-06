@@ -1144,6 +1144,16 @@ export function createApp({
       mode,
       generatedAt: new Date().toISOString(),
       getAsset: (id) => store.getAsset(id),
+      // Share /s/:id's render cache. Same key shape, so exporting a session the
+      // user just viewed reuses those documents instead of re-running shiki and
+      // the diff SSR per surface — and a second export of the same session is
+      // nearly free. html surfaces get a distinct key (":x"): the export pins a
+      // <base href> that /s/:id doesn't, so their bytes genuinely differ.
+      renderDocument: (surface, doc, { post, index, html: isHtml }) =>
+        cachedRender(
+          `${post.id}:${index}:${post.version}:${themeId}:${mode ?? "os"}${isHtml ? ":x" : ""}`,
+          () => renderSurfaceDocument(surface, doc),
+        ),
     });
     c.header("X-Content-Type-Options", "nosniff");
     c.header("Content-Security-Policy", "frame-ancestors 'self'");

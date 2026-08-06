@@ -23,9 +23,21 @@ import {
   SURFACE_FRAME_CLASSES,
 } from "./types.ts";
 import { encodeBase64 } from "./base64.ts";
+import { EXTERNAL_LINK_PROTOCOLS, OPEN_LINK_PROMPT } from "./bridgePolicy.ts";
 import { CARD_CHROME_CSS } from "./cardChrome.ts";
 import { colorSchemeCss, escapeHtml, renderSurfaceDocument } from "./surfacePage.ts";
 import { type Mode, type Theme, themeById, viewerThemeCss } from "./themes.ts";
+
+// How a surface becomes a document. `post`/`index` identify the surface so a
+// caller can key a cache by (post, index, version) the way /s/:id does; `html`
+// is flagged because only that kind's output differs between the two callers
+// (the export pins a <base href>, /s/:id doesn't), so the two must not share a
+// cache entry for it.
+export type RenderDocument = (
+  surface: Surface,
+  doc: { title: string; origin: string; themeId: string; mode?: Mode; baseHref?: string },
+  key: { post: Post; index: number; html: boolean },
+) => Promise<string>;
 
 interface ExportContext {
   origin: string;
@@ -51,6 +63,10 @@ interface ExportContext {
   // hundreds of thousands of times. Each rendered copy still charges the byte
   // budget — every inline duplicate really is duplicated in the output.
   inlinedAssets: Map<string, { byteLength: number; dataUri: string } | { rejected: string }>;
+  // Render one sandboxed surface to its document. Defaults to calling
+  // renderSurfaceDocument directly; the server passes a memoizing wrapper so an
+  // export reuses the documents /s/:id already built (see renderSessionExport).
+  renderDocument: RenderDocument;
 }
 
 // Default inline-asset budget per export. A Workers isolate has ~128 MB of
@@ -83,20 +99,25 @@ function frame(doc: string, frameClass?: string): string {
 async function exportSurface(
   surface: Surface,
   ctx: ExportContext,
-  postTitle: string,
+  post: Post,
+  index: number,
 ): Promise<string> {
   if (isSandboxedSurfaceKind(surface.kind)) {
-    const doc = await renderSurfaceDocument(surface, {
-      title: postTitle,
-      origin: ctx.origin,
-      themeId: ctx.themeId,
-      mode: ctx.mode,
-      // srcdoc's base is about:srcdoc, so an html surface's relative /a/:id
-      // refs would break; pin the base to the origin (works only for readers
-      // with access to it — documented portability boundary). Only html
-      // surfaces consume this; the rich kinds pin <base> themselves.
-      baseHref: `${ctx.origin}/`,
-    });
+    const doc = await ctx.renderDocument(
+      surface,
+      {
+        title: post.title,
+        origin: ctx.origin,
+        themeId: ctx.themeId,
+        mode: ctx.mode,
+        // srcdoc's base is about:srcdoc, so an html surface's relative /a/:id
+        // refs would break; pin the base to the origin (works only for readers
+        // with access to it — documented portability boundary). Only html
+        // surfaces consume this; the rich kinds pin <base> themselves.
+        baseHref: `${ctx.origin}/`,
+      },
+      { post, index, html: surface.kind === "html" },
+    );
     return frame(doc, SURFACE_FRAME_CLASSES[surface.kind]);
   }
 
@@ -169,6 +190,7 @@ interface RenderedPost {
 const SHELL_JS = `
 (function () {
   var MIN = ${MIN_FRAME_H}, MAX = ${MAX_FRAME_H};
+  var PROTOCOLS = ${JSON.stringify(EXTERNAL_LINK_PROTOCOLS)};
   function frameFor(source) {
     var frames = document.querySelectorAll('iframe.ss-frame');
     for (var i = 0; i < frames.length; i++) {
@@ -187,13 +209,15 @@ const SHELL_JS = `
     if (d.type === 'resize') {
       frame.style.height = Math.min(Math.max(Number(d.height) || MIN, MIN), MAX) + 'px';
     } else if (d.type === 'open-link') {
+      // Same policy the live viewer applies, interpolated from
+      // server/bridgePolicy.ts rather than restated: allowlisted schemes only,
+      // and the reader confirms the NORMALIZED destination (the request comes
+      // from an untrusted frame, so a disguised control could otherwise open
+      // any page). Validate and open the same parsed href — no re-parse gap.
       var url;
       try { url = new URL(String(d.url)); } catch (err) { return; }
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
-      // Same confirmation as the viewer (App.tsx): the request comes from an
-      // untrusted frame, so a disguised control could silently open any page —
-      // show the normalized destination and let the reader decide.
-      if (window.confirm('Open external link?\\n\\n' + url.href)) {
+      if (PROTOCOLS.indexOf(url.protocol) === -1) return;
+      if (window.confirm(${JSON.stringify(OPEN_LINK_PROMPT)} + url.href)) {
         window.open(url.href, '_blank', 'noopener,noreferrer');
       }
     } else if (d.type === 'copy') {
@@ -342,6 +366,11 @@ export async function renderSessionExport(opts: {
   // Inline-asset budget override, for embedders and tests; defaults to
   // MAX_EXPORT_ASSET_BYTES.
   maxInlineAssetBytes?: number;
+  // Memoizing renderer. The server passes one backed by the same cache /s/:id
+  // uses, so exporting a session someone already viewed skips re-running shiki
+  // and the diff SSR for every code/diff/markdown surface. Omitted (tests,
+  // embedders) → render straight through.
+  renderDocument?: RenderDocument;
 }): Promise<string> {
   const ctx: ExportContext = {
     origin: opts.origin,
@@ -350,6 +379,7 @@ export async function renderSessionExport(opts: {
     getAsset: opts.getAsset,
     assetBytesRemaining: opts.maxInlineAssetBytes ?? MAX_EXPORT_ASSET_BYTES,
     inlinedAssets: new Map(),
+    renderDocument: opts.renderDocument ?? ((surface, doc) => renderSurfaceDocument(surface, doc)),
   };
   // Sequential on purpose: rendering is CPU-bound on a single-threaded runtime,
   // so Promise.all buys no wall-clock — it only holds every post's decoded
@@ -360,8 +390,8 @@ export async function renderSessionExport(opts: {
   const rendered: RenderedPost[] = [];
   for (const item of opts.items) {
     const surfaces: string[] = [];
-    for (const s of item.post.surfaces) {
-      surfaces.push(await exportSurface(s, ctx, item.post.title));
+    for (const [index, s] of item.post.surfaces.entries()) {
+      surfaces.push(await exportSurface(s, ctx, item.post, index));
     }
     rendered.push({ post: item.post, comments: item.comments, surfaces });
   }

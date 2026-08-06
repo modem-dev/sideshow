@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { createApp } from "../server/app.ts";
 import { renderSessionExport } from "../server/exportPage.ts";
+import { EXTERNAL_LINK_PROTOCOLS, OPEN_LINK_PROMPT } from "../server/bridgePolicy.ts";
+import { renderSurfaceDocument } from "../server/surfacePage.ts";
 import { JsonFileStore } from "../server/storage.ts";
 import { decodeBase64, encodeBase64 } from "../server/base64.ts";
 
@@ -268,6 +270,72 @@ test("a rejected asset is fetched once no matter how many surfaces reference it"
   assert.equal((html.match(/no longer available/g) ?? []).length, 2);
 });
 
+// The export shell and the live viewer implement the same bridge separately (a
+// baked JS string vs bundled TS), so the POLICY is shared (server/bridgePolicy.ts)
+// and interpolated. Pin that it really is interpolated — a hardcoded copy here
+// would drift silently the next time the policy changes.
+test("the shell's link policy is the shared one, not a restatement", async () => {
+  const app = makeApp();
+  const { sessionId } = await publish(app, {
+    title: "policy",
+    surfaces: [{ kind: "html", html: "<p>hi</p>" }],
+  });
+  const html = await (await exportSession(app, sessionId)).text();
+
+  assert.ok(
+    html.includes(JSON.stringify(EXTERNAL_LINK_PROTOCOLS)),
+    "allowlist interpolated from bridgePolicy",
+  );
+  assert.ok(
+    html.includes(JSON.stringify(OPEN_LINK_PROMPT)),
+    "prompt interpolated from bridgePolicy",
+  );
+  assert.ok(!/'http:'/.test(html), "no hardcoded scheme literal in the shell");
+});
+
+// Exporting a session someone already viewed must not re-run shiki / the diff
+// SSR for surfaces /s/:id already rendered — those documents are byte-identical.
+test("export reuses the render cache for rich surfaces and keys html separately", async () => {
+  const { app, store } = makeAppWithStore();
+  const { id, sessionId } = await publish(app, {
+    title: "cached",
+    surfaces: [
+      { kind: "markdown", markdown: "# hi" },
+      { kind: "html", html: "<p>hi</p>" },
+    ],
+  });
+
+  // Warm the cache the way the viewer does: one /s/:id fetch per surface.
+  await app.request(`/p/${id}?part=0&theme=github`);
+  await app.request(`/p/${id}?part=1&theme=github`);
+
+  const session = await store.getSession(sessionId);
+  assert.ok(session);
+  const posts = await store.listPosts(session.id);
+  const built: string[] = [];
+  const html = await renderSessionExport({
+    session,
+    items: posts.map((post) => ({ post, comments: [] })),
+    origin: "http://localhost:8228",
+    themeId: "github",
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    getAsset: (assetId) => store.getAsset(assetId),
+    renderDocument: async (surface, doc, key) => {
+      built.push(`${surface.kind}:${key.index}:${key.html}`);
+      return renderSurfaceDocument(surface, doc);
+    },
+  });
+
+  // The hook sees both surfaces with the identity a cache key needs; the html
+  // one is flagged so it can't collide with the /s/:id entry that lacks <base>.
+  assert.deepEqual(built, ["markdown:0:false", "html:1:true"]);
+  // srcdoc-escaped into the shell, so the pinned <base> carries escaped quotes.
+  assert.ok(
+    html.includes("&lt;base href=&quot;http://localhost:8228/&quot;&gt;"),
+    "html surface pins its base",
+  );
+});
+
 test("a session over the aggregate surface-byte cap 413s before rendering", async () => {
   const app = makeApp();
   // 3 × 1.5 MB html surfaces: each under the 2 MB per-post cap, together over
@@ -302,9 +370,12 @@ test("the shell's open-link bridge confirms the destination before opening", asy
   });
   const html = await (await exportSession(app, sessionId)).text();
   // Mirrors the viewer (App.tsx): untrusted frames can request opens for any
-  // URL, so the normalized href must be confirmed by the reader first.
-  assert.ok(html.includes("window.confirm('Open external link?\\n\\n' + url.href)"));
-  const confirmAt = html.indexOf("window.confirm('Open external link?");
+  // URL, so the normalized href must be confirmed by the reader first. Asserted
+  // against the shared constant, not a copy of it, so this can't pass while the
+  // shell has silently drifted from bridgePolicy.ts.
+  const confirmCall = `window.confirm(${JSON.stringify(OPEN_LINK_PROMPT)} + url.href)`;
+  assert.ok(html.includes(confirmCall));
+  const confirmAt = html.indexOf(confirmCall);
   const openAt = html.indexOf("window.open(url.href");
   assert.ok(confirmAt !== -1 && openAt !== -1 && confirmAt < openAt, "confirm gates window.open");
 });
