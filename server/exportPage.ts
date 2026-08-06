@@ -41,12 +41,16 @@ interface ExportContext {
   // route does that work unauthenticated. Images past the budget degrade to a
   // note, same as a missing asset.
   assetBytesRemaining: number;
-  // Per-export memo of already-encoded assets: a session can reference the same
+  // Per-export memo of already-resolved assets: a session can reference the same
   // asset from many image surfaces, and without this each reference re-fetches
-  // (a full byte clone in JsonFileStore) and re-encodes megabytes of base64.
-  // Each rendered copy still charges the byte budget — every inline duplicate
-  // really is duplicated in the output.
-  inlinedAssets: Map<string, { byteLength: number; dataUri: string }>;
+  // (a full byte clone in JsonFileStore, a full blob SELECT in SqlStore) and
+  // re-encodes megabytes of base64. Rejections are memoized too — a missing or
+  // non-image asset referenced N times costs N fetches otherwise, and surface
+  // COUNT is unbounded (only per-post and per-session TEXT bytes are capped), so
+  // one cheap write could otherwise make every export re-read the same 5 MB blob
+  // hundreds of thousands of times. Each rendered copy still charges the byte
+  // budget — every inline duplicate really is duplicated in the output.
+  inlinedAssets: Map<string, { byteLength: number; dataUri: string } | { rejected: string }>;
 }
 
 // Default inline-asset budget per export. A Workers isolate has ~128 MB of
@@ -99,17 +103,25 @@ async function exportSurface(
   if (surface.kind === "image") {
     const note = (msg: string) =>
       `<p class="ss-note">Image asset <code>${escapeHtml(surface.assetId)}</code> ${msg}</p>`;
+    // Memoized rejection: terminal for this export, so no refetch. The size
+    // limit is NOT memoized here — it depends on the remaining budget, which
+    // shrinks as other images inline, so it's re-checked per reference below.
+    const reject = (msg: string) => {
+      ctx.inlinedAssets.set(surface.assetId, { rejected: msg });
+      return note(msg);
+    };
     let inlined = ctx.inlinedAssets.get(surface.assetId);
+    if (inlined && "rejected" in inlined) return note(inlined.rejected);
     if (!inlined) {
       const asset = await ctx.getAsset(surface.assetId);
-      if (!asset) return note("is no longer available.");
+      if (!asset) return reject("is no longer available.");
       // contentType is upload-controlled and this <img> lives in the trusted
       // shell, so only the raster allowlist may reach the data: URI — a crafted
       // type could otherwise smuggle markup into the attribute or a scriptable
       // document (svg) into the shell. Escaped like every other attribute even
       // though the allowlisted URI is inert, so safety doesn't hinge on the list.
       if (!INLINE_IMAGE_TYPES.has(asset.contentType)) {
-        return note("has a non-image content type and was omitted.");
+        return reject("has a non-image content type and was omitted.");
       }
       // Budget-checked BEFORE encoding: an over-budget asset must never be
       // encoded or memoized, or N distinct oversized assets could accumulate

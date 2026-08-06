@@ -219,6 +219,55 @@ test("aggregate inline-asset budget: images past the cap degrade to a note", asy
   assert.equal((html.match(/inline-image size limit/g) ?? []).length, 2, "two omitted with notes");
 });
 
+// Surface COUNT is unbounded (only per-post/per-session TEXT bytes are capped),
+// so a rejected asset MUST be fetched at most once per export — otherwise a
+// session cheaply salted with many references to one bad assetId makes every
+// export re-read that blob per reference (a JsonFileStore byte clone, a SqlStore
+// blob SELECT), unauthenticated on a publicRead workspace.
+test("a rejected asset is fetched once no matter how many surfaces reference it", async () => {
+  const { app, store } = makeAppWithStore();
+  const { id, sessionId } = (await (
+    await app.request(
+      "/api/assets",
+      json({ data: encodeBase64(new Uint8Array(64)), contentType: "image/svg+xml" }),
+    )
+  ).json()) as { id: string; sessionId: string };
+
+  await publish(app, {
+    session: sessionId,
+    title: "repeat rejects",
+    surfaces: [
+      { kind: "image", assetId: id },
+      { kind: "image", assetId: id },
+      { kind: "image", assetId: id },
+      { kind: "image", assetId: "ZZZmissingZZZ" },
+      { kind: "image", assetId: "ZZZmissingZZZ" },
+    ],
+  });
+
+  const session = await store.getSession(sessionId);
+  assert.ok(session);
+  const posts = await store.listPosts(session.id);
+  const fetched: string[] = [];
+  const html = await renderSessionExport({
+    session,
+    items: posts.map((post) => ({ post, comments: [] })),
+    origin: "http://localhost:8228",
+    themeId: "github",
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    getAsset: (assetId) => {
+      fetched.push(assetId);
+      return store.getAsset(assetId);
+    },
+  });
+
+  assert.deepEqual(fetched, [id, "ZZZmissingZZZ"], "each rejected asset fetched exactly once");
+  // Every reference still renders its own note — memoizing the lookup must not
+  // silently drop surfaces from the document.
+  assert.equal((html.match(/non-image content type/g) ?? []).length, 3);
+  assert.equal((html.match(/no longer available/g) ?? []).length, 2);
+});
+
 test("a session over the aggregate surface-byte cap 413s before rendering", async () => {
   const app = makeApp();
   // 3 × 1.5 MB html surfaces: each under the 2 MB per-post cap, together over
