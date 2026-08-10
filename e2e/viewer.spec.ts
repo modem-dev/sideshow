@@ -66,6 +66,271 @@ test("snippet published over HTTP appears live via SSE, no reload", async ({ pag
   await expect(page.locator(".sess-title")).toContainText("e2e session");
 });
 
+test("a burst of live post changes shares one session-list refresh", async ({ page, server }) => {
+  const first = await publish(server.url, {
+    html: "<p>first</p>",
+    title: "First",
+    agent: "e2e",
+    sessionTitle: "Burst",
+  });
+  const existing = await Promise.all(
+    Array.from({ length: 4 }, (_, i) =>
+      publish(server.url, {
+        html: `<p>${i}</p>`,
+        title: `Existing ${i}`,
+        agent: "e2e",
+        session: first.sessionId,
+      }),
+    ),
+  );
+  await page.goto(`${server.url}/session/${first.sessionId}`);
+  await expect(page.locator(".card:not(#whatsNew)")).toHaveCount(5);
+  await expect(page.locator(".livedot").first()).toHaveClass(/on/);
+
+  let sessionListRequests = 0;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.pathname === "/api/sessions") sessionListRequests++;
+  });
+
+  const deletes = existing.slice(2).map(async ({ id }) => {
+    const response = await fetch(`${server.url}/api/snippets/${id}`, { method: "DELETE" });
+    expect(response.ok).toBe(true);
+  });
+  await Promise.all([
+    ...Array.from({ length: 3 }, (_, i) =>
+      publish(server.url, {
+        html: `<p>new ${i}</p>`,
+        title: `New ${i}`,
+        agent: "e2e",
+        session: first.sessionId,
+      }),
+    ),
+    update(server.url, existing[0].id, { title: "Updated 0" }),
+    update(server.url, existing[1].id, { title: "Updated 1" }),
+    ...deletes,
+  ]);
+
+  // Every create/update/delete still reconciles its card, while the sidebar
+  // metadata refresh waits for the burst's quiet edge and runs once.
+  await expect(page.locator(".card:not(#whatsNew)")).toHaveCount(6);
+  await expect(page.locator(".card-title", { hasText: "Updated 0" })).toHaveCount(1);
+  await expect(page.locator(".card-title", { hasText: "Updated 1" })).toHaveCount(1);
+  await expect(page.locator(".card-title", { hasText: /^New / })).toHaveCount(3);
+  await expect.poll(() => sessionListRequests).toBe(1);
+  await page.waitForTimeout(200);
+  expect(sessionListRequests).toBe(1);
+  await expect(page.locator(".sess-count")).toHaveText("(6)");
+
+  // Hold a stale coalesced response in flight. A second post event must queue a
+  // trailing refresh, while an overlapping session lifecycle refresh must win
+  // even when the older response is released afterward.
+  sessionListRequests = 0;
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+  let routedSessionRequests = 0;
+  let captureFirstResponse!: () => void;
+  let releaseFirstResponse!: () => void;
+  let captureTrailingResponse!: () => void;
+  let releaseTrailingResponse!: () => void;
+  let captureFailedResponse!: () => void;
+  let releaseFailedResponse!: () => void;
+  let captureOlderSuccess!: () => void;
+  let releaseOlderSuccess!: () => void;
+  let captureNewerFailure!: () => void;
+  const firstResponseCaptured = new Promise<void>((resolve) => (captureFirstResponse = resolve));
+  const firstResponseRelease = new Promise<void>((resolve) => (releaseFirstResponse = resolve));
+  const trailingResponseCaptured = new Promise<void>(
+    (resolve) => (captureTrailingResponse = resolve),
+  );
+  const trailingResponseRelease = new Promise<void>(
+    (resolve) => (releaseTrailingResponse = resolve),
+  );
+  const failedResponseCaptured = new Promise<void>((resolve) => (captureFailedResponse = resolve));
+  const failedResponseRelease = new Promise<void>((resolve) => (releaseFailedResponse = resolve));
+  const olderSuccessCaptured = new Promise<void>((resolve) => (captureOlderSuccess = resolve));
+  const olderSuccessRelease = new Promise<void>((resolve) => (releaseOlderSuccess = resolve));
+  const newerFailureCaptured = new Promise<void>((resolve) => (captureNewerFailure = resolve));
+
+  await page.route("**/api/sessions", async (route) => {
+    routedSessionRequests++;
+    if (routedSessionRequests === 1) {
+      const response = await route.fetch();
+      captureFirstResponse();
+      await firstResponseRelease;
+      await route.fulfill({ response });
+      return;
+    }
+    if (routedSessionRequests === 3) {
+      const response = await route.fetch();
+      captureTrailingResponse();
+      await trailingResponseRelease;
+      await route.fulfill({ response });
+      return;
+    }
+    if (routedSessionRequests === 4) {
+      captureFailedResponse();
+      await failedResponseRelease;
+      await route.abort("failed");
+      return;
+    }
+    if (routedSessionRequests === 6) {
+      const response = await route.fetch();
+      captureOlderSuccess();
+      await olderSuccessRelease;
+      await route.fulfill({ response });
+      return;
+    }
+    if (routedSessionRequests === 7) {
+      captureNewerFailure();
+      await route.abort("failed");
+      return;
+    }
+    await route.continue();
+  });
+
+  await publish(server.url, {
+    html: "<p>during first refresh</p>",
+    title: "During first refresh",
+    agent: "e2e",
+    session: first.sessionId,
+  });
+  await firstResponseCaptured;
+
+  await publish(server.url, {
+    html: "<p>while first refresh is in flight</p>",
+    title: "While refresh is in flight",
+    agent: "e2e",
+    session: first.sessionId,
+  });
+  const rename = await fetch(`${server.url}/api/sessions/${first.sessionId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Burst renamed" }),
+  });
+  expect(rename.ok).toBe(true);
+
+  // The immediate session-updated refresh is request two and carries the latest
+  // title/count while request one still holds the older snapshot.
+  await expect.poll(() => routedSessionRequests).toBe(2);
+  await expect(page.locator(".card:not(#whatsNew)")).toHaveCount(8);
+  await expect(page.locator("#sessionList .sess-title")).toContainText("Burst renamed");
+  await expect(page.locator(".sess-count")).toHaveText("(8)");
+
+  releaseFirstResponse();
+  await trailingResponseCaptured;
+
+  // Request one has now completed, but the already-applied newer successful
+  // response keeps its stale seven-post snapshot from rolling the sidebar back.
+  await expect(page.locator("#sessionList .sess-title")).toContainText("Burst renamed");
+  await expect(page.locator(".sess-count")).toHaveText("(8)");
+
+  releaseTrailingResponse();
+  await expect.poll(() => sessionListRequests).toBe(3);
+  await expect(page.locator(".sess-count")).toHaveText("(8)");
+
+  // A failed in-flight refresh must not swallow an event queued behind it. The
+  // newer event drives request five and repairs the sidebar without waiting for
+  // the periodic poll.
+  await publish(server.url, {
+    html: "<p>request will fail</p>",
+    title: "Request will fail",
+    agent: "e2e",
+    session: first.sessionId,
+  });
+  await failedResponseCaptured;
+  await publish(server.url, {
+    html: "<p>queues recovery</p>",
+    title: "Queues recovery",
+    agent: "e2e",
+    session: first.sessionId,
+  });
+  // Publishing and SSE use separate connections. Seeing the card proves the
+  // second event incremented the feed version before we reject request four.
+  await expect(page.locator(".card-title", { hasText: "Queues recovery" })).toHaveCount(1);
+  releaseFailedResponse();
+
+  await expect(page.locator(".card:not(#whatsNew)")).toHaveCount(10);
+  await expect.poll(() => sessionListRequests).toBe(5);
+  await expect(page.locator(".sess-count")).toHaveText("(10)");
+
+  // A newer failed request must not invalidate an older successful response.
+  // Otherwise bootstrap can discard its only valid session list and remain on
+  // the empty-workspace view with no periodic poll available to repair it.
+  await publish(server.url, {
+    html: "<p>older success</p>",
+    title: "Older success",
+    agent: "e2e",
+    session: first.sessionId,
+  });
+  await olderSuccessCaptured;
+  const failedRename = await fetch(`${server.url}/api/sessions/${first.sessionId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Refresh will fail" }),
+  });
+  expect(failedRename.ok).toBe(true);
+  await newerFailureCaptured;
+  releaseOlderSuccess();
+
+  await expect.poll(() => sessionListRequests).toBe(7);
+  await expect(page.locator(".card:not(#whatsNew)")).toHaveCount(11);
+  await expect(page.locator(".sess-count")).toHaveText("(11)");
+  expect(pageErrors).toEqual([]);
+});
+
+test("continuous live activity cannot starve the session-list refresh", async ({
+  page,
+  server,
+}) => {
+  const selectedSession = await publish(server.url, {
+    html: "<p>selected</p>",
+    title: "Selected",
+    agent: "e2e",
+    sessionTitle: "Selected session",
+  });
+  const targetResponse = await fetch(`${server.url}/api/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agent: "stream", title: "Background stream" }),
+  });
+  expect(targetResponse.ok).toBe(true);
+  const targetSession = (await targetResponse.json()) as { id: string };
+
+  await page.goto(`${server.url}/session/${selectedSession.sessionId}`);
+  await expect(page.locator("#sessionList .sess")).toHaveCount(2);
+  await expect(page.locator(".livedot").first()).toHaveClass(/on/);
+
+  let sessionListRequests = 0;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.pathname === "/api/sessions") sessionListRequests++;
+  });
+
+  let completedPublishes = 0;
+  const writes = Array.from({ length: 40 }, (_, i) =>
+    new Promise<void>((resolve) => setTimeout(resolve, i * 20)).then(async () => {
+      await publish(server.url, {
+        html: `<p>${i}</p>`,
+        title: `Stream ${i}`,
+        agent: "stream",
+        session: targetSession.id,
+      });
+      completedPublishes++;
+    }),
+  );
+
+  // Events continue for roughly 800 ms, well beyond the 250 ms maximum wait.
+  // The sidebar must refresh while the stream is still active instead of
+  // waiting for a 50 ms quiet edge that may never arrive.
+  await expect.poll(() => sessionListRequests, { timeout: 600 }).toBeGreaterThan(0);
+  expect(completedPublishes).toBeLessThan(40);
+
+  await Promise.all(writes);
+  const targetRow = page.locator("#sessionList .sess", { hasText: "Background stream" });
+  await expect(targetRow.locator(".sess-count")).toHaveText("(40)");
+});
+
 test("a surface kind this viewer doesn't know shows a refresh hint, not a broken diff", async ({
   page,
   server,

@@ -148,9 +148,37 @@ export function updateNotice(): VersionInfo | null {
   return v?.updateAvailable && v.latest && v.latest !== dismissedUpdate() ? v : null;
 }
 
+let sessionRefreshRequestVersion = 0;
+let latestAppliedSessionRefreshVersion = 0;
+let latestSessionRefresh = Promise.resolve();
+
 export async function refreshSessionsQuiet() {
   if (isReadonly() && publicReadMode() === "session") return;
-  setSessionsInternal(reconcile(await api<SessionRow[]>("/api/sessions"), { key: "id" }));
+  const requestVersion = ++sessionRefreshRequestVersion;
+  const refresh = (async () => {
+    const next = await api<SessionRow[]>("/api/sessions").catch(() => null);
+    // A feed refresh may overlap an immediate lifecycle/reconnect/poll refresh.
+    // Apply the newest successful response seen so far: a slower older response
+    // cannot roll back newer rendered state, but it remains a valid fallback if
+    // every request that started after it fails.
+    // This quiet refresh is best-effort: polling or the next event repairs a
+    // failed request without rejecting into timer/feed callbacks.
+    if (next && requestVersion > latestAppliedSessionRefreshVersion) {
+      latestAppliedSessionRefreshVersion = requestVersion;
+      setSessionsInternal(reconcile(next, { key: "id" }));
+    }
+  })();
+  latestSessionRefresh = refresh;
+  await refresh;
+
+  // Callers such as bootstrap and reconnect use resolution to mean the current
+  // session list is ready. If this request was superseded, wait through the
+  // newest request rather than returning after deliberately ignoring our row.
+  while (refresh !== latestSessionRefresh) {
+    const latest = latestSessionRefresh;
+    await latest;
+    if (latest === latestSessionRefresh) return;
+  }
 }
 
 function syntheticSession(id: string): SessionRow {
@@ -475,6 +503,43 @@ interface FeedEvent {
 
 const WS_HEARTBEAT_MS = 30_000;
 const WS_RECONNECT_MS = 1000;
+const FEED_SESSION_REFRESH_DELAY_MS = 50;
+const FEED_SESSION_REFRESH_MAX_WAIT_MS = 250;
+
+let feedSessionRefreshVersion = 0;
+let pendingFeedSessionRefresh: Promise<void> | undefined;
+
+// A publish burst delivers one feed event per post. The cards still fetch and
+// reconcile independently, but their sidebar metadata can share one trailing
+// session-list refresh. Manual/bootstrap refreshes continue to run immediately.
+function refreshSessionsAfterFeedEvent(): Promise<void> {
+  if (isReadonly() && publicReadMode() === "session") return Promise.resolve();
+  feedSessionRefreshVersion++;
+  pendingFeedSessionRefresh ??= (async () => {
+    let refreshedVersion = 0;
+    while (refreshedVersion !== feedSessionRefreshVersion) {
+      // Restart the quiet window whenever another event lands, but cap a
+      // continuously active batch so sidebar metadata cannot wait indefinitely.
+      // If an event arrives after the request starts, the outer loop performs
+      // one trailing refresh rather than overlapping requests or losing it.
+      const batchStartedAt = Date.now();
+      let queuedVersion: number;
+      do {
+        queuedVersion = feedSessionRefreshVersion;
+        const remaining = FEED_SESSION_REFRESH_MAX_WAIT_MS - (Date.now() - batchStartedAt);
+        if (remaining <= 0) break;
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(FEED_SESSION_REFRESH_DELAY_MS, remaining)),
+        );
+      } while (queuedVersion !== feedSessionRefreshVersion);
+      refreshedVersion = feedSessionRefreshVersion;
+      await refreshSessionsQuiet();
+    }
+  })().finally(() => {
+    pendingFeedSessionRefresh = undefined;
+  });
+  return pendingFeedSessionRefresh;
+}
 
 function eventsPath(): string {
   const route = host().router.get();
@@ -502,12 +567,13 @@ async function handleFeedData(data: string) {
     await refreshSessions();
   } else if (e.type === "post-created" || e.type === "post-updated") {
     if (away && e.sessionId) markUnread(e.sessionId);
+    const sessionRefresh = refreshSessionsAfterFeedEvent();
     if (e.sessionId === selected()) await upsertPost(e.id);
-    await refreshSessionsQuiet();
+    await sessionRefresh;
   } else if (e.type === "post-deleted") {
     const idx = posts.findIndex((s) => s.id === e.id);
     if (idx >= 0) setPostsInternal(produce((arr) => arr.splice(idx, 1)));
-    await refreshSessionsQuiet();
+    await refreshSessionsAfterFeedEvent();
   } else if (e.type === "trace-updated") {
     // the agent working is ambient, not an alert — refetch quietly, no badge
     if (e.sessionId === selected()) await fetchTrace(e.sessionId);
