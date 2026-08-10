@@ -18,7 +18,14 @@ import { ConnectInstructions } from "./Connect.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
 import { StreamSkeleton } from "./Skeleton.tsx";
-import { MoonIcon, PlugIcon, SunIcon, SystemIcon } from "./icons.tsx";
+import {
+  MoonIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  PlugIcon,
+  SunIcon,
+  SystemIcon,
+} from "./icons.tsx";
 import {
   activeTheme,
   colorModePreference,
@@ -112,6 +119,8 @@ function pageTitle(
 }
 
 export default function App() {
+  const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
+
   onMount(() => {
     // Await the initial route resolution (the standalone post fetch, or the
     // first session fetch), then mark the workspace decided and tell the host
@@ -243,10 +252,26 @@ export default function App() {
               </Show>
             </header>
             <Show when={!streamMode()}>
-              <aside>
-                <Show when={!host().hideBrand}>
-                  <Brand />
-                </Show>
+              <aside classList={{ "sidebar-collapsed": sidebarCollapsed() }}>
+                <div class="sidebar-head">
+                  <Show when={!host().hideBrand}>
+                    <Brand />
+                  </Show>
+                  <button
+                    class="sidebar-toggle"
+                    type="button"
+                    aria-label={sidebarCollapsed() ? "Expand sidebar" : "Collapse sidebar"}
+                    aria-expanded={!sidebarCollapsed()}
+                    aria-controls="sessionList"
+                    title={sidebarCollapsed() ? "Expand sidebar" : "Collapse sidebar"}
+                    onClick={() => setSidebarCollapsed(!sidebarCollapsed())}
+                  >
+                    <Show when={sidebarCollapsed()} fallback={<PanelLeftCloseIcon />}>
+                      <PanelLeftOpenIcon />
+                    </Show>
+                    <span class="dot" classList={{ show: unread().size > 0 }}></span>
+                  </button>
+                </div>
                 <UpdateBanner />
                 {/* Host-overridable region (SLOTS.asideHead): the sidebar header, above the
                     session list. Empty by default (self-hosted shows nothing here); an embedder

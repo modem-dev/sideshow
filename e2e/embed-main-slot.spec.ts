@@ -79,8 +79,14 @@ test("embedded engine: ss:main slot takes over the main pane while the sidebar s
   await expect(page.locator("main slot[name='ss:main']")).toHaveCount(1);
 
   // The sidebar (full layout) stays — the override is the main pane only, not the
-  // whole viewport.
-  await expect(page.locator("aside")).toBeVisible();
+  // whole viewport — and its engine-owned collapse control works across the shadow root.
+  const aside = page.locator("aside");
+  await expect(aside).toBeVisible();
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(aside).toHaveCSS("width", "40px");
+  await expect(hostMain).toBeVisible();
+  await page.getByRole("button", { name: "Expand sidebar" }).click();
+  await expect(aside).toHaveCSS("width", "248px");
 
   // The engine's own board content is replaced: with a child assigned to ss:main,
   // the slot's fallback (#sessionView stream) stays in the DOM — native <slot>

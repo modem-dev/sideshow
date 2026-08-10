@@ -72,6 +72,70 @@ aside {
   border-right: 0.5px solid var(--border);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  transition: width 160ms var(--ease-out-strong);
+}
+.sidebar-head {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+.sidebar-toggle {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: 12px 10px 0 auto;
+  padding: 6px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+.sidebar-toggle:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.sidebar-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.sidebar-toggle svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.sidebar-toggle .dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: none;
+}
+.sidebar-toggle .dot.show {
+  display: block;
+}
+@media (min-width: 701px) {
+  aside.sidebar-collapsed {
+    width: 40px;
+  }
+  aside.sidebar-collapsed > :not(.sidebar-head),
+  aside.sidebar-collapsed .sidebar-head > :not(.sidebar-toggle) {
+    display: none;
+  }
+  aside.sidebar-collapsed .sidebar-head {
+    justify-content: center;
+  }
+  aside.sidebar-collapsed .sidebar-toggle {
+    margin-inline: 0;
+  }
 }
 .brand {
   display: flex;
@@ -90,10 +154,12 @@ aside {
   text-align: left;
   cursor: pointer;
 }
-/* Fill the sidebar width so the whole wordmark row is a click target; the mobile
-   topbar wordmark (a flex sibling of the menu button) stays content-width. */
-aside > .brand {
-  width: 100%;
+/* Let the sidebar wordmark fill the space beside the collapse control; the
+   mobile topbar wordmark stays content-width. */
+.sidebar-head > .brand {
+  min-width: 0;
+  flex: 1;
+  padding-right: 8px;
 }
 .brand:hover {
   color: var(--accent);
@@ -1962,10 +2028,17 @@ iframe {
     transition: transform 220ms var(--ease-drawer);
     will-change: transform;
   }
-  aside > .brand {
+  .sidebar-head {
+    display: contents;
+  }
+  .sidebar-head > .brand {
     min-height: 48px;
     padding-top: 12px;
+    padding-right: 16px;
     padding-bottom: 10px;
+  }
+  .sidebar-toggle {
+    display: none;
   }
   #sessionList {
     padding: 6px 8px 10px;

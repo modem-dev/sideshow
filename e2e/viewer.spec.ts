@@ -374,6 +374,40 @@ test("Cmd+Option+Up/Down switches between sessions, wrapping at the ends", async
   await expect(page.locator(".sess.sel .sess-title")).toContainText("one session");
 });
 
+test("the desktop sidebar can collapse to a minimal rail and expand again", async ({
+  page,
+  server,
+}) => {
+  await publish(server.url, { html: "<p>x</p>", title: "Compact", agent: "e2e" });
+  await page.setViewportSize({ width: 701, height: 800 });
+  await page.goto(server.url);
+
+  const aside = page.locator("aside");
+  const main = page.locator("main");
+  const toggle = page.getByRole("button", { name: "Collapse sidebar" });
+  const expandedMainWidth = (await main.boundingBox())!.width;
+
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await toggle.click();
+
+  const expand = page.getByRole("button", { name: "Expand sidebar" });
+  await expect(expand).toHaveAttribute("aria-expanded", "false");
+  await expect(aside).toHaveCSS("width", "40px");
+  await expect(page.locator("#sessionList")).toBeHidden();
+  expect((await main.boundingBox())!.width).toBeGreaterThan(expandedMainWidth + 150);
+
+  await expand.click();
+  await expect(page.getByRole("button", { name: "Collapse sidebar" })).toBeVisible();
+  await expect(aside).toHaveCSS("width", "248px");
+  await expect(page.locator("#sessionList")).toBeVisible();
+
+  // One pixel narrower hands control back to the existing mobile drawer.
+  await page.setViewportSize({ width: 700, height: 800 });
+  await expect(page.getByRole("button", { name: "Collapse sidebar" })).toBeHidden();
+  await expect(aside).not.toBeInViewport();
+});
+
 test("at phone width the sidebar collapses into a drawer and actions stay visible", async ({
   page,
   server,
@@ -409,6 +443,7 @@ test("at phone width the sidebar collapses into a drawer and actions stay visibl
   const card = page.locator(".card:not(#whatsNew)");
   await expect(card).toBeVisible();
   await expect(page.locator("aside")).not.toBeInViewport();
+  await expect(page.getByRole("button", { name: "Collapse sidebar" })).toBeHidden();
   expect((await card.boundingBox())!.width).toBeGreaterThan(300);
 
   // hover-only card actions are always visible at narrow widths

@@ -82,6 +82,28 @@ export function MaximizeIcon() {
   );
 }
 
+// lucide: panel-left-close — collapse the desktop session sidebar.
+export function PanelLeftCloseIcon() {
+  return (
+    <Icon>
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 3v18" />
+      <path d="m16 15-3-3 3-3" />
+    </Icon>
+  );
+}
+
+// lucide: panel-left-open — expand the desktop session sidebar.
+export function PanelLeftOpenIcon() {
+  return (
+    <Icon>
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 3v18" />
+      <path d="m14 9 3 3-3 3" />
+    </Icon>
+  );
+}
+
 // lucide: plug — a connect glyph for the empty-sidebar affordance.
 export function PlugIcon() {
   return (

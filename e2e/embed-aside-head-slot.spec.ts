@@ -86,5 +86,15 @@ test.describe("embedded engine: ss:aside-head slot", () => {
     expect(headBox).not.toBeNull();
     expect(listBox).not.toBeNull();
     expect(headBox!.y).toBeLessThan(listBox!.y);
+
+    // Collapsing hides host-projected sidebar content without unmounting it;
+    // expanding restores the projection intact.
+    const aside = page.locator("aside");
+    await page.getByRole("button", { name: "Collapse sidebar" }).click();
+    await expect(aside).toHaveCSS("width", "40px");
+    await expect(hostHead).toBeHidden();
+    await page.getByRole("button", { name: "Expand sidebar" }).click();
+    await expect(aside).toHaveCSS("width", "248px");
+    await expect(hostHead).toBeVisible();
   });
 });
