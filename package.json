@@ -95,19 +95,19 @@
     "security:audit": "npm audit --audit-level=high"
   },
   "dependencies": {
-    "@hono/node-server": "^1.14.0",
+    "@hono/node-server": "^2.1.0",
     "@mermaid-js/parser": "^1.2.0",
-    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@pierre/diffs": "^1.2.11",
     "ansi_up": "^6.0.6",
-    "hono": "^4.7.0",
+    "hono": "^4.13.1",
     "markdown-it": "^14.2.0",
     "shiki": "^4.2.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
-    "@cloudflare/workers-types": "^4.20260611.1",
+    "@cloudflare/workers-types": "^5.20260810.1",
     "@playwright/test": "^1.60.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^25.9.3",
@@ -124,12 +124,12 @@
     "vite-plugin-singlefile": "^2.3.3",
     "vite-plugin-solid": "^2.11.12",
     "vitest": "^4.1.10",
-    "wrangler": "^4.101.0"
+    "wrangler": "^4.120.0"
   },
   "overrides": {
     "esbuild": "^0.28.1",
     "sharp": "^0.35.2",
-    "undici": "^7.28.0",
+    "undici": "^7.29.0",
     "ws": "^8.21.0"
   },
   "simple-git-hooks": {

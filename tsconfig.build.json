@@ -6,7 +6,7 @@
     "rewriteRelativeImportExtensions": true,
     "declaration": true,
     "sourceMap": false,
-    "types": ["node", "@cloudflare/workers-types/2023-07-01"]
+    "types": ["node", "@cloudflare/workers-types"]
   },
   "include": ["server", "mcp", "workers/public.ts"]
 }
