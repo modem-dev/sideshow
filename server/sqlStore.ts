@@ -377,6 +377,16 @@ export class SqlStore implements Store {
     return rows.map((r) => this.rowToPost(r));
   }
 
+  async countPostsBySession() {
+    const counts = new Map<string, number>();
+    for (const row of this.sql
+      .exec("SELECT sessionId, COUNT(*) AS count FROM posts GROUP BY sessionId")
+      .toArray()) {
+      counts.set(row.sessionId as string, row.count as number);
+    }
+    return counts;
+  }
+
   async listRecentPosts(limit: number) {
     const rows = this.sql
       .exec("SELECT * FROM posts ORDER BY updatedAt DESC LIMIT ?", limit)

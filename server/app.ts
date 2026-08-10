@@ -1001,9 +1001,16 @@ export function createApp({
   // --- sessions ---
 
   app.get("/api/sessions", async (c) => {
-    const [sessions, surfaces] = await Promise.all([store.listSessions(), store.listPosts()]);
-    const counts = new Map<string, number>();
-    for (const s of surfaces) counts.set(s.sessionId, (counts.get(s.sessionId) ?? 0) + 1);
+    const countsPromise = store.countPostsBySession
+      ? store.countPostsBySession()
+      : store.listPosts().then((posts) => {
+          const counts = new Map<string, number>();
+          for (const post of posts) {
+            counts.set(post.sessionId, (counts.get(post.sessionId) ?? 0) + 1);
+          }
+          return counts;
+        });
+    const [sessions, counts] = await Promise.all([store.listSessions(), countsPromise]);
     return c.json(sessions.map((s) => sessionRowView(s, counts.get(s.id) ?? 0)));
   });
 

@@ -228,6 +228,43 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
     assert.equal(await store.getPost("missing"), null);
   });
 
+  contract("counts posts by session without materializing post details", async (store) => {
+    assert.ok(store.countPostsBySession, "built-in stores expose the narrow count capability");
+    const countPostsBySession = store.countPostsBySession.bind(store);
+    const a = await store.createSession({ agent: "a" });
+    const b = await store.createSession({ agent: "b" });
+    const empty = await store.createSession({ agent: "empty" });
+
+    assert.equal((await countPostsBySession()).size, 0);
+    const a1 = await store.createPost({
+      sessionId: a.id,
+      surfaces: [htmlSurface("<p>a1</p>")],
+    });
+    const a2 = await store.createPost({
+      sessionId: a.id,
+      surfaces: [htmlSurface("<p>a2</p>")],
+    });
+    await store.createPost({ sessionId: b.id, surfaces: [htmlSurface("<p>b</p>")] });
+    assert.ok(a1 && a2);
+
+    let counts = await countPostsBySession();
+    assert.equal(counts.size, 2);
+    assert.equal(counts.get(a.id), 2);
+    assert.equal(counts.get(b.id), 1);
+    assert.equal(counts.has(empty.id), false, "empty sessions are absent from the aggregate");
+
+    await store.removePost(a1.id);
+    counts = await countPostsBySession();
+    assert.equal(counts.get(a.id), 1);
+    assert.equal(counts.get(b.id), 1);
+
+    await store.removeSession(b.id);
+    counts = await countPostsBySession();
+    assert.equal(counts.size, 1);
+    assert.equal(counts.get(a.id), 1);
+    assert.equal(counts.has(b.id), false);
+  });
+
   contract("supports multi-part surfaces (html + diff + terminal + trace)", async (store) => {
     const session = await store.createSession({ agent: "pi" });
     const surface = await store.createPost({

@@ -351,6 +351,15 @@ export class JsonFileStore implements Store {
     return all.map(clone).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
+  async countPostsBySession() {
+    await this.load();
+    const counts = new Map<string, number>();
+    for (const post of this.surfaces.values()) {
+      counts.set(post.sessionId, (counts.get(post.sessionId) ?? 0) + 1);
+    }
+    return counts;
+  }
+
   async listRecentPosts(limit: number) {
     await this.load();
     return [...this.surfaces.values()]

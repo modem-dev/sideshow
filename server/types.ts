@@ -372,6 +372,11 @@ export interface Store {
   setSetting(key: string, value: string): Promise<void>;
 
   listPosts(sessionId?: string): Promise<Post[]>;
+  /**
+   * Optional narrow aggregate used by the session-list view. Custom stores may
+   * omit it; the app falls back to listPosts() for source compatibility.
+   */
+  countPostsBySession?(): Promise<Map<string, number>>;
   /** The N most-recently-updated posts across all sessions (newest first). */
   listRecentPosts(limit: number): Promise<Post[]>;
   getPost(id: string): Promise<Post | null>;

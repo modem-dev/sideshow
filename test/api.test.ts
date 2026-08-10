@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { createApp } from "../server/app.ts";
 import { JsonFileStore } from "../server/storage.ts";
+import type { Store } from "../server/types.ts";
 
 function makeApp(
   authToken?: string,
@@ -15,11 +16,15 @@ function makeApp(
     screenshots?: boolean;
     maxHoldConnections?: number;
     onEvent?: Parameters<typeof createApp>[0]["onEvent"];
+    store?: Store;
   },
 ) {
   const dir = mkdtempSync(join(tmpdir(), "sideshow-test-"));
-  const store = new JsonFileStore(join(dir, "data.json"));
-  const { viewerHtml = "<html><head></head><body>viewer</body></html>", ...rest } = opts ?? {};
+  const {
+    viewerHtml = "<html><head></head><body>viewer</body></html>",
+    store = new JsonFileStore(join(dir, "data.json")),
+    ...rest
+  } = opts ?? {};
   return createApp({
     store,
     viewerHtml,
@@ -60,6 +65,51 @@ test("publish without session auto-creates one", async () => {
   assert.equal(sessions[0].agent, "pi");
   assert.equal(sessions[0].postCount, 1);
   assert.equal(sessions[0].surfaceCount, 1);
+});
+
+test("GET /api/sessions uses the narrow post-count capability", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sideshow-count-test-"));
+  const store = new JsonFileStore(join(dir, "data.json"));
+  const app = makeApp(undefined, { store });
+  const first = (await (
+    await app.request("/api/snippets", json({ html: "<p>one</p>", agent: "pi" }))
+  ).json()) as any;
+  await app.request(
+    "/api/snippets",
+    json({ html: "<p>two</p>", agent: "pi", session: first.sessionId }),
+  );
+  await app.request("/api/sessions", json({ agent: "empty" }));
+
+  store.listPosts = async () => {
+    throw new Error("the optimized session list must not materialize posts");
+  };
+  const response = await app.request("/api/sessions");
+  assert.equal(response.status, 200);
+  const sessions = (await response.json()) as any[];
+  assert.equal(sessions.find((session) => session.id === first.sessionId).postCount, 2);
+  assert.equal(sessions.find((session) => session.agent === "empty").postCount, 0);
+});
+
+test("GET /api/sessions falls back to listPosts for custom stores", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sideshow-count-fallback-test-"));
+  const store: Store = new JsonFileStore(join(dir, "data.json"));
+  const app = makeApp(undefined, { store });
+  await app.request("/api/snippets", json({ html: "<p>one</p>", agent: "custom" }));
+
+  let listPostsCalls = 0;
+  const listPosts = store.listPosts.bind(store);
+  store.listPosts = async (...args) => {
+    listPostsCalls++;
+    return listPosts(...args);
+  };
+  Object.defineProperty(store, "countPostsBySession", { value: undefined });
+
+  const response = await app.request("/api/sessions");
+  assert.equal(response.status, 200);
+  assert.equal(listPostsCalls, 1);
+  const [session] = (await response.json()) as any[];
+  assert.equal(session.postCount, 1);
+  assert.equal(session.surfaceCount, 1);
 });
 
 test("onEvent receives published feed events", async () => {
