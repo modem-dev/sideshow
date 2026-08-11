@@ -339,20 +339,23 @@ test("a surface kind this viewer doesn't know shows a refresh hint, not a broken
   // server returns a valid surface, but rewrite the surface kind to one THIS
   // viewer build has no Match for. It must degrade to a neutral hint, never
   // the diff fallback.
-  await page.route(/\/api\/(posts\/[^/?]+|sessions\/[^/]+\/posts)(\?|$)/, async (route) => {
-    const res = await route.fetch();
-    const body = await res.json();
-    const rewrite = (post: any) => {
-      if (Array.isArray(post.surfaces)) {
-        post.surfaces = post.surfaces.map(() => ({ kind: "futurething" }));
-      }
-      return post;
-    };
-    await route.fulfill({
-      response: res,
-      json: Array.isArray(body) ? body.map(rewrite) : rewrite(body),
-    });
-  });
+  await page.route(
+    /\/api\/(posts\/[^/?]+(?:\/viewer)?|sessions\/[^/]+\/posts)(\?|$)/,
+    async (route) => {
+      const res = await route.fetch();
+      const body = await res.json();
+      const rewrite = (post: any) => {
+        if (Array.isArray(post.surfaces)) {
+          post.surfaces = post.surfaces.map(() => ({ kind: "futurething" }));
+        }
+        return post;
+      };
+      await route.fulfill({
+        response: res,
+        json: Array.isArray(body) ? body.map(rewrite) : rewrite(body),
+      });
+    },
+  );
 
   await page.goto(server.url);
   // wait until the page is loaded and its SSE is connected, so the publish
@@ -815,16 +818,43 @@ test("the Connect an agent page is reachable directly when sessions already exis
   await expect(page.locator(".connect-page")).toContainText(`npx add-mcp ${server.url}/mcp`);
 });
 
-test("version select appears live after an update", async ({ page, server }) => {
-  const snippet = await publish(server.url, { html: "<p>v1</p>", title: "Doc", agent: "e2e" });
+test("live creates and updates fetch compact viewer posts with retained versions", async ({
+  page,
+  server,
+}) => {
+  const first = await publish(server.url, {
+    html: "<p>existing</p>",
+    title: "Existing",
+    agent: "e2e",
+  });
+  const compactRequests: string[] = [];
+  const fullDetailRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "GET") return;
+    const path = new URL(request.url()).pathname;
+    if (/^\/api\/posts\/[^/]+\/viewer$/.test(path)) compactRequests.push(path);
+    if (/^\/api\/posts\/[^/]+$/.test(path)) fullDetailRequests.push(path);
+  });
 
-  await page.goto(server.url);
+  await page.goto(`${server.url}/session/${first.sessionId}`);
   await expect(page.locator(".card .vbadge")).toHaveText("v1");
 
-  await update(server.url, snippet.id, { html: "<p>v2</p>" });
+  const live = await publish(server.url, {
+    html: "<p>v1</p>",
+    title: "Live compact",
+    agent: "e2e",
+    session: first.sessionId,
+  });
+  const liveCard = page.locator(`.card[data-id="${live.id}"]`);
+  await expect(liveCard.locator(".card-title")).toHaveText("Live compact");
 
-  const select = page.locator("select.vbadge");
+  await update(server.url, live.id, { html: "<p>v2</p>", title: "Live compact v2" });
+
+  await expect(liveCard.locator(".card-title")).toHaveText("Live compact v2");
+  const select = liveCard.locator("select.vbadge");
   await expect(select).toBeVisible();
   await expect(select).toHaveValue("2");
   await expect(select.locator("option")).toHaveText(["v2", "v1"]);
+  await expect.poll(() => compactRequests.filter((path) => path.includes(live.id)).length).toBe(2);
+  expect(fullDetailRequests).toEqual([]);
 });

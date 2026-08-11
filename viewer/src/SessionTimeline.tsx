@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
-import type { Post, TraceStep } from "./api.ts";
+import type { TraceStep, ViewerPost } from "./api.ts";
 import { Card } from "./Card.tsx";
 import { streamLoading, posts, traceSteps } from "./state.ts";
 
@@ -13,14 +13,14 @@ import { streamLoading, posts, traceSteps } from "./state.ts";
 // with posts by time.
 
 interface Gap {
-  post: Post | null; // the post this gap leads into; null = trailing
+  post: ViewerPost | null; // the post this gap leads into; null = trailing
   steps: TraceStep[];
 }
 
-function buildGaps(postList: readonly Post[], steps: readonly TraceStep[]): Gap[] {
+function buildGaps(postList: readonly ViewerPost[], steps: readonly TraceStep[]): Gap[] {
   const gaps: Gap[] = postList.map((s) => ({ post: s, steps: [] }));
   gaps.push({ post: null, steps: [] });
-  const at = (s: Post) => Date.parse(s.createdAt);
+  const at = (s: ViewerPost) => Date.parse(s.createdAt);
   for (const step of steps) {
     const t = step.ts ? Date.parse(step.ts) : NaN;
     let idx = gaps.length - 1; // default: trailing

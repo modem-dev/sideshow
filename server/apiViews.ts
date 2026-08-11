@@ -64,20 +64,45 @@ export const postDetailView = (post: Post) => ({
   })),
 });
 
-// One session's whole stream, hydrated in a single response (`?hydrate=1`). Same
-// envelope as postDetailView — the viewer identifies a hydrated row by `history`
-// being an array — minus the bodies it never reads. History is here only to size
-// the version dropdown (`history.length`): picking an older version just re-points
-// each iframe at /s/:id?part=N&ver=N, so past surfaces are never rendered from
-// this payload and reduce to refs.
-export const sessionPostHydratedView = (post: Post) => ({
-  ...post,
-  surfaces: post.surfaces.map(hydratedSurfaceView),
-  history: post.history.map((version) => ({
-    ...version,
-    surfaces: version.surfaces.map(surfaceRef),
-  })),
+// The current surface metadata/data the viewer renders. Sandboxed kinds omit
+// their body (the iframe fetches it from /s/:id); native kinds keep their inline
+// data. Extra kind-specific fields are intentionally open-ended so a newer
+// server can send metadata an older viewer safely ignores.
+export interface ViewerSurface {
+  id?: string;
+  kind: Surface["kind"];
+  index: number;
+  [key: string]: unknown;
+}
+
+// Compact post representation used only by the live viewer. versionCount is the
+// number of retained/renderable versions INCLUDING current; it can be lower than
+// `version` after HISTORY_LIMIT rolls old revisions out of the store.
+export interface ViewerPost {
+  id: string;
+  sessionId: string;
+  title: string;
+  surfaces: ViewerSurface[];
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+  versionCount: number;
+}
+
+export const viewerPostView = (post: Post): ViewerPost => ({
+  id: post.id,
+  sessionId: post.sessionId,
+  title: post.title,
+  surfaces: post.surfaces.map(hydratedSurfaceView) as ViewerSurface[],
+  createdAt: post.createdAt,
+  updatedAt: post.updatedAt,
+  version: post.version,
+  versionCount: post.history.length + 1,
 });
+
+// One session's whole stream, hydrated in a single response (`?hydrate=1`). It
+// uses the same compact wire contract as the per-post live-update route.
+export const sessionPostHydratedView = viewerPostView;
 
 export const sessionPostListRowView = (post: Post) => {
   const surfaces = post.surfaces.map(sessionListSurfaceView);

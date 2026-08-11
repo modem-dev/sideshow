@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { createApp } from "../server/app.ts";
 import { JsonFileStore } from "../server/storage.ts";
-import type { Store } from "../server/types.ts";
+import { HISTORY_LIMIT, type Store } from "../server/types.ts";
 
 function makeApp(
   authToken?: string,
@@ -2370,7 +2370,78 @@ test("GET /api/sessions/:id/posts lists lean surfaces with ids and omitted html 
   assert.deepEqual(list[0].parts, list[0].surfaces, "legacy parts aliases surfaces");
 });
 
-test("GET /api/sessions/:id/posts?hydrate=1 returns every post the viewer needs in one response", async () => {
+test("GET /api/posts/:id/viewer is compact while canonical and legacy details stay full", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Viewer v1",
+        surfaces: [
+          { kind: "html", html: "<p>historical body</p>" },
+          { kind: "json", data: { old: true } },
+        ],
+      }),
+    )
+  ).json()) as any;
+  await app.request(`/api/posts/${created.id}`, {
+    ...json({
+      title: "Viewer v2",
+      surfaces: [
+        { kind: "markdown", markdown: "# current body" },
+        { kind: "json", data: { keep: true } },
+        { kind: "image", assetId: "asset-current", alt: "kept image metadata" },
+        { kind: "trace", steps: [{ label: "kept trace data" }] },
+      ],
+    }),
+    method: "PUT",
+  });
+
+  const compact = (await (await app.request(`/api/posts/${created.id}/viewer`)).json()) as any;
+  assert.equal(compact.id, created.id);
+  assert.equal(compact.title, "Viewer v2");
+  assert.equal(compact.version, 2);
+  assert.equal(compact.versionCount, 2);
+  assert.ok(!("history" in compact), "compact viewer response omits history entirely");
+  assert.ok(!("markdown" in compact.surfaces[0]), "sandboxed current body is omitted");
+  assert.deepEqual(compact.surfaces[1].data, { keep: true }, "JSON data is retained");
+  assert.equal(compact.surfaces[2].assetId, "asset-current", "image metadata is retained");
+  assert.equal(compact.surfaces[3].steps[0].label, "kept trace data", "trace data is retained");
+
+  const canonical = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  const legacySurface = (await (await app.request(`/api/surfaces/${created.id}`)).json()) as any;
+  const legacySnippet = (await (await app.request(`/api/snippets/${created.id}`)).json()) as any;
+  assert.deepEqual(legacySurface, canonical);
+  assert.deepEqual(legacySnippet, canonical);
+  assert.equal((await app.request(`/api/surfaces/${created.id}/viewer`)).status, 404);
+  assert.equal((await app.request(`/api/snippets/${created.id}/viewer`)).status, 404);
+  assert.equal(canonical.history[0].surfaces[0].html, "<p>historical body</p>");
+  assert.equal(canonical.surfaces[0].markdown, "# current body");
+});
+
+test("viewer versionCount is capped to retained history plus current", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({ title: "Rolling", surfaces: [{ kind: "html", html: "<p>v1</p>" }] }),
+    )
+  ).json()) as any;
+  for (let version = 2; version <= HISTORY_LIMIT + 3; version++) {
+    const response = await app.request(`/api/posts/${created.id}`, {
+      ...json({ title: `Rolling v${version}` }),
+      method: "PUT",
+    });
+    assert.equal(response.status, 200);
+  }
+
+  const compact = (await (await app.request(`/api/posts/${created.id}/viewer`)).json()) as any;
+  assert.equal(compact.version, HISTORY_LIMIT + 3);
+  assert.equal(compact.versionCount, HISTORY_LIMIT + 1);
+  assert.ok(compact.versionCount < compact.version, "lifetime version can exceed retained count");
+});
+
+test("GET /api/sessions/:id/posts?hydrate=1 returns compact ViewerPosts", async () => {
   const app = makeApp();
   const created = (await (
     await app.request(
@@ -2390,14 +2461,12 @@ test("GET /api/sessions/:id/posts?hydrate=1 returns every post the viewer needs 
   assert.equal(list[0].id, created.id);
   assert.equal(list[0].title, "Hydrated v2");
   assert.equal(list[0].version, 2);
+  assert.equal(list[0].versionCount, 2);
+  assert.ok(!("history" in list[0]), "hydrate omits history entirely");
   // The frame ref survives — it's what /s/:id?part=N is built from.
   assert.equal(list[0].surfaces[0].kind, "html");
   assert.equal(list[0].surfaces[0].index, 0);
-  // History is present (the viewer keys "hydrated" off it) and long enough to
-  // size the version dropdown, but carries no bodies.
-  assert.equal(list[0].history.length, 1);
-  assert.equal(list[0].history[0].surfaces[0].index, 0);
-  assert.equal(list[0].history[0].surfaces[0].kind, "html");
+  assert.ok(!("html" in list[0].surfaces[0]), "sandboxed current body is omitted");
 });
 
 test("hydrated posts omit sandboxed bodies the viewer never reads, and keep native ones", async () => {
@@ -2428,12 +2497,8 @@ test("hydrated posts omit sandboxed bodies the viewer never reads, and keep nati
   // Sandboxed kinds render in an iframe that fetches its own body from
   // /s/:id?part=N — the content key is absent, not empty.
   assert.ok(!("patch" in post.surfaces[0]), "diff patch body is absent");
-  // Native kinds render from inline data and must survive intact.
-  const [older] = post.history;
-  assert.ok(!("html" in older.surfaces[0]), "history html body is absent");
-  assert.ok(!("markdown" in older.surfaces[1]), "history markdown body is absent");
-  assert.ok(!("text" in older.surfaces[2]), "history terminal body is absent");
-  assert.ok(!("data" in older.surfaces[3]), "history drops native bodies too");
+  assert.ok(!("history" in post), "history is represented only by versionCount");
+  assert.equal(post.versionCount, 2);
 
   // A native surface in the CURRENT version keeps its payload — check via a post
   // whose latest version holds one.

@@ -21,6 +21,7 @@ import {
   type JsonSurface as JsonSurfaceData,
   type Post,
   type TraceSurface as TraceSurfaceData,
+  type ViewerPost,
   postLink,
   postImageLink,
 } from "./api.ts";
@@ -198,7 +199,7 @@ function pollScrollIntoView(el: HTMLElement, postId: string): () => void {
   };
 }
 
-export function Card(props: { post: Post; standalone?: boolean }) {
+export function Card(props: { post: Post | ViewerPost; standalone?: boolean }) {
   let card!: HTMLDivElement;
   let fullscreenDialog: HTMLDivElement | undefined;
   let fullscreenCloseButton: HTMLButtonElement | undefined;
@@ -362,8 +363,10 @@ export function Card(props: { post: Post; standalone?: boolean }) {
   });
 
   const versionRange = (latest: number) => {
+    const versionCount =
+      "versionCount" in props.post ? props.post.versionCount : props.post.history.length + 1;
     const out = [];
-    for (let v = latest; v >= Math.max(1, latest - props.post.history.length); v--) out.push(v);
+    for (let v = latest; v >= Math.max(1, latest - versionCount + 1); v--) out.push(v);
     return out;
   };
 

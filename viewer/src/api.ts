@@ -16,6 +16,7 @@ import type {
   TraceSurface,
   TraceStep,
 } from "../../server/types.ts";
+import type { ViewerPost } from "../../server/apiViews.ts";
 import { host } from "./host.ts";
 
 export type {
@@ -34,6 +35,7 @@ export type {
   TerminalSurface,
   TraceSurface,
   TraceStep,
+  ViewerPost,
 };
 
 export type PublicReadMode = "session" | "full";

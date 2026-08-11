@@ -11,6 +11,7 @@ import {
   sessionPostHydratedView,
   sessionPostListRowView,
   sessionRowView,
+  viewerPostView,
   type Feedback,
 } from "./apiViews.ts";
 import { EventBus, type FeedEvent } from "./events.ts";
@@ -1129,6 +1130,14 @@ export function createApp({
     if (!post) return c.json({ error: "post not found" }, 404);
     return c.json(postDetailView(post));
   };
+  // Viewer-only projection for live create/update refetches. Keep this a
+  // canonical post subresource: the legacy detail aliases remain byte-for-byte
+  // on the full postDetailView contract above.
+  app.get("/api/posts/:id/viewer", async (c) => {
+    const post = await store.getPost(c.req.param("id"));
+    if (!post) return c.json({ error: "post not found" }, 404);
+    return c.json(viewerPostView(post));
+  });
   app.get("/api/surfaces/:id", getPost); // legacy alias
   app.get("/api/posts/:id", getPost);
   app.get("/api/snippets/:id", getPost); // legacy alias
