@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.13.0
+
+### Minor Changes
+
+- 8822dea: Add a minimal control to collapse the desktop session sidebar into a narrow rail.
+
+### Patch Changes
+
+- 4161897: Coalesce the session-list refreshes triggered by a burst of live post events. Each post still streams into the open session independently, while sidebar metadata waits for a short quiet window and shares one request instead of fetching the full session list once per post.
+- 120705e: Stop live viewer updates and session hydration from downloading a post's complete revision history. Both paths now use a compact viewer representation with current render metadata, native surface data, and a retained-version count, while the existing post detail endpoints keep returning full history.
+- 6f81fa1: Refresh runtime and build dependencies to patched releases so the security audit passes with no known vulnerabilities. This also moves the Cloudflare type configuration to the current package entrypoint required by the latest Wrangler release.
+- 287bb3d: Make the session-list endpoint count posts through a narrow store aggregate. SQLite no longer selects or decodes post surfaces and history, while the JSON store avoids cloning and sorting posts after loading the workspace. Custom stores without the optional capability keep the existing `listPosts` fallback.
+- f15dc13: Speed up SQLite-backed workspaces by indexing session posts, recent posts, comment lookups, and session assets.
+- 66c5f74: Align the shipped Pi extension with the current post contract: support JSON and code surfaces, require a real surface target for browser-thread replies, and remove experimental trace publishing from agent-facing schemas and guidance.
+- 2b98bbf: Cut session-opening hydrate responses by omitting sandboxed surface bodies the viewer never reads. Sandboxed surfaces render through their own versioned iframe URLs, so duplicating those bodies in the session payload only delayed the stream. Across the six largest sessions in a real store, this reduced the response by 95% raw and 91% gzipped. The compact viewer contract above now also replaces retained history with a version count, while full post-detail APIs remain unchanged.
+
+- 9bbcb5e: Fix surface iframes staying stuck at their seed height when a host mounts two
+  viewer instances into one JS realm at once (e.g. an embedding host that
+  cross-fades an outgoing viewer into an incoming one during an in-place
+  navigation). Because the engine loads as a single shared module, both instances
+  shared the module-level surface-frame registry (`cardEls`) and the single
+  `message` bridge listener. Two instances routing to the same URL rendered a
+  `Card` for the same post, so keying `cardEls` by post id let them clobber each
+  other's entry — and the outgoing instance's teardown deleted the entry the
+  still-visible instance needed, so its surface `resize` messages were dropped and
+  the frames never grew past their seed height. The shared listener had the same
+  hazard: `removeEventListener` on the first teardown tore it out from under the
+  survivor.
+
+  `cardEls` is now keyed by a per-`Card` token (resolved by `contentWindow`, with a
+  new `cardForPost` for the scroll-to-card pill), and the bridge listener is
+  reference-counted so it lives while any viewer is mounted. Self-hosted single-
+  instance behavior is unchanged.
+
 ## 0.12.0
 
 ### Minor Changes
