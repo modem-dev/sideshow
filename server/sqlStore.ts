@@ -88,6 +88,28 @@ export class SqlStore implements Store {
     this.migrateToSurfaces();
     this.migrateToPosts();
     this.migrateSurfaceIds();
+    this.createIndexes();
+  }
+
+  // Add indexes after the column/table migrations above: older workspaces may
+  // still call comments' post columns snippetId/surfaceId when the base schema
+  // is first opened. IF NOT EXISTS makes this an in-place, idempotent migration
+  // for deployed Durable Objects as well as local SQLite databases.
+  private createIndexes() {
+    this.sql.exec(`
+      CREATE INDEX IF NOT EXISTS sideshow_posts_session_created_at_idx
+        ON posts (sessionId, createdAt);
+      CREATE INDEX IF NOT EXISTS sideshow_posts_updated_at_idx
+        ON posts (updatedAt DESC);
+      CREATE INDEX IF NOT EXISTS sideshow_comments_session_seq_idx
+        ON comments (sessionId, seq);
+      CREATE INDEX IF NOT EXISTS sideshow_comments_post_seq_idx
+        ON comments (postId, seq);
+      CREATE INDEX IF NOT EXISTS sideshow_comments_id_idx
+        ON comments (id);
+      CREATE INDEX IF NOT EXISTS sideshow_assets_session_idx
+        ON assets (sessionId);
+    `);
   }
 
   // Pre-0.5.0 workspaces stored a `snippets` table and `comments.snippetId`. Lift
