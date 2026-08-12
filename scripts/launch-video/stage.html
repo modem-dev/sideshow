@@ -1,0 +1,266 @@
+<!doctype html>
+<!--
+  1920x1080 recording stage for sideshow release/feature videos.
+
+  The live viewer loads into the framed "browser window" iframe; a driver
+  script (record.mjs) records this page with Playwright video while calling
+  the window.stage API to move captions and title cards. Tokens __INTER__ /
+  __MONO__ / __APP_URL__ / __APP_HOST__ are substituted by record.mjs before
+  the page is loaded (from a work-dir copy).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @font-face {
+        font-family: "InterVideo";
+        src: url("__INTER__") format("woff2");
+        font-weight: 100 900;
+        font-display: block;
+      }
+      @font-face {
+        font-family: "MonoVideo";
+        src: url("__MONO__") format("woff2");
+        font-weight: 400 700;
+        font-display: block;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      body {
+        background: #07090d;
+        background-image:
+          radial-gradient(1200px 700px at 30% -10%, rgba(56, 89, 160, 0.22), transparent 60%),
+          radial-gradient(1000px 600px at 90% 110%, rgba(163, 110, 36, 0.14), transparent 55%);
+        font-family: "InterVideo", system-ui, "DejaVu Sans", sans-serif;
+        color: #e6edf3;
+      }
+      .stage {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+      }
+
+      /* --- framed browser window ------------------------------------------- */
+      .window {
+        position: absolute;
+        left: 160px;
+        top: 44px;
+        width: 1600px;
+        height: 864px;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid rgba(240, 246, 252, 0.12);
+        box-shadow:
+          0 40px 90px rgba(0, 0, 0, 0.6),
+          0 8px 24px rgba(0, 0, 0, 0.45);
+        background: #0d1117;
+      }
+      .chrome {
+        height: 44px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 16px;
+        background: #161b22;
+        border-bottom: 1px solid #21262d;
+      }
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+      .dot.r {
+        background: #f85149;
+      }
+      .dot.y {
+        background: #d29922;
+      }
+      .dot.g {
+        background: #3fb950;
+      }
+      .urlbar {
+        margin: 0 auto;
+        padding: 5px 40px;
+        border-radius: 8px;
+        background: #0d1117;
+        color: #8b949e;
+        font:
+          14px/1 "MonoVideo",
+          "DejaVu Sans Mono",
+          monospace;
+      }
+      iframe#app {
+        display: block;
+        width: 1600px;
+        height: 819px;
+        border: 0;
+        background: #0d1117;
+      }
+
+      /* --- caption lower third ---------------------------------------------- */
+      .caption {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 52px;
+        display: flex;
+        justify-content: center;
+        opacity: 0;
+        transform: translateY(16px);
+        transition:
+          opacity 0.45s ease,
+          transform 0.45s ease;
+      }
+      .caption.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .caption .inner {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        max-width: 1500px;
+        font-size: 31px;
+        font-weight: 500;
+        letter-spacing: 0.1px;
+        text-align: center;
+      }
+      .caption .badge,
+      .card-overlay .badge {
+        display: inline-block;
+        padding: 5px 13px 6px;
+        border-radius: 999px;
+        background: rgba(210, 153, 34, 0.16);
+        border: 1px solid rgba(210, 153, 34, 0.55);
+        color: #e3b341;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: 2.5px;
+        vertical-align: middle;
+        white-space: nowrap;
+      }
+      .caption .hl {
+        color: #e3b341;
+        font-weight: 600;
+      }
+      .caption .dim {
+        color: #8b949e;
+        font-weight: 400;
+      }
+
+      /* --- full-screen title cards ------------------------------------------ */
+      .card-overlay {
+        /* purely visual — never intercept the driver's clicks into the iframe */
+        pointer-events: none;
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #07090d;
+        background-image:
+          radial-gradient(1200px 700px at 30% -10%, rgba(56, 89, 160, 0.22), transparent 60%),
+          radial-gradient(1000px 600px at 90% 110%, rgba(163, 110, 36, 0.14), transparent 55%);
+        opacity: 1;
+        transition: opacity 0.55s ease;
+      }
+      .card-overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .card-overlay .box {
+        text-align: center;
+      }
+      .card-overlay h1 {
+        font-size: 88px;
+        font-weight: 700;
+        letter-spacing: -1.5px;
+        margin: 26px 0 10px;
+      }
+      .card-overlay h1 .ver {
+        color: #e3b341;
+      }
+      .card-overlay .sub {
+        font-size: 34px;
+        color: #9aa7b4;
+        font-weight: 400;
+      }
+      .card-overlay .cmds {
+        margin: 44px auto 0;
+        display: inline-flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .card-overlay .cmd {
+        font:
+          30px/1.35 "MonoVideo",
+          "DejaVu Sans Mono",
+          monospace;
+        background: #10151c;
+        border: 1px solid #263041;
+        border-radius: 10px;
+        padding: 14px 34px;
+        color: #e6edf3;
+      }
+      .card-overlay .cmd .p {
+        color: #3fb950;
+      }
+      .card-overlay .foot {
+        margin-top: 40px;
+        font-size: 25px;
+        color: #66707b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div class="window">
+        <div class="chrome">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="urlbar">__APP_HOST__</span>
+        </div>
+        <iframe id="app" src="__APP_URL__"></iframe>
+      </div>
+      <div class="caption" id="caption"><div class="inner" id="captionInner"></div></div>
+      <div class="card-overlay" id="card"><div class="box" id="cardBox"></div></div>
+    </div>
+    <script>
+      // Driver API — called from record.mjs via page.evaluate.
+      const captionEl = document.getElementById("caption");
+      const captionInner = document.getElementById("captionInner");
+      const cardEl = document.getElementById("card");
+      const cardBox = document.getElementById("cardBox");
+      window.stage = {
+        // Swap the lower-third caption (slide out, replace, slide in).
+        caption(html) {
+          captionEl.classList.remove("show");
+          setTimeout(
+            () => {
+              captionInner.innerHTML = html;
+              captionEl.classList.add("show");
+            },
+            html ? 300 : 0,
+          );
+        },
+        // Show a full-screen title card (covers the window + captions).
+        card(html) {
+          cardBox.innerHTML = html;
+          cardEl.classList.remove("hidden");
+        },
+        hideCard() {
+          cardEl.classList.add("hidden");
+        },
+      };
+    </script>
+  </body>
+</html>

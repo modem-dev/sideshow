@@ -10,3 +10,4 @@ viewer/dist-embed/
 test-results/
 playwright-report/
 coverage/
+.video-work/
