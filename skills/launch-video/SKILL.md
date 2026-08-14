@@ -35,10 +35,11 @@ Expect a run to take roughly the video's length plus ~20s boot; encoding adds
 a couple of minutes. Total output should stay near 40–60s.
 
 ```sh
-# 0. one-time work-dir setup (fonts are optional but much nicer than DejaVu)
+# 0. one-time work-dir setup (the brand fonts; the stage falls back to system
+#    fonts without them, which no longer matches the site — install them)
 mkdir -p .video-work && cd .video-work
 printf '{"name":"sideshow-video-work","private":true}\n' > package.json
-npm i @fontsource-variable/inter @fontsource/jetbrains-mono
+npm i @fontsource-variable/inter @fontsource/instrument-serif @fontsource/jetbrains-mono
 cd ..
 
 # 1. record (server boot + seed + storyboard, prints the raw webm path)
@@ -76,11 +77,21 @@ ffmpeg -y -i "$RAW" -vf "fps=30,format=yuv420p" \
   `stage("caption", html)` swaps the lower-third (slide out/in),
   `stage("card", html)` shows a full-screen title card, `stage("hideCard")`
   fades it out. Pacing is plain `sleep(ms)` between beats.
-- Caption vocabulary: `<span class="badge">NEW</span>` amber pill,
-  `<span class="hl">` amber highlight, `<span class="dim">` muted. A NEW badge
-  is a claim about _this_ release — drop or move badges as features age.
-- Card vocabulary: `badge`, `h1` (+ `span.ver` for the amber version),
-  `sub`, `cmds`/`cmd` (+ `span.p` for the prompt `$`), `foot`.
+- **The stage wears the sideshow.sh "Matinee" look** — palette and type are
+  copied from sideshow-cloud `web/site/site.css` and must stay in sync with it:
+  warm bone canvas `#f4f1ea`, ink `#16151a`, one vermilion accent `#e8442f`, a
+  soft accent spotlight, Instrument Serif for card headlines (italic `em` for
+  the flourish), Inter for captions/body, and the site's `.marquee` treatment
+  for the window frame (dark `#1d212a` bar, warm border, deep soft shadow).
+  The viewer records in **light** scheme so the board looks the way the site
+  depicts it. If the site redesigns, restyle `stage.html` from its tokens.
+- Caption vocabulary: `<span class="badge">NEW</span>` (the site's kicker:
+  uppercase, letterspaced, vermilion), `<span class="hl">` vermilion highlight,
+  `<span class="dim">` muted. A NEW badge is a claim about _this_ release —
+  drop or move badges as features age.
+- Card vocabulary: `badge` (kicker), `h1` (+ `<em class="ver">` for the italic
+  vermilion version), `sub`, `cmds`/`cmd` (+ `span.p` for the prompt `$`),
+  `foot`.
 - Interact with the viewer through `page.frameLocator("#app")`. Useful
   selectors: `aside .sess-title` (session rows), `.sidebar-toggle`
   (collapse/expand rail), `.card:not(#whatsNew)` (post cards — the update-notes

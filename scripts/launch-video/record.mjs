@@ -89,6 +89,14 @@ const stageHtml = readFileSync(join(ROOT, "scripts", "launch-video", "stage.html
     "__MONO__",
     font("@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2"),
   )
+  .replaceAll(
+    "__SERIF__",
+    font("@fontsource/instrument-serif/files/instrument-serif-latin-400-normal.woff2"),
+  )
+  .replaceAll(
+    "__SERIF_ITALIC__",
+    font("@fontsource/instrument-serif/files/instrument-serif-latin-400-italic.woff2"),
+  )
   .replaceAll("__APP_URL__", base)
   .replaceAll("__APP_HOST__", base.replace(/^https?:\/\//, ""));
 const stagePath = join(WORK, "stage.resolved.html");
@@ -105,7 +113,8 @@ const size = { width: 1920, height: 1080 };
 const context = await browser.newContext({
   viewport: size,
   recordVideo: { dir: WORK, size },
-  colorScheme: "dark",
+  // Light board on the warm Matinee stage — matches how sideshow.sh shows it.
+  colorScheme: "light",
 });
 // The viewer document sends `frame-ancestors 'self'` (clickjacking hardening),
 // which would refuse the file:// stage's iframe — strip CSP on that one
@@ -128,8 +137,8 @@ const stage = (fn, arg) => page.evaluate(([f, a]) => window.stage[f](a), [fn, ar
 await stage(
   "card",
   `
-  <div class="badge">RELEASE</div>
-  <h1>sideshow <span class="ver">0.13.0</span></h1>
+  <div class="badge">Release</div>
+  <h1>sideshow <em class="ver">0.13.0</em></h1>
   <p class="sub">a live visual surface for your coding agents</p>`,
 );
 await app.locator("aside .sess").first().waitFor();
@@ -204,7 +213,10 @@ await stage(
 await sleep(700);
 await app.locator("aside .sess-title", { hasText: queueDemo.title }).click();
 await page.mouse.move(960, 720); // park the pointer so no sidebar hover state shows
-await sleep(2600);
+// Start the hold only once the session's surfaces are actually rendered —
+// otherwise the caption plays over skeleton placeholders.
+await app.locator(".card:not(#whatsNew) iframe").first().waitFor();
+await sleep(2400);
 await app.locator("aside .sess-title", { hasText: authDemo.title }).click();
 await page.mouse.move(960, 720);
 // Hold until the sandboxed surface iframes have re-rendered, so the last
@@ -217,7 +229,7 @@ await stage("caption", ``);
 await stage(
   "card",
   `
-  <h1>sideshow <span class="ver">0.13.0</span></h1>
+  <h1>sideshow <em class="ver">0.13.0</em></h1>
   <div class="cmds">
     <div class="cmd"><span class="p">$</span> npm i -g sideshow</div>
     <div class="cmd"><span class="p">$</span> sideshow serve --open</div>

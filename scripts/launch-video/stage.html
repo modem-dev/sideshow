@@ -2,11 +2,17 @@
 <!--
   1920x1080 recording stage for sideshow release/feature videos.
 
+  Styled after the sideshow.sh "Matinee" aesthetic (sideshow-cloud
+  web/site/site.css): warm bone canvas, ink type, one vermilion accent, a soft
+  spotlight, Instrument Serif marquee headlines, Inter body. The window frame
+  echoes the site's .marquee screenshot frame (dark bar, warm border, deep
+  soft shadow).
+
   The live viewer loads into the framed "browser window" iframe; a driver
   script (record.mjs) records this page with Playwright video while calling
   the window.stage API to move captions and title cards. Tokens __INTER__ /
-  __MONO__ / __APP_URL__ / __APP_HOST__ are substituted by record.mjs before
-  the page is loaded (from a work-dir copy).
+  __MONO__ / __SERIF__ / __SERIF_ITALIC__ / __APP_URL__ / __APP_HOST__ are
+  substituted by record.mjs before the page is loaded (from a work-dir copy).
 -->
 <html lang="en">
   <head>
@@ -24,6 +30,35 @@
         font-weight: 400 700;
         font-display: block;
       }
+      @font-face {
+        font-family: "SerifVideo";
+        src: url("__SERIF__") format("woff2");
+        font-weight: 400;
+        font-style: normal;
+        font-display: block;
+      }
+      @font-face {
+        font-family: "SerifVideo";
+        src: url("__SERIF_ITALIC__") format("woff2");
+        font-weight: 400;
+        font-style: italic;
+        font-display: block;
+      }
+      :root {
+        /* Matinee palette — keep in sync with sideshow-cloud web/site/site.css */
+        --bg: #f4f1ea;
+        --surface: #ffffff;
+        --border: #e4ded2;
+        --ink: #16151a;
+        --muted: #56514a;
+        --soft: #6f6a60;
+        --faint: #8a8478;
+        --accent: #e8442f;
+        --frame: #1d212a;
+        --sans: "InterVideo", "Inter", system-ui, sans-serif;
+        --serif: "SerifVideo", "Instrument Serif", Georgia, serif;
+        --mono: "MonoVideo", ui-monospace, "SF Mono", Menlo, monospace;
+      }
       * {
         margin: 0;
         padding: 0;
@@ -36,12 +71,20 @@
         overflow: hidden;
       }
       body {
-        background: #07090d;
-        background-image:
-          radial-gradient(1200px 700px at 30% -10%, rgba(56, 89, 160, 0.22), transparent 60%),
-          radial-gradient(1000px 600px at 90% 110%, rgba(163, 110, 36, 0.14), transparent 55%);
-        font-family: "InterVideo", system-ui, "DejaVu Sans", sans-serif;
-        color: #e6edf3;
+        background: var(--bg);
+        font-family: var(--sans);
+        color: var(--ink);
+      }
+      /* the site's hero spotlight — a soft vermilion glow from above */
+      .spot {
+        position: absolute;
+        top: -220px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 1100px;
+        height: 760px;
+        pointer-events: none;
+        background: radial-gradient(ellipse at center, rgba(232, 68, 47, 0.1), transparent 60%);
       }
       .stage {
         position: relative;
@@ -49,7 +92,7 @@
         height: 1080px;
       }
 
-      /* --- framed browser window ------------------------------------------- */
+      /* --- framed browser window (the site's .marquee treatment) ------------ */
       .window {
         position: absolute;
         left: 160px;
@@ -58,11 +101,11 @@
         height: 864px;
         border-radius: 14px;
         overflow: hidden;
-        border: 1px solid rgba(240, 246, 252, 0.12);
+        border: 1px solid var(--border);
         box-shadow:
-          0 40px 90px rgba(0, 0, 0, 0.6),
-          0 8px 24px rgba(0, 0, 0, 0.45);
-        background: #0d1117;
+          0 52px 100px -60px rgba(22, 21, 26, 0.5),
+          0 12px 36px -24px rgba(22, 21, 26, 0.3);
+        background: var(--surface);
       }
       .chrome {
         height: 44px;
@@ -70,8 +113,7 @@
         align-items: center;
         gap: 8px;
         padding: 0 16px;
-        background: #161b22;
-        border-bottom: 1px solid #21262d;
+        background: var(--frame);
       }
       .dot {
         width: 12px;
@@ -79,31 +121,28 @@
         border-radius: 50%;
       }
       .dot.r {
-        background: #f85149;
+        background: #f0564a;
       }
       .dot.y {
-        background: #d29922;
+        background: #e0a63c;
       }
       .dot.g {
-        background: #3fb950;
+        background: #58b368;
       }
       .urlbar {
         margin: 0 auto;
         padding: 5px 40px;
         border-radius: 8px;
-        background: #0d1117;
-        color: #8b949e;
-        font:
-          14px/1 "MonoVideo",
-          "DejaVu Sans Mono",
-          monospace;
+        background: rgba(255, 255, 255, 0.08);
+        color: #9aa3ad;
+        font: 14px/1 var(--mono);
       }
       iframe#app {
         display: block;
         width: 1600px;
         height: 819px;
         border: 0;
-        background: #0d1117;
+        background: var(--surface);
       }
 
       /* --- caption lower third ---------------------------------------------- */
@@ -127,33 +166,31 @@
       .caption .inner {
         display: flex;
         align-items: center;
-        gap: 18px;
+        gap: 20px;
         max-width: 1500px;
         font-size: 31px;
         font-weight: 500;
         letter-spacing: 0.1px;
         text-align: center;
+        color: var(--ink);
       }
+      /* the site's .kicker: uppercase, letterspaced, vermilion — no pill */
       .caption .badge,
       .card-overlay .badge {
-        display: inline-block;
-        padding: 5px 13px 6px;
-        border-radius: 999px;
-        background: rgba(210, 153, 34, 0.16);
-        border: 1px solid rgba(210, 153, 34, 0.55);
-        color: #e3b341;
-        font-size: 20px;
-        font-weight: 700;
-        letter-spacing: 2.5px;
-        vertical-align: middle;
+        font-family: var(--sans);
+        font-size: 21px;
+        font-weight: 600;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--accent);
         white-space: nowrap;
       }
       .caption .hl {
-        color: #e3b341;
+        color: var(--accent);
         font-weight: 600;
       }
       .caption .dim {
-        color: #8b949e;
+        color: var(--soft);
         font-weight: 400;
       }
 
@@ -167,63 +204,66 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #07090d;
-        background-image:
-          radial-gradient(1200px 700px at 30% -10%, rgba(56, 89, 160, 0.22), transparent 60%),
-          radial-gradient(1000px 600px at 90% 110%, rgba(163, 110, 36, 0.14), transparent 55%);
+        background: var(--bg);
         opacity: 1;
         transition: opacity 0.55s ease;
       }
       .card-overlay.hidden {
         opacity: 0;
-        pointer-events: none;
       }
       .card-overlay .box {
+        position: relative;
+        z-index: 2;
         text-align: center;
       }
-      .card-overlay h1 {
-        font-size: 88px;
-        font-weight: 700;
-        letter-spacing: -1.5px;
-        margin: 26px 0 10px;
+      .card-overlay .badge {
+        display: block;
+        margin-bottom: 26px;
       }
+      .card-overlay h1 {
+        font: 400 108px/1 var(--serif);
+        color: var(--ink);
+        margin: 0 0 22px;
+        letter-spacing: -1px;
+      }
+      .card-overlay h1 em,
       .card-overlay h1 .ver {
-        color: #e3b341;
+        font-style: italic;
+        color: var(--accent);
       }
       .card-overlay .sub {
-        font-size: 34px;
-        color: #9aa7b4;
+        font-size: 32px;
+        line-height: 1.5;
+        color: var(--muted);
         font-weight: 400;
       }
       .card-overlay .cmds {
-        margin: 44px auto 0;
+        margin: 48px auto 0;
         display: inline-flex;
         flex-direction: column;
         gap: 14px;
       }
       .card-overlay .cmd {
-        font:
-          30px/1.35 "MonoVideo",
-          "DejaVu Sans Mono",
-          monospace;
-        background: #10151c;
-        border: 1px solid #263041;
+        font: 28px/1.4 var(--mono);
+        background: var(--frame);
         border-radius: 10px;
-        padding: 14px 34px;
-        color: #e6edf3;
+        padding: 15px 36px;
+        color: #f4f1ea;
+        box-shadow: 0 18px 40px -28px rgba(22, 21, 26, 0.55);
       }
       .card-overlay .cmd .p {
-        color: #3fb950;
+        color: var(--accent);
       }
       .card-overlay .foot {
-        margin-top: 40px;
-        font-size: 25px;
-        color: #66707b;
+        margin-top: 44px;
+        font-size: 24px;
+        color: var(--faint);
       }
     </style>
   </head>
   <body>
     <div class="stage">
+      <div class="spot"></div>
       <div class="window">
         <div class="chrome">
           <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
@@ -232,7 +272,10 @@
         <iframe id="app" src="__APP_URL__"></iframe>
       </div>
       <div class="caption" id="caption"><div class="inner" id="captionInner"></div></div>
-      <div class="card-overlay" id="card"><div class="box" id="cardBox"></div></div>
+      <div class="card-overlay" id="card">
+        <div class="spot"></div>
+        <div class="box" id="cardBox"></div>
+      </div>
     </div>
     <script>
       // Driver API — called from record.mjs via page.evaluate.
