@@ -23,7 +23,6 @@ import {
   renderMermaidPage,
   renderSandboxedPart,
 } from "./surfacePage.ts";
-import { renderCode, renderDiff, renderMarkdown, renderTerminal } from "./richRender.ts";
 import { DEFAULT_THEME_ID, themeById, themeOptions } from "./themes.ts";
 import {
   type Asset,
@@ -1571,6 +1570,21 @@ export function createApp({
       if (surface.kind === "mermaid") {
         return renderMermaidPage({ mermaid: surface.mermaid, origin, theme, mode });
       }
+      // Load the rich renderers on first use, not at module load. richRender.ts
+      // pulls in shiki, @pierre/diffs, markdown-it and ansi_up — measured at ~48 MB
+      // of RSS and ~240 ms of import time (`npm run bench:all`, process suite), which
+      // every server paid at boot whether or not it ever rendered a rich surface.
+      // Deferring it past the html and mermaid branches above means an html-only
+      // workspace never loads any of it.
+      //
+      // The runtime's module cache makes every later call cheap, so there's no memo
+      // here to keep in sync. On the Worker the module is already inside the
+      // deployed bundle — the import defers evaluating it, not fetching it — so this
+      // needs no network at runtime. test/workerIntegration covers that on real
+      // workerd, because a dynamic import resolving differently there is exactly the
+      // way this optimization could break in production and nowhere else.
+      const { renderCode, renderDiff, renderMarkdown, renderTerminal } =
+        await import("./richRender.ts");
       const rendered =
         surface.kind === "markdown"
           ? await renderMarkdown(surface as MarkdownSurface, { theme: themeId, mode })

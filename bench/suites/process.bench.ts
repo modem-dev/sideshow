@@ -134,14 +134,32 @@ function importCost(specifier: string | null): Promise<{ rss: number; ms: number
   });
 }
 
-/** Modules that dominate the server's module graph, loaded cheapest-first. */
+/**
+ * Modules that dominate the server's module graph, loaded cheapest-first.
+ *
+ * Reading these: subtract the `node baseline` row to get a module's own cost, and
+ * note that any row importing a LOCAL `.ts` file also carries Node's type-stripping
+ * overhead — the transpiler loads on the first `.ts` import and costs ~25 MB by
+ * itself, which is why `server/types.ts` is in the list as a floor to subtract.
+ * That overhead is a dev-run artifact: the published package ships compiled `.js`
+ * in `dist/`, so an installed CLI never pays it. The `server RSS idle` number
+ * above does include it, because it runs `server/index.ts` from source.
+ *
+ * The npm-package rows have no such caveat and are directly comparable.
+ */
 const IMPORT_TARGETS: [name: string, specifier: string | null][] = [
   ["node baseline (no imports)", null],
+  ["server/types.ts (type-strip floor)", "./server/types.ts"],
   ["hono", "hono"],
   ["markdown-it", "markdown-it"],
   ["shiki", "shiki"],
+  ["@mermaid-js/parser", "@mermaid-js/parser"],
   ["@pierre/diffs", "@pierre/diffs"],
+  // The two modules deliberately kept OFF the boot path (see the dynamic imports
+  // in app.ts and postSurfaces.ts). If either becomes a static import again,
+  // server/app.ts jumps to roughly the richRender row and this suite shows it.
   ["server/richRender.ts", "./server/richRender.ts"],
+  ["server/postSurfaces.ts", "./server/postSurfaces.ts"],
   ["server/app.ts", "./server/app.ts"],
 ];
 

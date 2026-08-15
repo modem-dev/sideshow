@@ -1,6 +1,4 @@
 import { z } from "zod";
-import { processFile, parsePatchFiles } from "@pierre/diffs";
-import { parse as parseMermaid } from "@mermaid-js/parser";
 import { isKnownKit, KIT_IDS } from "./kits.ts";
 import { isSurfaceKind, type Surface, type SurfaceKind } from "./types.ts";
 
@@ -308,7 +306,16 @@ export async function validateSurfaces(
 // class, state, er, gantt, …) are not yet in that package, so we skip
 // validation for them — the viewer's existing graceful fallback handles any
 // render failure. No `node:` imports, no DOM usage on the parse path.
-function diffPatchHasContent(patch: string): boolean {
+//
+// Both parsers are imported lazily, at their point of use in validateSemantics
+// below — see the note there.
+
+// Takes the parsers rather than importing them, so the caller can load the module
+// OUTSIDE its try/catch — see the mermaid branch below for why that matters.
+function diffPatchHasContent(
+  patch: string,
+  { processFile, parsePatchFiles }: typeof import("@pierre/diffs"),
+): boolean {
   let files = 0;
   for (const parsed of parsePatchFiles(patch)) files += parsed.files.length;
   if (files > 0) return true;
@@ -328,10 +335,21 @@ function mermaidDiagramType(src: string): string | null {
   return null;
 }
 
+// The two parsers load at their point of use, not at module load. Together they
+// are ~51 MB of RSS and ~210 ms of import time (`npm run bench:all`, process
+// suite), and they are only reachable when someone publishes a diff or a mermaid
+// surface — a static import made every server pay that at boot to validate content
+// it may never receive. The runtime's module cache makes later publishes cheap,
+// and @pierre/diffs is shared with richRender.ts, so a workspace that renders
+// diffs loads it once for both.
+//
+// This is the other half of app.ts's lazy richRender import: leaving either half
+// static keeps the whole dependency graph resident and neither one saves anything.
 async function validateSemantics(surface: Surface): Promise<string[]> {
   if (surface.kind === "diff" && surface.patch) {
+    const diffParsers = await import("@pierre/diffs");
     try {
-      if (!diffPatchHasContent(surface.patch))
+      if (!diffPatchHasContent(surface.patch, diffParsers))
         return [
           'diff surface "patch" did not parse to any file — expected a unified/git patch with --- /+++ headers and @@ hunks',
         ];
@@ -345,6 +363,10 @@ async function validateSemantics(surface: Surface): Promise<string[]> {
     const diagramType = mermaidDiagramType(surface.mermaid);
     if (!diagramType)
       return ['mermaid surface has no diagram type (first line should be e.g. "flowchart TD")'];
+    // Outside the try: the catch below turns a throw into "your mermaid is
+    // invalid", which would be a wrong answer (and a 400 instead of a 500) if what
+    // actually failed was loading the parser.
+    const { parse: parseMermaid } = await import("@mermaid-js/parser");
     try {
       await parseMermaid(diagramType as never, surface.mermaid);
     } catch (e) {

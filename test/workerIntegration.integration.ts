@@ -172,6 +172,57 @@ test(
     assert.equal(rendered.headers.get("x-content-type-options"), "nosniff");
     assert.match(rendered.headers.get("cache-control") ?? "", /immutable/);
 
+    // Rich surfaces are the ones that pull in richRender.ts, and app.ts imports it
+    // DYNAMICALLY so a server that never renders one doesn't pay ~48 MB of RSS for
+    // shiki/@pierre/diffs at boot. A dynamic import is the kind of thing that works
+    // on Node and fails only once deployed, so it gets exercised on real workerd
+    // here — the html render above deliberately never reaches that code path.
+    //
+    // Each assertion looks for markup only the real renderer emits (shiki's span
+    // classes, ansi_up's inline colors, the diff web component), so a renderer that
+    // loaded but silently produced a fallback still fails.
+    const richPost = await expectJson<PostResult>(
+      await worker.fetch(
+        "/api/posts",
+        json({
+          session: post.sessionId,
+          title: "Rich surfaces",
+          surfaces: [
+            { kind: "markdown", markdown: "# Heading\n\n```ts\nconst x: number = 1;\n```" },
+            { kind: "code", code: "export const y = 2;", language: "typescript" },
+            { kind: "terminal", text: "\u001b[31mred\u001b[0m plain" },
+            {
+              kind: "diff",
+              patch: [
+                "diff --git a/a.ts b/a.ts",
+                "--- a/a.ts",
+                "+++ b/a.ts",
+                "@@ -1,2 +1,2 @@",
+                " const keep = 1;",
+                "-const before = 2;",
+                "+const after = 3;",
+              ].join("\n"),
+            },
+          ],
+        }),
+      ),
+      201,
+    );
+    const richExpectations: Array<[kind: string, pattern: RegExp]> = [
+      ["markdown", /<h1>Heading<\/h1>/],
+      ["code", /class="shiki/],
+      ["terminal", /rgb\(/],
+      ["diff", /diffs-container/],
+    ];
+    for (const [index, [kind, pattern]] of richExpectations.entries()) {
+      const page = await worker.fetch(`/p/${richPost.id}?surface=${index}&theme=github&mode=dark`, {
+        headers: AUTH,
+      });
+      const body = await page.text();
+      assert.equal(page.status, 200, `${kind} surface failed to render: ${body.slice(0, 400)}`);
+      assert.match(body, pattern, `${kind} surface rendered without the real renderer's markup`);
+    }
+
     assert.equal((await worker.fetch(`/p/${post.id}.png?card=1`, { method: "HEAD" })).status, 401);
     const screenshot = await worker.fetch(`/p/${post.id}.png?card=1`, {
       method: "HEAD",
@@ -344,9 +395,11 @@ test(
       await worker.fetch("/api/sessions", { headers: AUTH }),
       200,
     );
+    // Two posts: the html one this test drives throughout, plus the rich-surface
+    // post published above to exercise the lazily-imported renderers.
     assert.deepEqual(
       sessions.map(({ id, postCount }) => ({ id, postCount })),
-      [{ id: post.sessionId, postCount: 1 }],
+      [{ id: post.sessionId, postCount: 2 }],
     );
   },
 );
