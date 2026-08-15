@@ -56,6 +56,28 @@ jobs:
           sideshow demo | grep -q "Seeded 2 demo sessions"
           curl -sf localhost:8228/guide > /dev/null
 
+  # Performance regression gate. Runs the in-process benchmark suites and compares
+  # against the committed baseline (bench/baseline.json).
+  #
+  # `--gate deterministic` means only byte counts and operation counts can fail
+  # the job. Those are pure functions of our code, so they mean the same thing on
+  # a shared runner as on a laptop. Timings and memory are still measured, still
+  # compared, and still printed — a regression shows up in the log — but they
+  # can't fail the build, because a flaky perf gate is one people learn to re-run
+  # and then stop reading. See bench/README.md.
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install -g npm@11.17.0
+      - run: npm ci --ignore-scripts
+      - run: npm run bench:check -- --gate deterministic
+
   e2e:
     runs-on: ubuntu-latest
     steps:

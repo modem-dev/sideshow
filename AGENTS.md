@@ -189,11 +189,26 @@ npm run format:check # oxfmt
 npm run security:audit
 npm run test:e2e     # Playwright, chromium + webkit (separate CI job);
                      # builds the viewer first via e2e/globalSetup.ts
+npm run bench        # performance suite (separate CI job); bench:check gates it
 ```
 
 The first seven must pass before committing; e2e should pass before merge for
 viewer/rendering changes. CI also gates PRs on changeset status and smoke-tests
 the packed CLI. Pre-commit formats staged files (`npm run prepare` after a fresh clone).
+
+Performance (`bench/`, see `bench/README.md`):
+
+- `npm run bench` runs the in-process suites (store, render, api, events);
+  `npm run bench:all` adds the ones that spawn processes or a browser.
+- `npm run bench:check` compares against the committed `bench/baseline.json` and
+  exits non-zero on regression. CI runs it with `--gate deterministic`, so only
+  byte/count metrics can fail the job — those are machine-independent, while
+  timings on a shared runner are not (they're still measured and printed).
+- Changed a hot path deliberately? Re-record with `npm run bench:baseline` and
+  say so in the PR — the baseline is committed, so the trade is visible in the diff.
+- Prefer adding a deterministic metric (bytes, counts) over a timing where one
+  exists: it gates reliably, and payload size is itself a CPU/memory cost for the
+  viewer.
 
 Testing notes:
 

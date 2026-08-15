@@ -11,3 +11,8 @@ test-results/
 playwright-report/
 coverage/
 .video-work/
+
+# Local-only benchmark baseline for `npm run bench:all`. The browser and
+# process suites depend on the machine and the installed Chromium, so this one
+# is recorded per-machine rather than committed (bench/baseline.json is).
+bench/baseline-all.json
