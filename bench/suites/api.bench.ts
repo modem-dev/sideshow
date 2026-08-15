@@ -160,8 +160,13 @@ export const apiSuite: Suite = {
       }
       const app = makeApp(store);
 
+      // The viewer appends `&theme=&mode=` to every surface iframe src (Card.tsx),
+      // and the server renders differently when the mode is pinned — so a bench
+      // that omits them measures a URL shape no viewer ever sends, and would score
+      // a change to the pinned path as no change at all. Match the real client.
+      const viewerQuery = "part=0&theme=github&mode=dark";
       for (const [kind, id] of Object.entries(perKind)) {
-        const path = `/s/${id}?part=0`;
+        const path = `/s/${id}?${viewerQuery}`;
         // Warm: every request after the first hits the memoized document.
         await ctx.time(`GET /s/:id ${kind} (cache hit)`, () => hit(app, path), {
           note: "render-cache hit",
@@ -179,7 +184,7 @@ export const apiSuite: Suite = {
         let n = 0;
         await ctx.time(
           `GET /s/:id ${kind} (cache miss)`,
-          () => hit(app, `/s/${id}?part=0&theme=bench-${n++}`),
+          () => hit(app, `/s/${id}?part=0&mode=dark&theme=bench-${n++}`),
           { note: "forced re-render", minSamples: 7, minMs: 300 },
         );
       }
