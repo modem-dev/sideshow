@@ -10,6 +10,16 @@ npm run bench:check            # run and fail on regression vs the committed bas
 npm run bench:baseline         # re-record the baseline
 ```
 
+Narrow a run to the metrics you care about with `--filter`: comma-separated
+literal substrings, OR'd, case-insensitive. It is deliberately not a regex —
+metric names are full of `/`, `:` and parentheses, so pasting one straight off
+the results table just works.
+
+```sh
+npm run bench -- --filter diff,code            # anything mentioning diff or code
+npm run bench -- --filter 'GET /s/:id code'    # one metric, pasted from the table
+```
+
 ## What it measures
 
 | Suite     | Covers                                                                     | Default |

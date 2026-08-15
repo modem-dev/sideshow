@@ -13,7 +13,7 @@ import {
   resultKey,
   type BenchRun,
 } from "../bench/compare.ts";
-import { bytes, count, memory, time } from "../bench/harness.ts";
+import { bytes, count, makeContext, memory, time } from "../bench/harness.ts";
 import { buildWorkspace, markdownSource, rng, TYPICAL } from "../bench/fixtures.ts";
 import { SqlStore } from "../server/sqlStore.ts";
 import { createSqliteStorage } from "../server/sqliteStorage.ts";
@@ -143,6 +143,30 @@ test("resultKey namespaces by suite so two suites can share a metric name", () =
     resultKey({ suite: "api", name: "getPost" }),
     resultKey({ suite: "store", name: "getPost" }),
   );
+});
+
+test("--filter matches literal substrings, including regex metacharacters", async () => {
+  // The filter is literal on purpose: metric names carry `/`, `:` and parens, so
+  // the obvious move — pasting a name off the results table — has to work, and a
+  // command-line string must never reach the RegExp constructor.
+  const run = (filter: string[] | undefined, names: string[]) => {
+    const sink: BenchResult[] = [];
+    const ctx = makeContext("api", sink, { full: false, filter });
+    for (const name of names) ctx.add(bytes("api", name, 1));
+    return sink.map((r) => r.name);
+  };
+  const names = ["GET /s/:id code (cache hit)", "GET /s/:id diff (cache hit)", "POST /api/posts"];
+
+  assert.deepEqual(run(["get /s/:id code (cache hit)"], names), [names[0]], "pasted name matches");
+  assert.deepEqual(run(["code", "diff"], names), [names[0], names[1]], "comma terms are OR'd");
+  assert.deepEqual(run(["CODE"], names), [names[0]], "matching is case-insensitive");
+  assert.deepEqual(run(undefined, names), names, "no filter runs everything");
+  assert.deepEqual(run([], names), names, "an empty filter runs everything");
+  // A regex-looking term is treated as text, so it matches nothing rather than
+  // quietly behaving as alternation.
+  assert.deepEqual(run(["code|diff"], names), []);
+  // The suite name is part of the searched key, so a suite can be selected by name.
+  assert.deepEqual(run(["api/"], names), names);
 });
 
 test("time() reports a median and honours a fixed iteration count", async () => {

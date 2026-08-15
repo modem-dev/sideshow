@@ -3,7 +3,7 @@
 //   node --expose-gc bench/run.ts                    # default suites, print a table
 //   node --expose-gc bench/run.ts store render       # only these suites
 //   node --expose-gc bench/run.ts --all              # include optional (slow) suites
-//   node --expose-gc bench/run.ts --filter 'diff'    # only matching metrics
+//   node --expose-gc bench/run.ts --filter diff,code # only metrics containing these
 //   node --expose-gc bench/run.ts --save out.json    # write results
 //   node --expose-gc bench/run.ts --baseline         # record bench/baseline.json
 //   node --expose-gc bench/run.ts --check            # compare, exit 1 on regression
@@ -58,7 +58,8 @@ const baselinePath = (all: boolean) =>
 interface Options {
   suites: string[];
   all: boolean;
-  filter?: RegExp;
+  /** Literal, lowercased substrings; a metric matches if it contains any of them. */
+  filter?: string[];
   save?: string;
   baseline: boolean;
   check: boolean;
@@ -85,6 +86,14 @@ const GATED_KINDS: Record<GateMode, MetricKind[]> = {
   deterministic: ["bytes", "count"],
 };
 
+/** Split a --filter value into lowercased literal terms; empty terms dropped. */
+function parseFilter(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((term) => term.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function parseArgs(argv: string[]): Options {
   const opts: Options = {
     suites: [],
@@ -101,7 +110,15 @@ function parseArgs(argv: string[]): Options {
     else if (arg === "--full") opts.full = true;
     else if (arg === "--markdown") opts.markdown = true;
     else if (arg === "--baseline") opts.baseline = true;
-    else if (arg === "--filter") opts.filter = new RegExp(argv[++i], "i");
+    // Comma-separated literal substrings, OR'd, case-insensitive — deliberately
+    // not a regex. Metric names are full of regex metacharacters
+    // ("GET /s/:id code (cache hit)"), so a regex filter made the obvious thing
+    // — pasting a metric name straight off the results table — silently match
+    // nothing. It also kept a command-line argument out of the RegExp
+    // constructor, which CodeQL flags as regex injection: a hand-written pattern
+    // can backtrack catastrophically, and turning your own benchmark run into a
+    // hang is a bad way to find that out.
+    else if (arg === "--filter") opts.filter = parseFilter(argv[++i]);
     else if (arg === "--save") opts.save = argv[++i];
     else if (arg === "--gate") {
       const mode = argv[++i];
@@ -163,7 +180,7 @@ async function main() {
   // A baseline recorded from a subset would silently drop every metric it didn't
   // run, and the next full --check would report them all as "new" — a baseline
   // that quietly stopped policing most of the suite. Refuse rather than record it.
-  if (opts.baseline && (opts.suites.length > 0 || opts.filter)) {
+  if (opts.baseline && (opts.suites.length > 0 || opts.filter?.length)) {
     console.error(
       "refusing to record a partial baseline: drop the suite names and --filter, " +
         "or use --save <path> to keep a scratch run.",

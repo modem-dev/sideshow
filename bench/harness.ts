@@ -293,9 +293,22 @@ export interface Suite {
 export function makeContext(
   suite: string,
   sink: BenchResult[],
-  opts: { full: boolean; filter?: RegExp },
+  // `filter` holds lowercased literal substrings; a metric runs if its
+  // "suite/name" contains any of them. Literals rather than a pattern so a name
+  // copied straight off the results table works — those are full of `/`, `:` and
+  // parentheses — and so a command-line string never reaches the RegExp
+  // constructor.
+  opts: { full: boolean; filter?: string[] },
 ): SuiteContext {
-  const matches = (name: string) => !opts.filter || opts.filter.test(`${suite}/${name}`);
+  // Lowercased here rather than trusting the caller to have done it:
+  // case-insensitivity is a property of matching, and splitting it across the
+  // arg parser and this function is how one of the two ends up forgetting.
+  const terms = opts.filter?.length ? opts.filter.map((term) => term.toLowerCase()) : null;
+  const matches = (name: string) => {
+    if (!terms) return true;
+    const key = `${suite}/${name}`.toLowerCase();
+    return terms.some((term) => key.includes(term));
+  };
   return {
     full: opts.full,
     matches,
