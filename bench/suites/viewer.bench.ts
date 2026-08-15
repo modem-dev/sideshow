@@ -149,7 +149,14 @@ export const viewerSuite: Suite = {
     let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
     try {
       const first = await publish(server.url, undefined, 0);
+      // Validated before it goes into a navigation URL below — same reasoning as
+      // postId in process.bench.ts: don't build a URL out of a response value
+      // whose shape we never checked, and fail loudly if a publish returned an
+      // error body instead of a post.
       const sessionId = first.sessionId;
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(sessionId)) {
+        throw new Error(`publish did not return a usable session id: ${JSON.stringify(sessionId)}`);
+      }
       for (let i = 1; i < POSTS; i++) await publish(server.url, sessionId, i);
 
       browser = await launch();

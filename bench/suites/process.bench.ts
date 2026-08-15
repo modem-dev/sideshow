@@ -104,6 +104,24 @@ function rssOf(pid: number): Promise<number> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Check that an id parsed out of an HTTP response looks like one before it goes
+ * into another request's URL (see newId in server/types.ts: url-safe base64).
+ *
+ * The bench only ever talks to a server it spawned itself, so this isn't
+ * defending against a hostile peer — it's refusing to build a URL out of a value
+ * we haven't looked at. It also fails loudly and immediately if a publish returns
+ * an error body instead of a post, which otherwise shows up as a confusing 404 on
+ * the next line. CodeQL flags the unchecked version as request forgery, and it's
+ * right that the shape was unverified.
+ */
+function postId(value: unknown): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(value)) {
+    throw new Error(`publish did not return a usable post id: ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+/**
  * RSS and wall time for importing one module into an otherwise-empty process.
  *
  * The idle-server number says the server holds a lot of memory; it doesn't say
@@ -240,7 +258,7 @@ export const processSuite: Suite = {
         }),
       });
       const post = (await publish.json()) as { id: string };
-      await (await fetch(`${server.url}/s/${post.id}?part=0`)).text();
+      await (await fetch(`${server.url}/s/${postId(post.id)}?part=0`)).text();
       await sleep(750);
       ctx.add(
         memory(
