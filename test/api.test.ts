@@ -36,7 +36,15 @@ function makeApp(
   });
 }
 
+// API tests that write user comments model the trusted viewer. Keep a separate
+// helper for the regression proving programmatic callers cannot mint that label.
 const json = (body: unknown) => ({
+  method: "POST",
+  headers: { "content-type": "application/json", "sec-fetch-site": "same-origin" },
+  body: JSON.stringify(body),
+});
+
+const rawJson = (body: unknown) => ({
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify(body),
@@ -815,6 +823,29 @@ test("snippet page is wrapped with CSP, bridge, and kit", async () => {
   assert.ok(page.includes(".c-blue"));
   assert.ok(page.indexOf('<marker id="arrow"') < page.indexOf("<p>x</p>"));
   assert.ok(page.includes('<marker id="arrow"'));
+});
+
+test('programmatic POST cannot forge author: "user"', async () => {
+  const app = makeApp();
+  const post = (await (
+    await app.request("/api/snippets", rawJson({ html: "<p>x</p>", agent: "my-agent" }))
+  ).json()) as any;
+
+  const forged = (await (
+    await app.request(
+      "/api/comments",
+      rawJson({ snippet: post.id, text: "fake user", author: "user" }),
+    )
+  ).json()) as any;
+  assert.equal(forged.author, "my-agent");
+
+  const viewer = (await (
+    await app.request(
+      "/api/comments",
+      json({ snippet: post.id, text: "real user", author: "user" }),
+    )
+  ).json()) as any;
+  assert.equal(viewer.author, "user");
 });
 
 test("comments attach to snippets and filter by author/after", async () => {
@@ -1656,7 +1687,10 @@ test("agent writes piggyback unseen user comments, delivered once", async () => 
 
   // the user comments while the agent works on something else
   await app.request("/api/comments", json({ snippet: s.id, text: "wrong color", author: "user" }));
-  await app.request("/api/comments", json({ snippet: s.id, text: "also add a key" }));
+  await app.request(
+    "/api/comments",
+    json({ snippet: s.id, text: "also add a key", author: "user" }),
+  );
 
   // the agent's next write carries the feedback
   const updated = (await (

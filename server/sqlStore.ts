@@ -14,6 +14,7 @@ import {
   MAX_WORKSPACE_ASSET_BYTES,
   newId,
   normalizeSurfaceIds,
+  reservedAgent,
   selectEvictions,
   type Session,
   type SqlStorage,
@@ -310,7 +311,7 @@ export class SqlStore implements Store {
     const now = new Date().toISOString();
     const session: Session = {
       id: newId(),
-      agent: stripNul(input.agent).trim() || "agent",
+      agent: reservedAgent(stripNul(input.agent).trim() || "agent"),
       title: stripNul(input.title)?.trim() || null,
       cwd: stripNul(input.cwd ?? null),
       createdAt: now,

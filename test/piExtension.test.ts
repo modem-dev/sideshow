@@ -143,7 +143,7 @@ function authInit(init: RequestInit = {}): RequestInit {
     ...init,
     headers: {
       authorization: "Bearer test-token",
-      ...(init.body ? { "content-type": "application/json" } : {}),
+      ...(init.body ? { "content-type": "application/json", "sec-fetch-site": "same-origin" } : {}),
       ...init.headers,
     },
   };
@@ -379,13 +379,13 @@ test(
     const surfaceReply = await invoke(
       harness,
       "sideshow_reply_to_user",
-      { surfaceId: surface.id, message: "Acknowledged", author: "review-pi" },
+      { surfaceId: surface.id, message: "Acknowledged" },
       ctx,
     );
     assert.match(text(surfaceReply), new RegExp(`on surface ${surface.id}`));
     assert.match(text(surfaceReply), /One more thought/);
     assert.equal(surfaceReply.details?.postId, surface.id);
-    assert.equal(surfaceReply.details?.author, "review-pi");
+    assert.equal(surfaceReply.details?.author, "contract-pi");
 
     const second = await invoke(
       harness,

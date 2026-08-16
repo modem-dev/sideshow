@@ -54,7 +54,6 @@ export interface McpDeps {
   createComment(input: {
     text: string;
     surface?: string;
-    author: string;
   }): Promise<{ comment: Comment; userFeedback?: Feedback[] } | { error: string; status: number }>;
   waitForComments(q: CommentWait): Promise<{ comments: Comment[]; lastSeq: number }>;
   uploadAsset(input: {
@@ -152,15 +151,11 @@ export function registerMcp(app: Hono, deps: McpDeps) {
         );
       }
       case "reply_to_user": {
-        // "user" is the reserved trust label, minted only by the viewer's
-        // composer (genuine human keystrokes). The agent may name itself
-        // anything else, but never the user — that would forge feedback.
-        const named = typeof args.author === "string" ? args.author.trim() : "";
-        const author = named && named !== "user" ? named : "agent";
+        // createComment derives the reply author from the session; MCP cannot
+        // choose a label or mint the reserved human "user" identity.
         const result = await deps.createComment({
           text: String(args.message ?? ""),
           surface: String(args.postId ?? args.surfaceId ?? ""),
-          author,
         });
         if ("error" in result) throw new Error(result.error);
         return JSON.stringify(

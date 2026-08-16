@@ -33,6 +33,7 @@ import {
   type DiffSurface,
   htmlSurface,
   isSandboxedSurfaceKind,
+  reservedAgent,
   type MarkdownSurface,
   MAX_ASSET_BYTES,
   surfacesByteLength,
@@ -709,7 +710,9 @@ export function createApp({
   async function createComment(input: {
     text: string;
     surface?: string;
-    author: string;
+    // Viewer-originated comments may set "user" or "surface". All agent
+    // channels omit this and derive their author from the owning session.
+    author?: "user" | "surface";
     anchor?: unknown;
   }): Promise<
     { comment: Comment; userFeedback?: Feedback[] } | { error: string; status: 400 | 404 }
@@ -719,10 +722,13 @@ export function createApp({
     if (!input.surface) return { error: 'provide a "surface" id', status: 400 };
     const post = await store.getPost(input.surface);
     if (!post) return { error: "post not found", status: 404 };
+    const session = await store.getSession(post.sessionId);
+    if (!session) return { error: "session not found", status: 404 };
+    const author = input.author ?? reservedAgent(session.agent);
     const comment = await store.createComment({
       sessionId: post.sessionId,
       postId: post.id,
-      author: input.author,
+      author,
       text: input.text.trim().slice(0, MAX_COMMENT_TEXT),
       anchor: sanitizeCommentAnchor(input.anchor, post),
     });
@@ -736,8 +742,7 @@ export function createApp({
     });
     // agent replies are writes too — piggyback pending feedback on them, but
     // never on the user's own comments
-    const userFeedback =
-      input.author === "user" ? undefined : await collectFeedback(comment.sessionId);
+    const userFeedback = author === "user" ? undefined : await collectFeedback(comment.sessionId);
     return { comment, userFeedback };
   }
 
@@ -1413,10 +1418,20 @@ export function createApp({
       return c.json({ error: 'body must include non-empty "text" string' }, 400);
     }
     const surface = typeof body.surface === "string" ? body.surface : body.snippet;
+    // The browser sets Fetch Metadata on same-origin requests. Only the trusted
+    // viewer may declare the two non-agent labels; CLI, MCP, and raw HTTP calls
+    // instead derive their author from the session and cannot mint "user".
+    // Sandboxed surfaces have opaque origins, so their postMessage bridge is
+    // stamped "surface" by the trusted viewer rather than by contained code.
+    const isViewerOrigin = c.req.header("sec-fetch-site") === "same-origin";
+    const author =
+      isViewerOrigin && (body.author === "user" || body.author === "surface")
+        ? body.author
+        : undefined;
     const result = await createComment({
       text: body.text,
       surface: typeof surface === "string" ? surface : undefined,
-      author: typeof body.author === "string" ? body.author : "user",
+      author,
       anchor: body.anchor,
     });
     if ("error" in result) return c.json({ error: result.error }, result.status);

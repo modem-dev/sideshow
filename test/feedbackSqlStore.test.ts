@@ -23,7 +23,7 @@ function makeSqlApp() {
 
 const json = (body: unknown) => ({
   method: "POST",
-  headers: { "content-type": "application/json" },
+  headers: { "content-type": "application/json", "sec-fetch-site": "same-origin" },
   body: JSON.stringify(body),
 });
 

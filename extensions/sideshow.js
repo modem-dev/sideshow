@@ -577,16 +577,11 @@ export default function sideshowExtension(pi) {
       properties: {
         surfaceId: { type: "string", description: "Surface thread to reply under" },
         message: { type: "string", description: "Plain-text reply" },
-        author: { type: "string", description: 'Agent name; defaults to SIDESHOW_AGENT or "pi"' },
       },
       required: ["surfaceId", "message"],
     },
     async execute(_toolCallId, params) {
-      const body = {
-        text: params.message,
-        surface: params.surfaceId,
-        author: params.author ?? agentName(),
-      };
+      const body = { text: params.message, surface: params.surfaceId };
       const comment = await requestJson("/api/comments", {
         method: "POST",
         body: JSON.stringify(body),

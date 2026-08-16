@@ -439,6 +439,13 @@ export interface WorkspaceSnapshot {
 
 export const HISTORY_LIMIT = 20;
 
+// "user" is the reserved trust label for genuine human comments. A session
+// agent with that name could otherwise have its programmatic comments delivered
+// as user feedback, so both stores normalize it when creating sessions.
+export function reservedAgent(name: string): string {
+  return name === "user" ? "agent" : name;
+}
+
 // SQLite terminates a TEXT value at the first embedded NUL byte, while the JSON
 // store preserves it — so the two stores would diverge on a NUL. A NUL has no
 // place in a title/comment/label anyway, so both stores strip it from stored

@@ -76,7 +76,7 @@ function serveApp() {
 const post = (url: string, body: unknown) =>
   fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "sec-fetch-site": "same-origin" },
     body: JSON.stringify(body),
   }).then((r) => r.json() as Promise<any>);
 
@@ -1110,24 +1110,22 @@ test("wait --after with a non-number fails fast", async () => {
 
 // --- comment (agent replies to the user) ----------------------------------
 
-test("comment replies on a post; --author overrides the default agent name", async () => {
+test("comment replies use the session agent; --author is rejected", async () => {
   const server = await serveSession();
   try {
     const file = tmpFile("c.html", "<p>x</p>");
     const id = JSON.parse((await cli(server, "publish", file)).stdout).id;
 
-    // default author falls back to "agent" when no --author/--agent/env is set
-    const def = await cli(server, "comment", "on it", "--post", id);
-    assert.equal(def.code, 0);
-    assert.equal(JSON.parse(def.stdout).author, "agent");
-
-    // --author sets the reply's author explicitly
-    const named = await cli(server, "comment", "on it", "--post", id, "--author", "bot7");
-    assert.equal(named.code, 0);
-    const out = JSON.parse(named.stdout);
+    const reply = await cli(server, "comment", "on it", "--post", id);
+    assert.equal(reply.code, 0);
+    const out = JSON.parse(reply.stdout);
     assert.equal(out.text, "on it");
     assert.equal(out.postId, id);
-    assert.equal(out.author, "bot7");
+    assert.equal(out.author, "cli-test");
+
+    const forged = await cli(server, "comment", "on it", "--post", id, "--author", "user");
+    assert.notEqual(forged.code, 0);
+    assert.match(forged.stderr, /Unknown option '--author'/);
   } finally {
     await server.close();
   }

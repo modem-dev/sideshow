@@ -213,7 +213,7 @@ server.registerTool(
     const created = JSON.parse(
       await api("/api/comments", {
         method: "POST",
-        body: JSON.stringify({ surface: postId ?? surfaceId, text: message, author: AGENT }),
+        body: JSON.stringify({ surface: postId ?? surfaceId, text: message }),
       }),
     );
     return text(created);

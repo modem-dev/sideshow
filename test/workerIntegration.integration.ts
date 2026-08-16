@@ -27,7 +27,7 @@ type AssetResult = {
 function json(body: unknown, method = "POST") {
   return {
     method,
-    headers: { ...AUTH, "content-type": "application/json" },
+    headers: { ...AUTH, "content-type": "application/json", "sec-fetch-site": "same-origin" },
     body: JSON.stringify(body),
   };
 }

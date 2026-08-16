@@ -305,7 +305,6 @@ export const HTTP_MCP_TOOLS = [
         postId: { type: "string", description: field.postId },
         surfaceId: { type: "string", description: "Deprecated alias of postId" },
         message: { type: "string", description: "Plain-text reply" },
-        author: { type: "string", description: 'Agent name; "user" is reserved' },
       },
       required: ["message"],
     },

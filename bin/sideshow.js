@@ -131,7 +131,6 @@ usage:
   sideshow comment <text> [options]       reply to the user on a post
       --post <id>       post to attach the comment to (required;
                         --surface is a deprecated alias)
-      --author <name>   defaults to agent name
   sideshow list [--session <id>|--all]    list posts
   sideshow show <id>                      show a single post (surfaces, indexes, ids, version, history)
   sideshow sessions                       list sessions
@@ -1506,8 +1505,6 @@ const commands = {
         post: { type: "string" },
         surface: { type: "string" }, // deprecated alias
         snippet: { type: "string" }, // legacy alias
-        author: { type: "string" },
-        agent: { type: "string" },
       },
     });
     const text = positionals.join(" ").trim();
@@ -1519,11 +1516,7 @@ const commands = {
     out(
       await api("/api/comments", {
         method: "POST",
-        body: JSON.stringify({
-          text,
-          surface: post,
-          author: flags.author ?? agentName(flags),
-        }),
+        body: JSON.stringify({ text, surface: post }),
       }),
     );
   },
@@ -1589,8 +1582,11 @@ const commands = {
             });
           }
           if (step.comment) {
+            // Demo comments model a person using the viewer. Normal CLI writes
+            // never send an author, so they derive the session agent instead.
             await api("/api/comments", {
               method: "POST",
+              headers: { "sec-fetch-site": "same-origin" },
               body: JSON.stringify({ surface: post.id, ...step.comment }),
             });
           }

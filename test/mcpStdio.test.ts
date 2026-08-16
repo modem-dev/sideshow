@@ -146,7 +146,7 @@ async function fetchJson<T>(url: string, path: string, init?: RequestInit) {
 
 const json = (body: unknown, method = "POST"): RequestInit => ({
   method,
-  headers: { "content-type": "application/json" },
+  headers: { "content-type": "application/json", "sec-fetch-site": "same-origin" },
   body: JSON.stringify(body),
 });
 
