@@ -287,6 +287,13 @@ export function createApp({
   maxHoldConnections = DEFAULT_MAX_HOLD_CONNECTIONS,
 }: AppOptions) {
   const app = new Hono();
+  // `?key=` bootstraps cookie auth, so never let a board URL disclose that
+  // credential to another origin through an outbound Referer header. Set this
+  // before auth so denied and public routes carry the same policy.
+  app.use("*", (c, next) => {
+    c.header("Referrer-Policy", "no-referrer");
+    return next();
+  });
   const bus = new EventBus();
   if (onEvent) {
     bus.subscribe((event) => {

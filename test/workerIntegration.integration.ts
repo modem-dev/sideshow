@@ -169,6 +169,7 @@ test(
     assert.equal(rendered.status, 200);
     assert.match(await rendered.text(), /worker-marker/);
     assert.equal(rendered.headers.get("content-security-policy"), "sandbox allow-scripts");
+    assert.equal(rendered.headers.get("referrer-policy"), "no-referrer");
     assert.equal(rendered.headers.get("x-content-type-options"), "nosniff");
     assert.match(rendered.headers.get("cache-control") ?? "", /immutable/);
 

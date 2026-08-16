@@ -1171,6 +1171,20 @@ test("auth token guards mutating routes when configured", async () => {
   assert.equal(viaCookie.status, 200);
 });
 
+test("Referrer-Policy protects public, denied, and authenticated board responses", async () => {
+  const app = makeApp("secret");
+  const responses = await Promise.all([
+    app.request("/guide"),
+    app.request("/"),
+    app.request("/?key=secret"),
+    app.request("/api/sessions"),
+  ]);
+
+  for (const response of responses) {
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+  }
+});
+
 async function readSseUntil(res: Response, needle: string, abort?: () => void): Promise<string> {
   assert.ok(res.body);
   const reader = res.body.getReader();
