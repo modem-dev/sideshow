@@ -344,12 +344,14 @@ export class JsonFileStore implements Store {
 
   // --- surfaces ---
 
-  async listPosts(sessionId?: string) {
+  async listPosts(sessionId?: string, limit?: number) {
     await this.load();
-    const all = [...this.surfaces.values()].filter(
-      (s) => sessionId === undefined || s.sessionId === sessionId,
-    );
-    return all.map(clone).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const all = [...this.surfaces.values()]
+      .filter((s) => sessionId === undefined || s.sessionId === sessionId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const bounded =
+      limit !== undefined && Number.isSafeInteger(limit) && limit >= 0 ? all.slice(0, limit) : all;
+    return bounded.map(clone);
   }
 
   async countPostsBySession() {
@@ -431,14 +433,24 @@ export class JsonFileStore implements Store {
 
   async listComments(query: CommentQuery) {
     await this.load();
-    return this.comments
-      .filter(
-        (c) =>
-          (query.sessionId === undefined || c.sessionId === query.sessionId) &&
-          (query.postId === undefined || c.postId === query.postId) &&
-          (query.afterSeq === undefined || c.seq > query.afterSeq),
-      )
-      .map(clone);
+    const limit =
+      query.limit !== undefined && Number.isSafeInteger(query.limit) && query.limit >= 0
+        ? query.limit
+        : Infinity;
+    const comments: Comment[] = [];
+    for (const comment of this.comments) {
+      if (
+        (query.sessionId !== undefined && comment.sessionId !== query.sessionId) ||
+        (query.postId !== undefined && comment.postId !== query.postId) ||
+        (query.postOnly === true && comment.postId === null) ||
+        (query.afterSeq !== undefined && comment.seq <= query.afterSeq)
+      ) {
+        continue;
+      }
+      if (comments.length >= limit) break;
+      comments.push(clone(comment));
+    }
+    return comments;
   }
 
   async createComment(input: CreateCommentInput) {

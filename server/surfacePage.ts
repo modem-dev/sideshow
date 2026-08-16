@@ -8,6 +8,7 @@ import {
   tokenThemeCss,
   viewerThemeCss,
 } from "./themes.ts";
+import type { Surface } from "./types.ts";
 
 // The kit's two custom SVG accent ramps (teal, coral) aren't in the theme
 // palette, so they carry their own light/dark values. Like the theme tokens
@@ -35,7 +36,8 @@ const kitAccentCss = (mode?: Mode): string => schemeCss(KIT_ACCENTS_LIGHT, KIT_A
 // and native form controls follow the same scheme as the theme vars (the vars
 // alone don't drive those). Pinned frames get a single scheme; unpinned/direct
 // loads opt into both schemes so the browser can resolve the user's system mode.
-const colorSchemeCss = (mode?: Mode): string => `:root{color-scheme:${mode ?? "light dark"}}`;
+export const colorSchemeCss = (mode?: Mode): string =>
+  `:root{color-scheme:${mode ?? "light dark"}}`;
 
 // Origins html surfaces may load external resources from. Mirrors the allowlist
 // agents already know from Claude's inline widget surface.
@@ -279,8 +281,16 @@ if (window.ResizeObserver) {
 }
 `;
 
-export const escapeHtml = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+// Single pass on purpose: inputs can be whole rendered documents (the session
+// export srcdoc-escapes every frame), where four chained .replace scans copy
+// the string four times.
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+};
+export const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (ch) => HTML_ESCAPES[ch]);
 
 // Wrap one html surface in the themed, sandboxed document the iframe loads. The
 // workspace's color tokens (theme-dependent) are injected first so the static base
@@ -545,6 +555,12 @@ export function renderHtmlPage(doc: {
   // is plain inline script — same trust level as the bridge, already covered by
   // the html-surface CSP's `script-src 'unsafe-inline'`. Unknown ids are ignored.
   kits?: string[];
+  // Base URL for resolving the document's relative refs. When this doc is served
+  // by real URL (/s/:id) the URL is already the base, so this is omitted. When
+  // it is embedded as srcdoc (the session export), srcdoc's base is about:srcdoc
+  // — so relative `/a/:id` asset refs would break; pass the server origin (e.g.
+  // "https://host/") to pin them. img-src in buildCsp already allows that origin.
+  baseHref?: string;
 }): string {
   const theme =
     typeof doc.theme === "string" || doc.theme == null ? themeById(doc.theme) : doc.theme;
@@ -555,7 +571,7 @@ export function renderHtmlPage(doc: {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${buildCsp(doc.origin)}">
-<title>${escapeHtml(doc.title)}</title>
+${doc.baseHref ? `<base href="${escapeHtml(doc.baseHref)}">\n` : ""}<title>${escapeHtml(doc.title)}</title>
 <style>${tokenThemeCss(theme, doc.mode)}${TOKENS_CSS}${KIT_CSS}${kitAccentCss(doc.mode)}${kit.css}${colorSchemeCss(doc.mode)}</style>
 </head>
 <body>
@@ -565,4 +581,58 @@ ${doc.html}
 ${kit.js ? `<script>${kit.js}</script>` : ""}
 </body>
 </html>`;
+}
+
+// One surface → one complete sandboxed document, for every kind that becomes
+// HTML. This is the single kind→renderer dispatch: /s/:id (app.ts) serves the
+// result by real URL and the session export (exportPage.ts) embeds it as a
+// srcdoc iframe, so the two can't drift when a kind or a renderer option
+// changes. `baseHref` only matters to html surfaces embedded as srcdoc — the
+// rich kinds pin <base> unconditionally in renderSandboxedPart. Throws on the
+// native kinds (image/json/trace); callers gate on isSandboxedSurfaceKind.
+export async function renderSurfaceDocument(
+  surface: Surface,
+  doc: { title: string; origin: string; themeId: string; mode?: Mode; baseHref?: string },
+): Promise<string> {
+  const { title, origin, themeId, mode, baseHref } = doc;
+  const theme = themeById(themeId);
+  if (surface.kind === "html") {
+    return renderHtmlPage({
+      title,
+      html: surface.html,
+      origin,
+      theme,
+      mode,
+      kits: surface.kits,
+      baseHref,
+    });
+  }
+  if (surface.kind === "mermaid") {
+    return renderMermaidPage({ mermaid: surface.mermaid, origin, theme, mode });
+  }
+  // Load the rich renderers only when a rich surface is requested. They pull
+  // in shiki, @pierre/diffs, markdown-it, and ansi_up; eagerly evaluating them
+  // makes every html-only workspace pay their boot-time and RSS cost. The
+  // runtime module cache makes subsequent renders cheap, including on workerd.
+  const { renderCode, renderDiff, renderMarkdown, renderTerminal } =
+    await import("./richRender.ts");
+  const rendered =
+    surface.kind === "markdown"
+      ? await renderMarkdown(surface, { theme: themeId, mode })
+      : surface.kind === "code"
+        ? await renderCode(surface, { theme: themeId, mode })
+        : surface.kind === "terminal"
+          ? renderTerminal(surface)
+          : surface.kind === "diff"
+            ? // A malformed patch degrades to an escaped error body instead of
+              // failing the whole document.
+              await renderDiff(surface, { theme: themeId, mode }).catch((e) => ({
+                body: `<div class="rich-error">Couldn’t render diff — ${escapeHtml(
+                  e instanceof Error ? e.message : "render error",
+                )}</div>`,
+                css: `.rich-error{color:var(--danger);font:13px/1.5 ui-monospace,monospace;padding:8px 12px;}`,
+              }))
+            : null;
+  if (!rendered) throw new Error(`surface kind "${surface.kind}" does not render to a document`);
+  return renderSandboxedPart({ body: rendered.body, css: rendered.css, origin, theme, mode });
 }

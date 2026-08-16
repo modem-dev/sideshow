@@ -563,13 +563,9 @@ main {
   color: var(--muted);
 }
 
-.card {
-  background: var(--surface);
-  border: 0.5px solid var(--border);
-  border-radius: 12px;
-  margin-bottom: 22px;
-  overflow: hidden;
-}
+/* .card / .card-head / .card-title / .card-meta live in server/cardChrome.ts,
+   shared with the session export shell so the saved file can't drift from the
+   live column. main.tsx / embed.tsx inject that string ahead of this sheet. */
 
 /* Shared skeleton primitives for async viewer UI. The visible bars are
    decorative; components wrap them in one role=status announcement. */
@@ -662,16 +658,6 @@ main {
     animation: none;
   }
 }
-.card-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-}
-.card-title {
-  font-weight: 500;
-  font-size: 14px;
-}
 .card-head .vslot {
   display: inline-flex;
   align-items: center;
@@ -722,10 +708,6 @@ select.vbadge {
     opacity: 0.48;
     transform: scale(0.82);
   }
-}
-.card-meta {
-  font-size: 12px;
-  color: var(--faint);
 }
 .card-head .sp {
   flex: 1;

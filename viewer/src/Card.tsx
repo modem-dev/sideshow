@@ -26,6 +26,7 @@ import {
   postImageLink,
 } from "./api.ts";
 import { isSandboxedSurfaceKind, SURFACE_FRAME_CLASSES } from "../../server/types.ts";
+import { clampFrameHeight } from "../../server/bridgePolicy.ts";
 import {
   CommentIcon,
   ImageIcon,
@@ -92,13 +93,12 @@ export function cardForPost(id: string): HTMLDivElement | null {
   return null;
 }
 
-// Size a post's surface iframe from a height the in-frame bridge reported. Min
-// one line, max generous enough for a long diff/markdown without runaway growth.
-const MIN_FRAME_H = 24;
-const MAX_FRAME_H = 4000;
+// Size a post's surface iframe from a height the in-frame bridge reported. The
+// clamp is shared with the session export's shell (server/bridgePolicy.ts) so
+// both hosts treat a hostile or garbage height the same way.
 const RECENT_UPDATE_MS = 2 * 60 * 1000;
 export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unknown): void {
-  iframe.style.height = Math.min(Math.max(Number(reportedHeight), MIN_FRAME_H), MAX_FRAME_H) + "px";
+  iframe.style.height = clampFrameHeight(reportedHeight) + "px";
 }
 
 type FullscreenSurface = {

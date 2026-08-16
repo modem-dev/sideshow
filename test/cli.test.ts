@@ -1239,6 +1239,33 @@ test("show without an id fails with a usage error", async () => {
   assert.match(stderr, /usage: sideshow show/);
 });
 
+// --- export ----------------------------------------------------------------
+
+test("export writes a session's HTML to --out", async () => {
+  const server = await serveSession();
+  try {
+    const html = tmpFile("c.html", "<p>exported</p>");
+    await cli(server, "publish", html, "--title", "Exported card");
+    const outFile = join(mkdtempSync(join(tmpdir(), "sideshow-export-out-")), "session.html");
+
+    const { code, stdout } = await cli(server, "export", "--out", outFile);
+    assert.equal(code, 0);
+    assert.match(stdout, /Wrote .*session\.html/);
+    const written = readFileSync(outFile, "utf8");
+    assert.match(written, /<!doctype html>/i);
+    assert.ok(written.includes("Exported card"));
+    assert.ok(written.includes('sandbox="allow-scripts"'));
+  } finally {
+    await server.close();
+  }
+});
+
+test("export with no resolvable session fails and never creates one", async () => {
+  const { code, stderr } = await run("export");
+  assert.notEqual(code, 0);
+  assert.match(stderr, /pass --session/);
+});
+
 // --- assets (image / upload / asset-url) ----------------------------------
 
 test("image uploads bytes and publishes an image post", async () => {
