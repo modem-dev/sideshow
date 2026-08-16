@@ -6,6 +6,7 @@ import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { serveUrl } from "./serveUrl.js";
 
 const BASE = (process.env.SIDESHOW_URL ?? "http://localhost:8228").replace(/\/$/, "");
 const TOKEN = process.env.SIDESHOW_TOKEN;
@@ -905,9 +906,7 @@ const commands = {
       env: { ...process.env, PORT: port, ...(host ? { SIDESHOW_HOST: host } : {}) },
     });
     if (flags.open) {
-      // Always open localhost: a wildcard or loopback bind is reachable there,
-      // and it is the only address guaranteed to resolve on this machine.
-      const url = `http://localhost:${port}`;
+      const url = serveUrl(host, port);
       const { opener, openerArgs } =
         process.platform === "darwin"
           ? { opener: "open", openerArgs: [url] }

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { createApp } from "../server/app.ts";
 import { JsonFileStore } from "../server/storage.ts";
+import { serveUrl } from "../bin/serveUrl.js";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "sideshow.js");
 
@@ -95,6 +96,14 @@ test("version runs end-to-end (update check is best-effort)", async () => {
   const { code, stdout } = await run("version");
   assert.equal(code, 0);
   assert.match(stdout, /^sideshow \d+\.\d+\.\d+/);
+});
+
+test("serve --open URL uses the concrete bind address", () => {
+  assert.equal(serveUrl(undefined, "8228"), "http://localhost:8228");
+  assert.equal(serveUrl("0.0.0.0", "8228"), "http://localhost:8228");
+  assert.equal(serveUrl("::", "8228"), "http://localhost:8228");
+  assert.equal(serveUrl("127.0.0.2", "8228"), "http://127.0.0.2:8228");
+  assert.equal(serveUrl("::1", "8228"), "http://[::1]:8228");
 });
 
 // None of these reach the network: --help and option errors resolve in
