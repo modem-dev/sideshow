@@ -74,9 +74,9 @@ cp -r skills/sideshow ~/.claude/skills/
 ```
 
 **Plugin.** A plugin bundles all three integrations at once — the MCP server, the
-skill, and a **background monitor** that streams your browser comments to the
-agent as notifications, so feedback arrives without pasting or re-arming a
-watcher:
+skill, and a **background monitor**. In an interactive Claude Code session with
+Monitor support, it streams browser comments to the agent as notifications, so
+feedback arrives without pasting or re-arming a watcher:
 
 ```text
 /plugin marketplace add modem-dev/sideshow
@@ -84,10 +84,15 @@ watcher:
 ```
 
 On install it asks for your **Sideshow URL** (default `http://localhost:8228`, or
-your deployed instance) and an optional token. The monitor runs `sideshow watch`
-against your workspace; comments are delivered to the agent exactly once. Requires
-Claude Code ≥ 2.1.105. The viewer's "connect agent" link (sidebar footer) shows
-generic MCP client setup; the Claude Code plugin lives in [`../plugin/`](../plugin/).
+your deployed instance) and an optional token. A SessionStart hook stores those
+monitor settings in the plugin's private data directory; the monitor then runs
+`sideshow watch` against your workspace. Start a new Claude Code session after
+installing or updating the plugin so its monitor uses the configured settings;
+monitors require a restart to pick up updates. It is independent of MCP, and
+comments are delivered exactly once. MCP and CLI checkpoint drains remain
+available when Monitor support is unavailable. The sidebar footer's "connect
+agent" link shows generic MCP client setup; the Claude Code plugin lives in
+[`../plugin/`](../plugin/).
 
 ## The design contract
 

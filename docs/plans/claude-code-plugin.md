@@ -66,8 +66,12 @@ monitors are an `experimental.monitors` feature and may shift.
 - Fields: `name` (req), `command` (req, shell command run as a persistent bg process in the
   session working dir), `description` (req), `when` (opt: `"always"` default, or
   `"on-skill-invoke:<skill>"`).
-- Command supports `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}`, `${CLAUDE_PROJECT_DIR}`,
-  `${user_config.*}`, `${ENV_VAR}`.
+- Command supports `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}`,
+  `${CLAUDE_PROJECT_DIR}`, `${CLAUDE_CODE_SESSION_ID}`, and `${ENV_VAR}`. Support for
+  `${user_config.*}` interpolation existed before Claude Code 2.1.207; current versions
+  reject it in shell-form monitor commands. Sideshow passes only non-secret plugin paths
+  and the session ID there, then reads configuration from a plugin-owned file written at
+  SessionStart.
 - **Each stdout line → one notification to Claude**, delivered on the next turn (no batching
   / no documented rate limit). Runs for the session lifetime; stops when the session ends;
   disabling the plugin mid-session does NOT stop an already-running monitor.
@@ -128,11 +132,13 @@ https://host/marketplace.json`) BUT relative plugin sources won't work there —
    `author=user` agent cursor (`waitForComments` → `markAgentSeen`).
 2. ✅ DONE — Plugin package in `plugin/`: `.claude-plugin/plugin.json` (name
    `sideshow`, `userConfig` for `sideshowUrl`/`apiToken`, inline `mcpServers`
-   running `npx sideshow@latest mcp`, `experimental.monitors` → `./monitors.json`,
-   `skills` → `./skills/`). `monitors.json` runs `sideshow watch` with the config
-   piped in via `SIDESHOW_URL`/`SIDESHOW_TOKEN`. Plugin skill at
+   running `npx -y sideshow mcp`, `experimental.monitors` → `./monitors.json`,
+   `skills` → `./skills/`). A SessionStart hook writes user options to the private
+   plugin data directory, and `monitors.json` launches a bundled helper that passes
+   `SIDESHOW_URL`/`SIDESHOW_TOKEN` to `sideshow watch` through its child environment.
+   Plugin skill at
    `plugin/skills/sideshow/SKILL.md` teaches the notification workflow. Validated
-   with `claude plugin validate ./plugin` on Claude Code 2.1.177 (✔ passed).
+   with `claude plugin validate ./plugin --strict` on Claude Code 2.1.233 (✔ passed).
 3. ✅ DONE — Repo-hosted marketplace at `.claude-plugin/marketplace.json` (name
    `sideshow`, plugin source relative `./plugin` — works for git-hosted
    marketplaces). Validated ✔. Docs in `README.md` ("Claude Code plugin"
@@ -159,9 +165,8 @@ https://host/marketplace.json`) BUT relative plugin sources won't work there —
   the viewer modal and README as an explicit caveat. Re-verify the manifest
   contract on each Claude Code bump.
 - **Don't double-run.** The plugin skill steers the agent to rely on the monitor
-  rather than arming a separate `sideshow wait` loop. NOTE: `watch` is unreleased
-  on npm — the plugin's `npx sideshow@latest watch` only works once a release
-  including `watch` ships.
+  rather than arming a separate `sideshow wait` loop. The helper runs
+  `npx -y sideshow watch`, resolving the installed package from npm.
 
 ## Key code references
 
@@ -181,12 +186,9 @@ https://host/marketplace.json`) BUT relative plugin sources won't work there —
 All four phases are implemented on `feat/comment-and-copy` (PR #16). Remaining
 before this is usable end-to-end:
 
-1. **Publish a sideshow release that includes `sideshow watch`** — the plugin's
-   `npx sideshow@latest watch`/`mcp` resolve to the published package, and
-   `watch` is currently unreleased.
-2. **Live smoke test** with a real Claude Code session: `/plugin marketplace add`
+1. **Live smoke test** with a real Claude Code session: `/plugin marketplace add`
    the branch/repo, install, publish a snippet, comment in the browser, and
    confirm the comment arrives as a notification (verifies the monitor's spawn
    tree resolves the session — `resolveSessionByCwd` is the safety net).
-3. Consider pinning the marketplace plugin `source` to a tagged `ref`/`sha`
+2. Consider pinning the marketplace plugin `source` to a tagged `ref`/`sha`
    once released, instead of tracking `main`.

@@ -2,4 +2,4 @@
 "sideshow": patch
 ---
 
-Clarify Claude plugin feedback delivery and document MCP and CLI fallbacks when its monitor is unavailable.
+Restore Claude plugin monitor startup on current Claude Code versions, and clarify MCP and CLI feedback fallbacks when Monitor support is unavailable.
