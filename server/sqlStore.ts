@@ -390,12 +390,21 @@ export class SqlStore implements Store {
 
   // --- surfaces ---
 
-  async listPosts(sessionId?: string) {
+  async listPosts(sessionId?: string, limit?: number) {
+    const bounded =
+      limit !== undefined && Number.isSafeInteger(limit) && limit >= 0 ? limit : undefined;
+    const suffix = ` ORDER BY createdAt ASC${bounded === undefined ? "" : " LIMIT ?"}`;
     const rows =
       sessionId === undefined
-        ? this.sql.exec("SELECT * FROM posts ORDER BY createdAt ASC").toArray()
+        ? this.sql
+            .exec(`SELECT * FROM posts${suffix}`, ...(bounded === undefined ? [] : [bounded]))
+            .toArray()
         : this.sql
-            .exec("SELECT * FROM posts WHERE sessionId = ? ORDER BY createdAt ASC", sessionId)
+            .exec(
+              `SELECT * FROM posts WHERE sessionId = ?${suffix}`,
+              sessionId,
+              ...(bounded === undefined ? [] : [bounded]),
+            )
             .toArray();
     return rows.map((r) => this.rowToPost(r));
   }
@@ -518,13 +527,22 @@ export class SqlStore implements Store {
       clauses.push("postId = ?");
       params.push(query.postId);
     }
+    if (query.postOnly === true) clauses.push("postId IS NOT NULL");
     if (query.afterSeq !== undefined) {
       clauses.push("seq > ?");
       params.push(query.afterSeq);
     }
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit =
+      query.limit !== undefined && Number.isSafeInteger(query.limit) && query.limit >= 0
+        ? query.limit
+        : undefined;
+    if (limit !== undefined) params.push(limit);
     return this.sql
-      .exec(`SELECT * FROM comments ${where} ORDER BY seq ASC`, ...params)
+      .exec(
+        `SELECT * FROM comments ${where} ORDER BY seq ASC${limit === undefined ? "" : " LIMIT ?"}`,
+        ...params,
+      )
       .toArray()
       .map((r) => this.rowToComment(r));
   }

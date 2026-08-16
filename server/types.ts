@@ -357,7 +357,12 @@ export interface CreateCommentInput {
 export interface CommentQuery {
   sessionId?: string;
   postId?: string;
+  // Restrict to comments anchored to posts (excluding session-level comments).
+  postOnly?: boolean;
   afterSeq?: number;
+  // Bounds materialized results for work such as session export. Callers that
+  // need to distinguish "at the limit" from complete request limit + 1.
+  limit?: number;
 }
 
 // Storage interface — implementations: JsonFileStore (local Node),
@@ -376,7 +381,9 @@ export interface Store {
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
 
-  listPosts(sessionId?: string): Promise<Post[]>;
+  // Optional result bound for resource-limited readers. Callers that need to
+  // distinguish "at the limit" from complete request limit + 1.
+  listPosts(sessionId?: string, limit?: number): Promise<Post[]>;
   /**
    * Optional narrow aggregate used by the session-list view. Custom stores may
    * omit it; the app falls back to listPosts() for source compatibility.
@@ -547,33 +554,43 @@ export const htmlSurface = (html: string, kits?: unknown): HtmlSurface => ({
     : {}),
 });
 
-// The combined byte weight of a post's surfaces, for size limits. image/trace
-// surfaces are tiny (refs + inline steps) — the asset bytes they point at are
-// bounded separately by MAX_ASSET_BYTES, not this post cap.
+// The combined UTF-8 byte weight of a post's surfaces, for size limits.
+// image/trace surfaces are tiny (refs + inline steps) — the asset bytes they
+// point at are bounded separately by MAX_ASSET_BYTES, not this post cap.
+// Limits are specified in bytes, not UTF-16 code units: counting `.length`
+// would let astral characters consume twice the advertised input budget.
+const utf8 = new TextEncoder();
+export const utf8ByteLength = (value: string): number => utf8.encode(value).byteLength;
+
 export function surfacesByteLength(surfaces: Surface[]): number {
   let n = 0;
   for (const p of surfaces) {
-    if (p.kind === "html") n += p.html.length;
+    if (p.kind === "html") n += utf8ByteLength(p.html);
     else if (p.kind === "diff") {
-      n += p.patch?.length ?? 0;
-      for (const f of p.files ?? []) n += f.before.length + f.after.length;
+      n += utf8ByteLength(p.patch ?? "");
+      for (const f of p.files ?? []) n += utf8ByteLength(f.before) + utf8ByteLength(f.after);
     } else if (p.kind === "image") {
-      n += p.assetId.length + (p.alt?.length ?? 0) + (p.caption?.length ?? 0);
+      n +=
+        utf8ByteLength(p.assetId) + utf8ByteLength(p.alt ?? "") + utf8ByteLength(p.caption ?? "");
     } else if (p.kind === "markdown") {
-      n += p.markdown.length;
+      n += utf8ByteLength(p.markdown);
     } else if (p.kind === "terminal") {
-      n += p.text.length + (p.title?.length ?? 0);
+      n += utf8ByteLength(p.text) + utf8ByteLength(p.title ?? "");
     } else if (p.kind === "mermaid") {
-      n += p.mermaid.length;
+      n += utf8ByteLength(p.mermaid);
     } else if (p.kind === "json") {
-      n += JSON.stringify(p.data).length;
+      n += utf8ByteLength(JSON.stringify(p.data));
     } else if (p.kind === "code") {
       n +=
-        p.code.length + (p.language?.length ?? 0) + (p.title?.length ?? 0) + (p.lineStart ? 4 : 0);
+        utf8ByteLength(p.code) +
+        utf8ByteLength(p.language ?? "") +
+        utf8ByteLength(p.title ?? "") +
+        (p.lineStart ? 4 : 0);
     } else {
-      n += (p.assetId?.length ?? 0) + (p.title?.length ?? 0);
+      n += utf8ByteLength(p.assetId ?? "") + utf8ByteLength(p.title ?? "");
       for (const s of p.steps ?? []) {
-        n += s.label.length + (s.kind?.length ?? 0) + (s.detail?.length ?? 0);
+        n +=
+          utf8ByteLength(s.label) + utf8ByteLength(s.kind ?? "") + utf8ByteLength(s.detail ?? "");
       }
     }
   }

@@ -75,6 +75,10 @@ test("surfacesByteLength counts image/trace surfaces without throwing", () => {
   assert.ok(n > 0);
 });
 
+test("surfacesByteLength measures UTF-8 bytes rather than UTF-16 code units", () => {
+  assert.equal(surfacesByteLength([{ kind: "html", html: "😀" }]), 4);
+});
+
 // --- Surface validation/coercion ---
 
 test("validateSurfaces accepts all supported surface kinds", async () => {

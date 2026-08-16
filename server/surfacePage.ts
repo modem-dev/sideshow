@@ -1,5 +1,4 @@
 import { kitAssets } from "./kits.ts";
-import { renderCode, renderDiff, renderMarkdown, renderTerminal } from "./richRender.ts";
 import {
   type Mode,
   type Palette,
@@ -611,6 +610,12 @@ export async function renderSurfaceDocument(
   if (surface.kind === "mermaid") {
     return renderMermaidPage({ mermaid: surface.mermaid, origin, theme, mode });
   }
+  // Load the rich renderers only when a rich surface is requested. They pull
+  // in shiki, @pierre/diffs, markdown-it, and ansi_up; eagerly evaluating them
+  // makes every html-only workspace pay their boot-time and RSS cost. The
+  // runtime module cache makes subsequent renders cheap, including on workerd.
+  const { renderCode, renderDiff, renderMarkdown, renderTerminal } =
+    await import("./richRender.ts");
   const rendered =
     surface.kind === "markdown"
       ? await renderMarkdown(surface, { theme: themeId, mode })

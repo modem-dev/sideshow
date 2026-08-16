@@ -32,6 +32,7 @@ import {
   MAX_ASSET_BYTES,
   surfacesByteLength,
   type Session,
+  utf8ByteLength,
   type Store,
   type Post,
   type Surface,
@@ -50,6 +51,9 @@ export type { FeedEvent } from "./events.ts";
 export type { Feedback } from "./apiViews.ts";
 
 const MAX_SURFACE_BYTES = 2 * 1024 * 1024;
+// Surface count is bounded independently of content bytes: native/json
+// surfaces can be individually tiny but each incurs storage and render work.
+const MAX_SURFACES_PER_POST = 1000;
 const MAX_WAIT_SECONDS = 300;
 // Hard ceiling on any request body, applied globally. Every write endpoint
 // reads its body with an unbounded `c.req.json()` (and /mcp likewise), so
@@ -63,6 +67,13 @@ const MAX_BODY_BYTES = 16 * 1024 * 1024;
 // list rolls, so memory stays flat no matter how long the agent runs.
 const MAX_TRACE_STEPS = 2000;
 const MAX_STEP_DETAIL = 4000;
+// Comments are not part of a post's surface-byte limit, but become trusted
+// shell markup in a session export. Bound both their aggregate text and count
+// so an otherwise tiny public session cannot make an unbounded export.
+const MAX_EXPORT_COMMENT_BYTES = 1024 * 1024;
+const MAX_EXPORT_COMMENTS = 1000;
+const MAX_EXPORT_POSTS = 1000;
+const MAX_EXPORT_SURFACES = 5000;
 const MAX_STEP_LABEL = 500;
 // A comment's text and a surface's title both ride the feedback channel back to
 // the agent (feedbackView below), re-sent on every poll — so cap them at the
@@ -432,6 +443,9 @@ export function createApp({
     if (input.surfaces.length === 0) {
       return { error: "a post needs at least one surface", status: 400 };
     }
+    if (input.surfaces.length > MAX_SURFACES_PER_POST) {
+      return { error: `post exceeds ${MAX_SURFACES_PER_POST} surfaces`, status: 413 };
+    }
     if (surfacesByteLength(input.surfaces) > MAX_SURFACE_BYTES) {
       return { error: `surface exceeds ${MAX_SURFACE_BYTES} bytes`, status: 413 };
     }
@@ -505,6 +519,9 @@ export function createApp({
     if (patch.surfaces) {
       if (patch.surfaces.length === 0) {
         return { error: "a post needs at least one surface", status: 400 };
+      }
+      if (patch.surfaces.length > MAX_SURFACES_PER_POST) {
+        return { error: `post exceeds ${MAX_SURFACES_PER_POST} surfaces`, status: 413 };
       }
       if (surfacesByteLength(patch.surfaces) > MAX_SURFACE_BYTES) {
         return { error: `surface exceeds ${MAX_SURFACE_BYTES} bytes`, status: 413 };
@@ -1109,26 +1126,50 @@ export function createApp({
   app.get("/api/sessions/:id/export", async (c) => {
     const session = await store.getSession(c.req.param("id"));
     if (!session) return c.json({ error: "session not found" }, 404);
-    const posts = await store.listPosts(session.id); // createdAt ASC → chronological
-    // Reject oversized sessions before any rendering: per-post text is capped
-    // (MAX_SURFACE_BYTES) but post count isn't, so without an aggregate bound
-    // one export could be made to render unbounded input — unauthenticated on a
-    // publicRead workspace. The check is a cheap string-length sum.
+    // Fetch one extra post so a session cannot evade the export's resource
+    // limits by using millions of tiny native surfaces. SqlStore applies this
+    // bound in SQL; JsonFileStore avoids cloning beyond it.
+    const posts = await store.listPosts(session.id, MAX_EXPORT_POSTS + 1); // createdAt ASC → chronological
+    if (posts.length > MAX_EXPORT_POSTS) {
+      return c.json({ error: "session has too many posts to export" }, 413);
+    }
+    // Reject oversized sessions before any rendering: individual surface text
+    // is capped (MAX_SURFACE_BYTES), but aggregate text and surface count are
+    // not. Both limits are needed because a session can have a huge number of
+    // tiny JSON/image surfaces with little input text but large shell overhead.
     let inputBytes = 0;
-    for (const post of posts) inputBytes += surfacesByteLength(post.surfaces);
+    let surfaceCount = 0;
+    for (const post of posts) {
+      inputBytes += surfacesByteLength(post.surfaces);
+      surfaceCount += post.surfaces.length;
+    }
     if (inputBytes > MAX_EXPORT_SURFACE_BYTES) {
       return c.json(
         { error: `session too large to export (over ${MAX_EXPORT_SURFACE_BYTES} surface bytes)` },
         413,
       );
     }
+    if (surfaceCount > MAX_EXPORT_SURFACES) {
+      return c.json({ error: "session has too many surfaces to export" }, 413);
+    }
     // One comments query for the whole session, grouped by post — per-post
     // listComments calls were N+1 (and JsonFileStore rescans every comment per
     // call, so quadratic). Session-level comments (postId null) are excluded
     // in v1 (a documented no-op).
     const byPost = new Map<string, Comment[]>();
-    for (const comment of await store.listComments({ sessionId: session.id })) {
+    let commentBytes = 0;
+    let commentCount = 0;
+    for (const comment of await store.listComments({
+      sessionId: session.id,
+      postOnly: true,
+      limit: MAX_EXPORT_COMMENTS + 1,
+    })) {
       if (!comment.postId) continue;
+      commentBytes += utf8ByteLength(comment.text);
+      commentCount += 1;
+      if (commentBytes > MAX_EXPORT_COMMENT_BYTES || commentCount > MAX_EXPORT_COMMENTS) {
+        return c.json({ error: "session comments too large to export" }, 413);
+      }
       const list = byPost.get(comment.postId);
       if (list) list.push(comment);
       else byPost.set(comment.postId, [comment]);

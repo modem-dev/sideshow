@@ -362,6 +362,27 @@ test("a session over the aggregate surface-byte cap 413s before rendering", asyn
   assert.match(body.error, /too large to export/);
 });
 
+test("an aggregate of post comments over the export budget 413s", async () => {
+  const { app, store } = makeAppWithStore();
+  const { id, sessionId } = await publish(app, {
+    title: "many comments",
+    surfaces: [{ kind: "html", html: "<p>x</p>" }],
+  });
+  // Create legacy-sized stored data directly: the route must bound existing
+  // workspaces too, not only comments accepted through today's write endpoint.
+  await store.createComment({
+    sessionId,
+    postId: id,
+    author: "user",
+    text: "x".repeat(1024 * 1024 + 1),
+  });
+
+  const res = await exportSession(app, sessionId);
+  assert.equal(res.status, 413);
+  const body = (await res.json()) as { error: string };
+  assert.match(body.error, /comments too large to export/);
+});
+
 test("the shell's open-link bridge confirms the destination before opening", async () => {
   const app = makeApp();
   const { sessionId } = await publish(app, {

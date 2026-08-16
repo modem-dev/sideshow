@@ -341,6 +341,11 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
       (await store.listPosts(one.id)).map((s) => s.id),
       [s1?.id, s3?.id],
     );
+    assert.deepEqual(
+      (await store.listPosts(one.id, 1)).map((s) => s.id),
+      [s1?.id],
+      "limit preserves chronological order",
+    );
     assert.deepEqual(await store.listPosts("missing"), []);
   });
 
@@ -667,12 +672,22 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
       ["a"],
     );
     assert.deepEqual(
+      (await store.listComments({ postOnly: true })).map((x) => x.text),
+      ["a"],
+      "postOnly excludes session-level comments",
+    );
+    assert.deepEqual(
       (await store.listComments({ afterSeq: a.seq })).map((x) => x.text),
       ["b", "c"],
     );
     assert.deepEqual(
       (await store.listComments({ sessionId: one.id, afterSeq: a.seq })).map((x) => x.text),
       ["b"],
+    );
+    assert.deepEqual(
+      (await store.listComments({ sessionId: one.id, limit: 1 })).map((x) => x.text),
+      ["a"],
+      "limit preserves sequence order",
     );
     assert.deepEqual(await store.listComments({ sessionId: "missing" }), []);
   });
