@@ -14,15 +14,17 @@ test("post screenshot route matches GET and HEAD requests without baking in an i
 
 test("card screenshots use stable social-card dimensions without fullPage", () => {
   const plan = planPostScreenshot(
-    new URL("https://workspace.test/p/abc123.png?card=1&w=640&theme=gruvbox&mode=dark&key=secret"),
+    new URL(
+      "https://workspace.test/p/abc123.png?card=1&w=640&theme=gruvbox&mode=dark&v=7&key=secret",
+    ),
     "abc123",
     "sideshow_mode=light",
   );
 
   assert.deepEqual(plan.viewport, { width: 1200, height: 630 });
   assert.deepEqual(plan.screenshotOptions, { fullPage: false });
-  assert.equal(plan.target, "https://workspace.test/p/abc123?part=0&theme=gruvbox&mode=dark");
-  assert.doesNotMatch(plan.target, /key=secret|card=1|w=640/);
+  assert.equal(plan.target, "https://workspace.test/p/abc123?part=0&ver=7&theme=gruvbox&mode=dark");
+  assert.doesNotMatch(plan.target, /key=secret|card=1|w=640|(?:^|[?&])v=/);
 });
 
 test("non-card screenshots preserve full-page behavior and configurable width", () => {

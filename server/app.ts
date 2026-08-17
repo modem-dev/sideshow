@@ -918,11 +918,25 @@ export function createApp({
     return injectHead(text, `<script>${config}</script>`);
   };
 
-  const postPreviewHead = (post: Post, request: Request) => {
+  const postPreviewHead = (
+    post: Post,
+    request: Request,
+    themeId: string,
+    rendererGeneration: string,
+  ) => {
     const origin = new URL(request.url).origin;
     const publicBasePath = requestBasePath(request);
     const canonical = `${origin}${publicBasePath}/p/${post.id}`;
-    const image = `${origin}${publicBasePath}/p/${post.id}.png?card=1`;
+    // Pin every pixel-affecting input in the advertised URL: post revision,
+    // workspace theme, deterministic color mode, and app/renderer generation.
+    // The Worker validates these before admitting the image to edge cache.
+    const imageUrl = new URL(`${origin}${publicBasePath}/p/${post.id}.png`);
+    imageUrl.searchParams.set("card", "1");
+    imageUrl.searchParams.set("theme", themeId);
+    imageUrl.searchParams.set("mode", "dark");
+    imageUrl.searchParams.set("v", String(post.version));
+    imageUrl.searchParams.set("g", rendererGeneration);
+    const image = imageUrl.toString();
     const title = escapeHtml(post.title);
     const description = "A https://sideshow.sh surface";
     return [
@@ -941,7 +955,10 @@ export function createApp({
     ].join("\n");
   };
 
-  const configuredViewerHtml = (c: Context, opts: { post?: Post; title?: string | null } = {}) => {
+  const configuredViewerHtml = async (
+    c: Context,
+    opts: { post?: Post; title?: string | null } = {},
+  ) => {
     // The viewer HTML is the trusted app origin — it shares that origin with the
     // authenticated API and the comment→agent channel, so a cross-origin page
     // that frames it could clickjack actions or the prompt-injection channel.
@@ -960,16 +977,20 @@ export function createApp({
       ),
       pageTitle,
     );
-    return opts.post ? injectHead(html, postPreviewHead(opts.post, c.req.raw)) : html;
+    if (!opts.post) return html;
+    const themeId = (await store.getSetting("theme")) ?? DEFAULT_THEME_ID;
+    return injectHead(html, postPreviewHead(opts.post, c.req.raw, themeId, version ?? "dev"));
   };
-  app.get("/", (c) => c.html(configuredViewerHtml(c)));
-  app.get("/connect", (c) => c.html(configuredViewerHtml(c, { title: "Connect an agent" })));
+  app.get("/", async (c) => c.html(await configuredViewerHtml(c)));
+  app.get("/connect", async (c) =>
+    c.html(await configuredViewerHtml(c, { title: "Connect an agent" })),
+  );
   app.get("/session/:id", async (c) => {
     const session = await store.getSession(c.req.param("id"));
     if (isUnauthenticatedSessionRead(c) && !session) {
       return c.text("Session not found", 404);
     }
-    return c.html(configuredViewerHtml(c, { title: sessionDocumentTitle(session) }));
+    return c.html(await configuredViewerHtml(c, { title: sessionDocumentTitle(session) }));
   });
   const sessionPostPage = async (c: any) => {
     const session = await store.getSession(c.req.param("id"));
@@ -980,7 +1001,7 @@ export function createApp({
         return c.text("Session or post not found", 404);
       }
     }
-    return c.html(configuredViewerHtml(c, { title: sessionDocumentTitle(session) }));
+    return c.html(await configuredViewerHtml(c, { title: sessionDocumentTitle(session) }));
   };
   app.get("/session/:id/s/:surfaceId", sessionPostPage); // legacy alias
   app.get("/session/:id/p/:postId", sessionPostPage);
@@ -1526,7 +1547,7 @@ export function createApp({
     if (!post) return c.text("Post not found", 404);
     // `part` is the legacy query key; `surface` is canonical.
     const surfaceParam = c.req.query("surface") ?? c.req.query("part");
-    if (surfaceParam == null) return c.html(configuredViewerHtml(c, { post }));
+    if (surfaceParam == null) return c.html(await configuredViewerHtml(c, { post }));
 
     const ver = c.req.query("ver");
     let title = post.title;

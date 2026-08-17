@@ -7,6 +7,7 @@ import { createApp } from "../server/app.ts";
 import { SqlStore } from "../server/sqlStore.ts";
 import viewerHtml from "../viewer/dist/index.html";
 import { matchPostScreenshot, planPostScreenshot } from "./screenshot.ts";
+import { postScreenshotClientCacheControl, servePostScreenshot } from "./screenshotCache.ts";
 
 interface Env {
   BOARD: DurableObjectNamespace<SideshowBoard>;
@@ -47,7 +48,7 @@ export class SideshowBoard extends DurableObject<Env> {
 }
 
 export default {
-  async fetch(request: Request, env: Env) {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     if (!env.SIDESHOW_TOKEN) {
       return new Response(
         "sideshow is not configured: set a token first —\n\n  wrangler secret put SIDESHOW_TOKEN\n",
@@ -68,35 +69,29 @@ export default {
     // page matches what the viewer shows; the width is configurable via ?w=
     // (default 800). Social card mode is fixed at 1200x630.
     const plan = planPostScreenshot(url, postId, request.headers.get("cookie"));
-    const checkRes = await workspace.fetch(
-      new Request(plan.checkUrl, { headers: request.headers }),
+    const clientCacheControl = postScreenshotClientCacheControl(
+      plan.noCache,
+      env.SIDESHOW_PUBLIC_READ,
     );
-    if (!checkRes.ok) return checkRes;
-    // Auth passed and post exists — discard the HTML. For HEAD, return the
-    // same public image headers Slack checks without paying for Browser Rendering.
-    await checkRes.arrayBuffer();
-    if (request.method === "HEAD") {
-      return new Response(null, {
-        headers: {
-          "Content-Type": "image/png",
-          "Cache-Control": plan.noCache ? "no-store" : "public, max-age=300",
-        },
-      });
-    }
 
-    const screenshot = await env.BROWSER.quickAction("screenshot", {
-      url: plan.target,
-      viewport: plan.viewport,
-      screenshotOptions: plan.screenshotOptions,
-      gotoOptions: { waitUntil: "networkidle0", timeout: 15000 },
-      cacheTTL: 0,
-      cookies: [{ name: "sideshow_key", value: env.SIDESHOW_TOKEN, domain: url.hostname }],
-    });
-    return new Response(await screenshot.arrayBuffer(), {
-      headers: {
-        "Content-Type": "image/png",
-        "Cache-Control": plan.noCache ? "no-store" : "public, max-age=300",
-      },
+    return servePostScreenshot({
+      request,
+      requestUrl: url,
+      postId,
+      plan,
+      rendererGeneration: pkg.version,
+      clientCacheControl,
+      defer: (promise) => ctx.waitUntil(promise),
+      authorize: () => workspace.fetch(new Request(plan.checkUrl, { headers: request.headers })),
+      capture: () =>
+        env.BROWSER.quickAction("screenshot", {
+          url: plan.target,
+          viewport: plan.viewport,
+          screenshotOptions: plan.screenshotOptions,
+          gotoOptions: { waitUntil: "networkidle0", timeout: 15000 },
+          cacheTTL: 0,
+          cookies: [{ name: "sideshow_key", value: env.SIDESHOW_TOKEN!, domain: url.hostname }],
+        }),
     });
   },
 } satisfies ExportedHandler<Env>;

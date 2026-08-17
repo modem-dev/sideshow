@@ -14,6 +14,7 @@ function makeApp(
     basePath?: string;
     viewerHtml?: string;
     screenshots?: boolean;
+    version?: string;
     maxHoldConnections?: number;
     onEvent?: Parameters<typeof createApp>[0]["onEvent"];
     store?: Store;
@@ -359,8 +360,8 @@ test("GET /session/:id serves the viewer shell with the session title", async ()
   assert.match(body, /<title>Auth refactor · sideshow<\/title>/);
 });
 
-test("GET /s/:id emits absolute token-free canonical and preview image URLs", async () => {
-  const app = makeApp("secret");
+test("GET /s/:id emits fully pinned, absolute, token-free preview image URLs", async () => {
+  const app = makeApp("secret", { version: "1.2.3" });
   const res = await app.request(
     "https://board.test/api/snippets",
     authedJson({ title: "Preview", html: "<p>x</p>" }),
@@ -369,7 +370,7 @@ test("GET /s/:id emits absolute token-free canonical and preview image URLs", as
 
   const body = await (await app.request(`https://board.test/s/${surface.id}?key=secret`)).text();
   const canonical = `https://board.test/p/${surface.id}`;
-  const image = `https://board.test/p/${surface.id}.png?card=1`;
+  const image = `https://board.test/p/${surface.id}.png?card=1&amp;theme=github&amp;mode=dark&amp;v=${surface.version}&amp;g=1.2.3`;
   assert.match(body, new RegExp(`<link rel="canonical" href="${canonical}">`));
   assert.match(body, new RegExp(`<meta property="og:url" content="${canonical}">`));
   assert.match(
@@ -430,10 +431,24 @@ test("GET /s/:id preview metadata respects configured base path", async () => {
   assert.match(
     body,
     new RegExp(
-      `<meta property="og:image" content="https://board.test/u/alice/p/${surface.id}\\.png\\?card=1">`,
+      `<meta property="og:image" content="https://board.test/u/alice/p/${surface.id}\\.png\\?card=1&amp;theme=github&amp;mode=dark&amp;v=${surface.version}&amp;g=dev">`,
     ),
   );
   assert.match(body, /window\.__SIDESHOW_BASE_PATH__="\/u\/alice"/);
+});
+
+test("post preview image URL changes with the workspace theme", async () => {
+  const app = makeApp(undefined, { version: "1.2.3" });
+  const res = await app.request("/api/snippets", json({ title: "Themed", html: "<p>x</p>" }));
+  const post = (await res.json()) as any;
+
+  const before = await (await app.request(`/p/${post.id}`)).text();
+  assert.match(before, /theme=github/);
+  const update = await app.request("/api/theme", { ...json({ id: "gruvbox" }), method: "PUT" });
+  assert.equal(update.status, 200);
+  const after = await (await app.request(`/p/${post.id}`)).text();
+  assert.match(after, /theme=gruvbox/);
+  assert.doesNotMatch(after, /theme=github/);
 });
 
 test("/s served versioned + themed is cacheable; an unpinned load is not", async () => {

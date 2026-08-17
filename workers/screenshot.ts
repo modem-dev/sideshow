@@ -40,6 +40,10 @@ export function planPostScreenshot(
   checkUrl.pathname = `/p/${postId}`;
   checkUrl.search = ""; // clear .png query params, including tokens
   checkUrl.searchParams.set("part", "0");
+  // Social metadata pins the post version as public `v`; the renderer calls it
+  // `ver` and validates it against current/history before any cache lookup.
+  const version = requestUrl.searchParams.get("v");
+  if (version) checkUrl.searchParams.set("ver", version);
   if (theme) checkUrl.searchParams.set("theme", theme);
   if (mode) checkUrl.searchParams.set("mode", mode);
 
