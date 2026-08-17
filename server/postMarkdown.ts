@@ -99,7 +99,8 @@ function codeHeading(surface: CodeSurface, body: string): string {
   const name = surface.title ? `\`${surface.title}\`` : "Excerpt";
   const start = surface.lineStart;
   if (start === undefined) return `**${name}**\n\n`;
-  const end = start + body.split("\n").length - 1;
+  // splitLines, not a raw split: a body ending in a newline is not one line longer.
+  const end = start + Math.max(1, splitLines(body).length) - 1;
   return `**${name}** (lines ${start}–${end})\n\n`;
 }
 
@@ -177,51 +178,71 @@ export function postToMarkdown(post: MarkdownablePost, opts: PostMarkdownOptions
 
 // --- unified diff, for a diff surface sent as before/after file pairs --------
 // The `files` form is the documented fallback for agents without a patch, so
-// this is the fallback's fallback: enough of a unified diff to paste and read.
-// Deliberately small and dependency-free — @pierre/diffs renders the real view
-// in the viewer, and pulling its SSR path in here would drag a highlighter into
-// a text transform.
+// this is the fallback's fallback: enough of a unified diff to paste and read —
+// and to apply. `git apply` is unforgiving, so the end-of-file newline is
+// tracked as carefully as the lines themselves. Deliberately small and
+// dependency-free: @pierre/diffs renders the real view in the viewer, and
+// pulling its SSR path in here would drag a highlighter into a text transform.
 
 const DIFF_CONTEXT = 3;
 // Above this many changed lines on either side, the middle is emitted as one
 // wholesale replacement instead of a line-matched diff. Keeps the O(n·m) matrix
 // off the heap for large files; a huge rewrite reads the same either way.
 const DIFF_MAX_MATRIX = 1500;
+const NO_EOF_MARKER = "\\ No newline at end of file";
+
+// One line of a file, plus whether it is a last line with no newline after it.
+// That flag is part of the line's IDENTITY, not decoration: "c" and "c" with no
+// trailing newline are different content, so they must not match each other in
+// the LCS — otherwise adding a final newline reads as an empty diff.
+type Entry = { line: string; noEof: boolean };
 
 function splitLines(text: string): string[] {
+  if (text === "") return [];
   const lines = text.split("\n");
-  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  if (lines[lines.length - 1] === "") lines.pop();
   return lines;
 }
 
-type Op = { tag: " " | "-" | "+"; line: string };
+function entries(text: string): Entry[] {
+  const lines = splitLines(text);
+  const noEof = lines.length > 0 && !text.endsWith("\n");
+  return lines.map((line, i) => ({ line, noEof: noEof && i === lines.length - 1 }));
+}
 
-function diffOps(before: string[], after: string[]): Op[] {
+const sameEntry = (a: Entry, b: Entry) => a.line === b.line && a.noEof === b.noEof;
+
+type Op = { tag: " " | "-" | "+"; line: string; noEof: boolean };
+
+const op = (tag: Op["tag"], entry: Entry): Op => ({ tag, line: entry.line, noEof: entry.noEof });
+
+function diffOps(before: Entry[], after: Entry[]): Op[] {
   let head = 0;
-  while (head < before.length && head < after.length && before[head] === after[head]) head++;
+  while (head < before.length && head < after.length && sameEntry(before[head], after[head]))
+    head++;
   let tail = 0;
   while (
     tail < before.length - head &&
     tail < after.length - head &&
-    before[before.length - 1 - tail] === after[after.length - 1 - tail]
+    sameEntry(before[before.length - 1 - tail], after[after.length - 1 - tail])
   )
     tail++;
 
   const midBefore = before.slice(head, before.length - tail);
   const midAfter = after.slice(head, after.length - tail);
-  const ops: Op[] = before.slice(0, head).map((line) => ({ tag: " " as const, line }));
+  const ops: Op[] = before.slice(0, head).map((entry) => op(" ", entry));
 
   if (midBefore.length > DIFF_MAX_MATRIX || midAfter.length > DIFF_MAX_MATRIX) {
-    ops.push(...midBefore.map((line) => ({ tag: "-" as const, line })));
-    ops.push(...midAfter.map((line) => ({ tag: "+" as const, line })));
+    ops.push(...midBefore.map((entry) => op("-", entry)));
+    ops.push(...midAfter.map((entry) => op("+", entry)));
   } else {
     ops.push(...lcsOps(midBefore, midAfter));
   }
-  ops.push(...before.slice(before.length - tail).map((line) => ({ tag: " " as const, line })));
+  ops.push(...before.slice(before.length - tail).map((entry) => op(" ", entry)));
   return ops;
 }
 
-function lcsOps(before: string[], after: string[]): Op[] {
+function lcsOps(before: Entry[], after: Entry[]): Op[] {
   const n = before.length;
   const m = after.length;
   // lcs[i][j] = length of the longest common subsequence of before[i..], after[j..].
@@ -230,34 +251,39 @@ function lcsOps(before: string[], after: string[]): Op[] {
   const lcs = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      lcs[i][j] =
-        before[i] === after[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+      lcs[i][j] = sameEntry(before[i], after[j])
+        ? lcs[i + 1][j + 1] + 1
+        : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
     }
   }
   const ops: Op[] = [];
   let i = 0;
   let j = 0;
   while (i < n && j < m) {
-    if (before[i] === after[j]) {
-      ops.push({ tag: " ", line: before[i] });
+    if (sameEntry(before[i], after[j])) {
+      ops.push(op(" ", before[i]));
       i++;
       j++;
     } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
-      ops.push({ tag: "-", line: before[i] });
+      ops.push(op("-", before[i]));
       i++;
     } else {
-      ops.push({ tag: "+", line: after[j] });
+      ops.push(op("+", after[j]));
       j++;
     }
   }
-  while (i < n) ops.push({ tag: "-", line: before[i++] });
-  while (j < m) ops.push({ tag: "+", line: after[j++] });
+  while (i < n) ops.push(op("-", before[i++]));
+  while (j < m) ops.push(op("+", after[j++]));
   return ops;
 }
 
+// A side that contributes no lines to a hunk is numbered from the line it comes
+// AFTER, so a pure insertion into an empty file is `-0,0` — not `-1,0`.
+const hunkRange = (start: number, count: number) => `${count === 0 ? start - 1 : start},${count}`;
+
 export function unifiedDiff(filename: string, before: string, after: string): string {
   if (before === after) return "";
-  const ops = diffOps(splitLines(before), splitLines(after));
+  const ops = diffOps(entries(before), entries(after));
   const hunks: string[] = [];
   let beforeLine = 1;
   let afterLine = 1;
@@ -278,23 +304,21 @@ export function unifiedDiff(filename: string, before: string, after: string): st
     }
     const start = Math.max(0, cursor - DIFF_CONTEXT);
     const stop = Math.min(ops.length, end + DIFF_CONTEXT + 1);
-    let beforeStart = beforeLine;
-    let afterStart = afterLine;
-    for (let i = start; i < cursor; i++) {
-      beforeStart--;
-      afterStart--;
-    }
+    const beforeStart = beforeLine - (cursor - start);
+    const afterStart = afterLine - (cursor - start);
     const body: string[] = [];
     let beforeCount = 0;
     let afterCount = 0;
     for (let i = start; i < stop; i++) {
-      const op = ops[i];
-      body.push(op.tag + op.line);
-      if (op.tag !== "+") beforeCount++;
-      if (op.tag !== "-") afterCount++;
+      const o = ops[i];
+      body.push(o.tag + o.line);
+      // The marker annotates the line above it and counts toward neither side.
+      if (o.noEof) body.push(NO_EOF_MARKER);
+      if (o.tag !== "+") beforeCount++;
+      if (o.tag !== "-") afterCount++;
     }
     hunks.push(
-      `@@ -${beforeStart},${beforeCount} +${afterStart},${afterCount} @@\n${body.join("\n")}\n`,
+      `@@ -${hunkRange(beforeStart, beforeCount)} +${hunkRange(afterStart, afterCount)} @@\n${body.join("\n")}\n`,
     );
     for (let i = cursor; i < stop; i++) {
       if (ops[i].tag !== "+") beforeLine++;

@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { postToMarkdown, stripAnsi, unifiedDiff } from "../server/postMarkdown.ts";
 import type { MarkdownablePost } from "../server/postMarkdown.ts";
@@ -8,6 +12,24 @@ const OPTS = { postUrl: "https://ex.test/p/abc", assetBase: "https://ex.test" };
 
 function post(surfaces: Surface[], extra: Partial<MarkdownablePost> = {}): MarkdownablePost {
   return { title: "Retry backoff", surfaces, ...extra };
+}
+
+// The only honest oracle for a patch is applying it. Asserting on hunk text
+// misses exactly the class of bug that matters — a patch that reads fine and is
+// rejected by `git apply`, or applies to content that isn't the "after" side.
+function assertApplies(before: string, after: string): void {
+  const patch = unifiedDiff("f.txt", before, after);
+  assert.notEqual(patch, "", "differing content must produce a patch");
+  const dir = mkdtempSync(join(tmpdir(), "sideshow-diff-"));
+  try {
+    execFileSync("git", ["init", "-q", "."], { cwd: dir });
+    writeFileSync(join(dir, "f.txt"), before);
+    writeFileSync(join(dir, "p.diff"), patch);
+    execFileSync("git", ["apply", "p.diff"], { cwd: dir, stdio: "pipe" });
+    assert.equal(readFileSync(join(dir, "f.txt"), "utf8"), after, `patch applied wrong:\n${patch}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 test("heads the document with the title, permalink, version and an absolute stamp", () => {
@@ -146,4 +168,41 @@ test("unifiedDiff: a wholesale rewrite stays bounded instead of building a matri
 test("stripAnsi drops SGR, cursor moves and OSC sequences", () => {
   assert.equal(stripAnsi("\u001b[1;32mok\u001b[0m\u001b[2J"), "ok");
   assert.equal(stripAnsi("\u001b]0;title\u0007done"), "done");
+});
+
+// Every case below is one `git apply` reproduced by hand from a real failure:
+// without the `\ No newline at end of file` marker (and with an empty file
+// modelled as one blank line) each of these produced a patch git rejects, or
+// worse, one that applies and yields content the agent never sent.
+test("patches apply cleanly regardless of the end-of-file newline", () => {
+  assertApplies("a\nb\nc\n", "a\nB\nc\n"); // the easy case
+  assertApplies("a\nb\nc", "a\nB\nc"); // neither side ends with a newline
+  assertApplies("a\nb\nc\n", "a\nB\nc"); // the trailing newline is dropped
+  assertApplies("a\nb\nc", "a\nB\nc\n"); // ...and added
+  assertApplies("a\nb\nc", "a\nb\nC"); // the edit lands on the last line
+  assertApplies("", "foo\n"); // an empty file gains content
+  assertApplies("foo\n", ""); // ...and loses all of it
+  assertApplies("", "foo"); // empty in, no trailing newline out
+  assertApplies("one\n", "one\ntwo\nthree\n"); // pure append
+});
+
+test("a trailing-newline-only change is a real diff, not an empty one", () => {
+  // The lines are identical; only the end-of-file newline moves. Treating the
+  // last line as unchanged made this vanish into the link fallback.
+  assertApplies("a\nb\nc", "a\nb\nc\n");
+  const md = postToMarkdown(
+    post([{ kind: "diff", files: [{ filename: "x.ts", before: "a\nb\nc", after: "a\nb\nc\n" }] }]),
+    OPTS,
+  );
+  assert.match(md, /```diff/);
+  assert.match(md, /\\ No newline at end of file/);
+  assert.doesNotMatch(md, /open in sideshow/);
+});
+
+test("an excerpt ending in a newline is not counted one line too long", () => {
+  const heading = (code: string) =>
+    postToMarkdown(post([{ kind: "code", code, language: "ts", lineStart: 10 }]));
+  assert.match(heading("a\nb\nc\n"), /\(lines 10–12\)/);
+  assert.match(heading("a\nb\nc"), /\(lines 10–12\)/);
+  assert.match(heading(""), /\(lines 10–10\)/);
 });
