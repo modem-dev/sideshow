@@ -399,6 +399,17 @@ export function openArchives() {
 }
 
 export function applyRoute(route: Route) {
+  // Archives takes precedence over every other optional Route field, matching
+  // the default router's URL generation. An embedding host may carry a stale
+  // surfaceId while it switches views; that must not replace the archive with a
+  // standalone post.
+  if (route.archives) {
+    if (standalonePost()) setStandaloneInternal(null);
+    setArchiveViewInternal(true);
+    setSelectedInternal(null);
+    setNavOpen(false);
+    return;
+  }
   // A bare post route is the standalone full-page view; back/forward into or
   // out of it toggles the mode (leaving it falls through to session handling).
   if (route.surfaceId && !route.sessionId) {
@@ -406,12 +417,6 @@ export function applyRoute(route: Route) {
     return;
   }
   if (standalonePost()) setStandaloneInternal(null);
-  if (route.archives) {
-    setArchiveViewInternal(true);
-    setSelectedInternal(null);
-    setNavOpen(false);
-    return;
-  }
   setArchiveViewInternal(false);
   if (route.sessionId && route.sessionId !== selected()) {
     void select(route.sessionId, {

@@ -67,6 +67,20 @@ test("embedded routers receive and navigate to the archive route", async ({ page
     (window as unknown as { __archiveRoute: (route: object) => void }).__archiveRoute({});
   });
   await expect(page.locator("#sessionList .sess")).toHaveCount(15);
+
+  // Hosts can retain optional route fields while changing views. `archives`
+  // wins over a stale surfaceId instead of entering standalone-post mode.
+  await page.evaluate(() => {
+    (window as unknown as { __archiveRoute: (route: object) => void }).__archiveRoute({
+      archives: true,
+      surfaceId: "stale-post-id",
+    });
+  });
+  await expect(page.getByRole("heading", { name: "Archives" })).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as { __archiveRoute: (route: object) => void }).__archiveRoute({});
+  });
+  await expect(page.locator("#sessionList .sess")).toHaveCount(15);
   await page.getByRole("button", { name: /Go to archives 16/ }).click();
   await expect
     .poll(() =>
