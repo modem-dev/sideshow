@@ -499,6 +499,64 @@ test("a comment's copy button puts an agent-ready paste block on the clipboard",
   }
 });
 
+test("the share menu copies a link and a markdown flattening of the post", async ({
+  page,
+  server,
+  context,
+  browserName,
+}) => {
+  const post = await publishParts(server.url, {
+    title: "Retry backoff",
+    parts: [
+      { kind: "markdown", markdown: "the plan" },
+      { kind: "html", html: "<p>drawn</p>" },
+    ],
+    agent: "e2e",
+  });
+  if (browserName === "chromium") {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  }
+
+  await page.goto(server.url);
+  const card = page.locator(".card:not(#whatsNew)");
+  const menu = page.locator(".share-menu");
+
+  // The three old export icons are gone — one share control replaces them.
+  await expect(card.locator(".act.copy, .act.open, .act.shot")).toHaveCount(0);
+  await card.locator(".act.share").click();
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    "Copy link",
+    "Copy as markdown",
+    "Open in new tab",
+    "Open as image",
+  ]);
+  // No Browser Rendering on a Node server, so the image row is inert but visible.
+  await expect(menu.getByRole("menuitem", { name: "Open as image" })).toBeDisabled();
+
+  await menu.getByRole("menuitem", { name: "Copy as markdown" }).click();
+  await expect(menu).toBeHidden();
+  await expect(page.locator("#toast")).toContainText("Copied as markdown");
+  if (browserName === "chromium") {
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copied).toContain("## Retry backoff");
+    expect(copied).toContain("the plan");
+    // An html surface links back rather than pasting agent markup.
+    expect(copied).toContain(`/p/${post.id}?part=1`);
+    expect(copied).not.toContain("<p>drawn</p>");
+  }
+
+  // Escape closes and hands focus back to the button; a click outside closes too.
+  await card.locator(".act.share").click();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(card.locator(".act.share")).toBeFocused();
+  await card.locator(".act.share").click();
+  await page.locator(".card-title").first().click();
+  await expect(menu).toBeHidden();
+});
+
 test("a failed comment send restores the input instead of losing the message", async ({
   page,
   server,
@@ -715,7 +773,7 @@ test("at phone width the sidebar collapses into a drawer and actions stay visibl
   expect((await card.boundingBox())!.width).toBeGreaterThan(300);
 
   // hover-only card actions are always visible at narrow widths
-  await expect(card.locator(".act.open")).toHaveCSS("opacity", "1");
+  await expect(card.locator(".act.share")).toHaveCSS("opacity", "1");
 
   // the menu button opens the drawer; picking a session closes it again
   await page.locator("#menuBtn").click();

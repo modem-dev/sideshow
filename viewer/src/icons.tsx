@@ -59,6 +59,29 @@ export function LinkIcon() {
   );
 }
 
+// lucide: share — the card's one "take this elsewhere" affordance.
+export function ShareIcon() {
+  return (
+    <Icon>
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+      <polyline points="16 6 12 2 8 6" />
+      <line x1="12" x2="12" y1="2" y2="15" />
+    </Icon>
+  );
+}
+
+// A file carrying the markdown "M" — lucide has no markdown glyph, so this is
+// file-text's outline with the mark drawn in the same stroke weight.
+export function MarkdownIcon() {
+  return (
+    <Icon>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M8 13h3l1.5 3L14 13h2" />
+    </Icon>
+  );
+}
+
 // lucide: image
 export function ImageIcon() {
   return (

@@ -80,5 +80,5 @@ test("embedded engine: host layout:'stream' renders no sidebar, readonly hides w
   // readonly:true via the host → write controls gone, read actions kept.
   await expect(card.locator(".act.del")).toHaveCount(0);
   await expect(card.locator(".act.comment")).toHaveCount(0);
-  await expect(card.locator(".act.copy")).toBeVisible();
+  await expect(card.locator(".act.share")).toBeVisible();
 });

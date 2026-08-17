@@ -12,7 +12,6 @@ import {
 import {
   api,
   appPath,
-  canScreenshot,
   isReadonly,
   relTime,
   sessionLabel,
@@ -22,19 +21,10 @@ import {
   type Post,
   type TraceSurface as TraceSurfaceData,
   type ViewerPost,
-  postLink,
-  postImageLink,
 } from "./api.ts";
 import { isSandboxedSurfaceKind, SURFACE_FRAME_CLASSES } from "../../server/types.ts";
-import {
-  CommentIcon,
-  ImageIcon,
-  LinkIcon,
-  MaximizeIcon,
-  OpenIcon,
-  PinIcon,
-  TrashIcon,
-} from "./icons.tsx";
+import { CommentIcon, MaximizeIcon, PinIcon, TrashIcon } from "./icons.tsx";
+import { ShareMenu } from "./ShareMenu.tsx";
 import { root } from "./host.ts";
 import { ImageSurface } from "./ImageSurface.tsx";
 import { JsonSurface } from "./JsonSurface.tsx";
@@ -579,59 +569,11 @@ export function Card(props: { post: Post | ViewerPost; standalone?: boolean }) {
                 </button>
               </Show>
               <span class="sp"></span>
-              <button
-                class="act icon copy"
-                title="Copy link to this post"
-                aria-label="Copy link to this post"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(postLink(props.post.id));
-                    toast("Link copied");
-                  } catch {
-                    toast("Couldn't copy the link");
-                  }
-                }}
-              >
-                <LinkIcon />
-              </button>
-              <a
-                class="act icon open"
-                target="_blank"
-                rel="noopener"
-                href={postLink(props.post.id)}
-                title="Open in a new tab"
-                aria-label="Open in a new tab"
-              >
-                <OpenIcon />
-              </a>
-              {/* Open the first renderable surface as a PNG. The image is
-                  rendered server-side by the Browser Rendering Worker, so the
-                  action is only live where that exists; on a plain Node server
-                  it's disabled with a tooltip that points at the README. */}
-              <Show
-                when={canScreenshot()}
-                fallback={
-                  <button
-                    class="act icon shot"
-                    disabled
-                    title="Saving the first surface as an image needs Cloudflare Browser Rendering, which this server doesn't have. See the README."
-                    aria-label="Screenshots aren't available on this server"
-                  >
-                    <ImageIcon />
-                  </button>
-                }
-              >
-                <a
-                  class="act icon shot"
-                  target="_blank"
-                  rel="noopener"
-                  href={postImageLink(props.post.id)}
-                  title="Open first surface as an image (PNG)"
-                  aria-label="Open first surface as an image (PNG)"
-                >
-                  <ImageIcon />
-                </a>
-              </Show>
+              {/* Copy link, open in a new tab and open as a PNG all live in the
+                  share menu now — one labelled control instead of three icons
+                  that all mean "take this elsewhere", with room for the copy
+                  formats (markdown today) that have no icon of their own. */}
+              <ShareMenu post={props.post} />
               <Show when={!isReadonly()}>
                 <span class="divider"></span>
                 <button

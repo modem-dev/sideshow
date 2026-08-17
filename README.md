@@ -157,9 +157,15 @@ sideshow runs locally as a small Node server, or on Cloudflare Workers when your
 agent and your browser live on different machines (or you want the viewer on your
 phone). See **[docs/deploying.md](docs/deploying.md)**.
 
-Each surface has an **open-as-image** action in its footer that renders the
-surface to a PNG (`/p/:id.png`) — handy for pasting into a doc or a chat. The
-image is captured by a headless browser, so it needs Cloudflare's [Browser
+Each card's footer carries a **share** menu for taking a post elsewhere: copy its
+link, copy the whole post as markdown (`/api/posts/:id/markdown` — prose stays
+prose, code/diffs/terminal output/JSON/mermaid become fenced blocks, and an html
+surface links back rather than pasting its markup), open it in a new tab, or open
+it as an image.
+
+That last one renders the surface to a PNG (`/p/:id.png`) — handy for pasting
+into a doc or a chat. The image is captured by a headless browser, so it needs
+Cloudflare's [Browser
 Rendering](https://developers.cloudflare.com/browser-rendering/) binding and
 only works on a Workers deployment. On the local Node server there is no headless
 browser, so the action is shown but disabled.

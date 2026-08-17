@@ -109,6 +109,13 @@ export function postImageLink(id: string): string {
   return `${location.origin}${appPath(`/p/${encodeURIComponent(id)}.png`)}`;
 }
 
+// The post flattened to markdown (GET /api/posts/:id/markdown). Served rather
+// than derived here: a hydrated post omits sandboxed surface bodies, so only the
+// server can see the whole post (see apiViews.ts).
+export function postMarkdownPath(id: string): string {
+  return `/api/posts/${encodeURIComponent(id)}/markdown`;
+}
+
 // Whether the deployment can render post screenshots (the /p/:id.png route).
 // Host-first (cloud embed), falling back to the self-hosted global, mirroring
 // isReadonly(). False on a plain Node server, which has no Browser Rendering.
@@ -126,6 +133,13 @@ export async function api<T = unknown>(path: string, init?: RequestInit): Promis
     throw new Error(body.error || String(res.status));
   }
   return res.json() as Promise<T>;
+}
+
+// Same fetch as api(), for the routes that answer with text rather than JSON.
+export async function apiText(path: string): Promise<string> {
+  const res = await fetch(appPath(path));
+  if (!res.ok) throw new Error(String(res.status));
+  return res.text();
 }
 
 export const sessionLabel = (s: Session) => s.title || s.agent + " session";

@@ -17,6 +17,7 @@ import {
 import { EventBus, type FeedEvent } from "./events.ts";
 import { kitSummaries } from "./kits.ts";
 import { registerMcp } from "./mcpHttp.ts";
+import { postToMarkdown } from "./postMarkdown.ts";
 import {
   escapeHtml,
   renderHtmlPage,
@@ -1148,6 +1149,19 @@ export function createApp({
     const post = await store.getPost(c.req.param("id"));
     if (!post) return c.json({ error: "post not found" }, 404);
     return c.json(viewerPostView(post));
+  });
+  // The post flattened to portable markdown — what the viewer's share menu
+  // copies, and the same text on the CLI/HTTP tiers. Another canonical post
+  // subresource, like /viewer above. It has to be served rather than derived in
+  // the viewer: the hydrated post the viewer holds omits sandboxed surface
+  // bodies (see apiViews.ts), so only the server can see the whole post.
+  app.get("/api/posts/:id/markdown", async (c) => {
+    const post = await store.getPost(c.req.param("id"));
+    if (!post) return c.json({ error: "post not found" }, 404);
+    const origin = new URL(c.req.url).origin;
+    const base = `${origin}${requestBasePath(c.req.raw)}`;
+    const markdown = postToMarkdown(post, { postUrl: `${base}/p/${post.id}`, assetBase: base });
+    return c.text(markdown, 200, { "content-type": "text/markdown; charset=utf-8" });
   });
   app.get("/api/surfaces/:id", getPost); // legacy alias
   app.get("/api/posts/:id", getPost);

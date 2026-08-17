@@ -304,6 +304,53 @@ test("the viewer render round-trip (POST /api/frames + GET /f/:id) is gone", asy
   assert.equal((await app.request("/f/anything")).status, 404);
 });
 
+test("GET /api/posts/:id/markdown flattens the post for the share menu", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Retry backoff",
+        surfaces: [
+          { kind: "markdown", markdown: "the plan" },
+          { kind: "html", html: "<b>drawn</b>" },
+        ],
+      }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`https://board.test/api/posts/${created.id}/markdown`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type") ?? "", /text\/markdown/);
+  const md = await res.text();
+  assert.match(md, /^## Retry backoff\n/);
+  assert.match(md, /the plan/);
+  // Links are absolute — the whole point is that the text survives a paste.
+  assert.match(md, new RegExp(`\\(https://board.test/p/${created.id}\\)`));
+  assert.match(md, new RegExp(`\\(https://board.test/p/${created.id}\\?part=1\\)`));
+  // An html surface links back rather than dumping agent markup.
+  assert.doesNotMatch(md, /<b>drawn<\/b>/);
+
+  assert.equal((await app.request("/api/posts/nope/markdown")).status, 404);
+});
+
+test("post markdown resolves links against a base path and reaches public readers", async () => {
+  const app = makeApp("secret", { publicRead: "session", basePath: "/alice" });
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      authedJson({ title: "T", surfaces: [{ kind: "image", assetId: "sha" }] }),
+    )
+  ).json()) as any;
+
+  // Copying a shared post is a read — a public-read visitor gets it unauthenticated.
+  const res = await app.request(`https://board.test/api/posts/${created.id}/markdown`);
+  assert.equal(res.status, 200);
+  const md = await res.text();
+  assert.match(md, new RegExp(`\\(https://board.test/alice/p/${created.id}\\)`));
+  assert.match(md, /!\[image\]\(https:\/\/board\.test\/alice\/a\/sha\)/);
+});
+
 test("GET /s/:id serves the viewer shell with link-preview metadata", async () => {
   const app = makeApp();
   const res = await app.request(
