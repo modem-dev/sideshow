@@ -184,6 +184,34 @@ aside {
   overflow-y: auto;
   padding: 4px 8px;
 }
+.archive-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--accent);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.archive-link:hover {
+  background: var(--hover);
+}
+.archive-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.archive-link span {
+  color: var(--faint);
+  font-weight: 400;
+}
 /* Recency group header (Today / Yesterday / Earlier). The first one hugs the
    top; later ones get breathing room above. */
 .sess-group {
@@ -526,6 +554,73 @@ main {
   max-width: 860px;
   margin: 0 auto;
   padding: 22px 28px 120px;
+}
+
+#archiveView {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 42px 28px 120px;
+}
+.archive-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 24px;
+  border-bottom: 0.5px solid var(--border);
+}
+.archive-head h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+.archive-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+.archive-search {
+  display: grid;
+  gap: 4px;
+  flex: 0 1 270px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.archive-search input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 0.5px solid var(--border-2);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+}
+.archive-search input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.archive-list {
+  padding-top: 12px;
+}
+.archive-group {
+  margin-top: 24px;
+}
+.archive-group h2 {
+  margin: 0 0 7px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.archive-group .sess {
+  border: 0.5px solid transparent;
+}
+.archive-group .sess.sel,
+.archive-group .sess:hover {
+  border-color: var(--border);
+}
+.archive-empty {
+  color: var(--muted);
 }
 
 /* Standalone direct-link view (/s/:id with no session): one surface, full page,
@@ -2203,6 +2298,17 @@ iframe {
   }
   #stream {
     padding: 12px 8px calc(112px + env(safe-area-inset-bottom, 0px));
+  }
+  #archiveView {
+    padding: 28px 14px calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+  .archive-head {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .archive-search {
+    max-width: none;
   }
   .standalone-main {
     padding: 12px 8px calc(48px + env(safe-area-inset-bottom, 0px));

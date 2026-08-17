@@ -983,6 +983,11 @@ export function createApp({
     return injectHead(html, postPreviewHead(opts.post, c.req.raw, themeId, version ?? "dev"));
   };
   app.get("/", async (c) => c.html(await configuredViewerHtml(c)));
+  // The archive is a viewer-only index over the workspace's existing sessions.
+  // Keep a real route so refreshes and browser history preserve that view.
+  app.get("/archives", async (c) =>
+    c.html(await configuredViewerHtml(c, { title: "Archives" })),
+  );
   app.get("/connect", async (c) =>
     c.html(await configuredViewerHtml(c, { title: "Connect an agent" })),
   );

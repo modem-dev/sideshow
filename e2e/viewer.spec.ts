@@ -37,6 +37,43 @@ test("the sidebar groups sessions by recency and sinks empty ones to the bottom"
   await expect(rows.nth(1).locator(".sess-count")).toHaveCount(0);
 });
 
+test("the sidebar caps sessions and the archive searches the complete history", async ({
+  page,
+  server,
+}) => {
+  const created = await Promise.all(
+    Array.from({ length: 16 }, async (_, index) => {
+      const response = await fetch(`${server.url}/api/sessions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agent: "archiver", title: `Archive ${index}` }),
+      });
+      expect(response.ok).toBe(true);
+      return (await response.json()) as { id: string };
+    }),
+  );
+
+  await page.goto(server.url);
+  await expect(page.locator("#sessionList .sess")).toHaveCount(15);
+  await page.getByRole("button", { name: /Go to archives 16/ }).click();
+  await expect(page).toHaveURL(/\/archives$/);
+  await expect(page.getByRole("heading", { name: "Archives" })).toBeVisible();
+  await expect(page.locator("#archiveView .sess")).toHaveCount(16);
+
+  // A real route means reloading, Back, and Forward retain the archive view.
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Archives" })).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search archives" }).fill("archive 15");
+  await expect(page.locator("#archiveView .sess")).toHaveCount(1);
+  await page.locator(`#archiveView .sess[data-id="${created[15].id}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${created[15].id}$`));
+  await page.goBack();
+  await expect(page).toHaveURL(/\/archives$/);
+  await expect(page.getByRole("heading", { name: "Archives" })).toBeVisible();
+  await page.goForward();
+  await expect(page).toHaveURL(new RegExp(`/session/${created[15].id}$`));
+});
+
 test("session rows show the agent's logo, with a fallback for unknown agents", async ({
   page,
   server,

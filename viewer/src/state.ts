@@ -37,6 +37,10 @@ export interface SessionGroup {
   sessions: SessionRow[];
 }
 
+// Keep the sidebar deliberately short. The archive is a client-side view over
+// the same complete session list, not a destructive or persisted state.
+export const SIDEBAR_SESSION_LIMIT = 15;
+
 // Bucket sessions by last-active recency (Today / Yesterday / Earlier) so the
 // freshest work stays on top and a long history reads at a glance. Within a
 // bucket, sessions with no posts yet sink to the bottom (and render dimmed)
@@ -65,8 +69,16 @@ export function groupSessions(list: readonly SessionRow[], now: Date): SessionGr
   }
   return buckets.filter((b) => b.sessions.length > 0);
 }
+
+// The flat order used by the compact sidebar and keyboard traversal. Keep it
+// derived from the grouped order so empty sessions still follow active ones.
+export function recentSessions(list: readonly SessionRow[], now: Date): SessionRow[] {
+  return groupSessions(list, now).flatMap((group) => group.sessions);
+}
 const [selectedState, setSelectedInternal] = createSignal<string | null>(null);
 export const selected = selectedState;
+const [archiveViewState, setArchiveViewInternal] = createSignal(false);
+export const archiveView = archiveViewState;
 
 // Standalone (direct-link) mode: a bare /s/:id route with no session shows that
 // one post full-page — no sidebar, no session feed, no comments — instead of
@@ -247,6 +259,12 @@ export async function refreshSessions(targetPostId?: string | null) {
   }
 
   await refreshSessionsQuiet();
+  const route = host().router.get();
+  if (route.archives) {
+    setArchiveViewInternal(true);
+    setSelectedInternal(null);
+    return;
+  }
   if (selected() && !sessions.some((s) => s.id === selected())) setSelectedInternal(null);
   if (targetPostId) {
     const target = await api<Post>(`/api/posts/${encodeURIComponent(targetPostId)}`).catch(
@@ -263,7 +281,6 @@ export async function refreshSessions(targetPostId?: string | null) {
     // A host that owns a session-less landing (homeView) skips that fallback: it
     // honors a deep-linked route session but otherwise stays session-less so the
     // host's home shows with nothing selected (no auto-open, no highlight).
-    const route = host().router.get();
     const lastId = localStorage.getItem(LAST_SESSION_KEY);
     const fallback =
       host().homeView || isConnectRoute()
@@ -314,6 +331,7 @@ export async function select(
   id: string,
   opts?: { fromPopState?: boolean; replace?: boolean; initialPostId?: string },
 ) {
+  setArchiveViewInternal(false);
   setSelectedInternal(id);
   if (opts?.fromPopState) {
     // The host already moved the route (back/forward); don't touch it.
@@ -366,12 +384,20 @@ export function focusPost(postId: string) {
 // clears it. The host itself dedupes a no-op move. applyRoute ignores a null
 // sessionId (back/forward to home shouldn't thrash a load), so we deselect here.
 export function goHome() {
+  setArchiveViewInternal(false);
   setSelectedInternal(null);
   setNavOpen(false);
   host().router.navigate({ sessionId: null, surfaceId: null });
 }
 
 // Re-select the session when the host's route changes (back/forward).
+export function openArchives() {
+  setArchiveViewInternal(true);
+  setSelectedInternal(null);
+  setNavOpen(false);
+  host().router.navigate({ archives: true });
+}
+
 export function applyRoute(route: Route) {
   // A bare post route is the standalone full-page view; back/forward into or
   // out of it toggles the mode (leaving it falls through to session handling).
@@ -380,6 +406,13 @@ export function applyRoute(route: Route) {
     return;
   }
   if (standalonePost()) setStandaloneInternal(null);
+  if (route.archives) {
+    setArchiveViewInternal(true);
+    setSelectedInternal(null);
+    setNavOpen(false);
+    return;
+  }
+  setArchiveViewInternal(false);
   if (route.sessionId && route.sessionId !== selected()) {
     void select(route.sessionId, {
       fromPopState: true,
@@ -399,14 +432,15 @@ export function applyRoute(route: Route) {
 // Cmd+Option+Up/Down shortcut. No-op with no sessions; jumps to the first
 // when nothing is selected yet.
 export async function selectAdjacent(delta: 1 | -1) {
-  if (sessions.length === 0) return;
-  const idx = sessions.findIndex((s) => s.id === selected());
+  const sidebar = recentSessions(sessions, new Date()).slice(0, SIDEBAR_SESSION_LIMIT);
+  if (sidebar.length === 0) return;
+  const idx = sidebar.findIndex((s) => s.id === selected());
   if (idx < 0) {
-    await select(sessions[0].id);
+    await select(sidebar[0].id);
     return;
   }
-  const next = (idx + delta + sessions.length) % sessions.length;
-  await select(sessions[next].id);
+  const next = (idx + delta + sidebar.length) % sidebar.length;
+  await select(sidebar[next].id);
 }
 
 // Fetch a post and insert/update it in the open session's stream.

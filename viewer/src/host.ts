@@ -12,7 +12,13 @@
 import type { ThemeTokens } from "../../server/theme-tokens.ts";
 import type { Mode } from "../../server/themes.ts";
 
-export type Route = { sessionId?: string | null; surfaceId?: string | null };
+export type Route = {
+  sessionId?: string | null;
+  surfaceId?: string | null;
+  // The full session archive. This is intentionally a viewer route rather than
+  // persisted session state: every session remains active and selectable.
+  archives?: boolean;
+};
 export type LiveTransport = "sse" | "ws";
 
 export interface HostRouter {
@@ -201,6 +207,7 @@ export function createDefaultHost(): SideshowHost {
       ? location.pathname.slice(basePath.length)
       : location.pathname;
     const qSurface = new URLSearchParams(location.search).get("surface") ?? undefined;
+    if (rest === "/archives") return { archives: true };
     const m = rest.match(/^\/session\/([^/]+)(?:\/[sp]\/([^/]+))?/);
     if (m) return { sessionId: m[1], surfaceId: m[2] ?? qSurface };
     const surfaceOnly = rest.match(/^\/[sp]\/([^/]+)/);
@@ -209,6 +216,7 @@ export function createDefaultHost(): SideshowHost {
   };
 
   const urlFor = (to: Route): string => {
+    if (to.archives) return `${basePath}/archives`;
     if (!to.sessionId) return to.surfaceId ? `${basePath}/p/${to.surfaceId}` : basePath || "/";
     return to.surfaceId
       ? `${basePath}/session/${to.sessionId}/p/${to.surfaceId}`
