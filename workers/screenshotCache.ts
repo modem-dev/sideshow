@@ -203,6 +203,10 @@ export async function servePostScreenshot({
     defer,
     async () => {
       const screenshot = await capture();
+      // Browser Rendering returns JSON error responses for failures. Preserve an
+      // unsafe response rather than relabeling its body as a successful PNG:
+      // doing otherwise would let the cache admit an hour-long error payload.
+      if (screenshot.status !== 200 || !isPng(screenshot)) return screenshot;
       return new Response(await screenshot.arrayBuffer(), {
         headers: { "content-type": "image/png", "cache-control": clientCacheControl },
       });
@@ -214,6 +218,12 @@ export async function servePostScreenshot({
   // above uses the CURRENT policy, so its client directive must also win over
   // the policy recorded with an older internal entry.
   const out = new Response(response.body, response);
-  out.headers.set("cache-control", clientCacheControl);
+  // A rejected Browser Rendering response must not acquire the normal positive
+  // client TTL: an intermediary could otherwise cache a transient error even
+  // though the Worker did not put it in the edge cache.
+  out.headers.set(
+    "cache-control",
+    response.status === 200 && isPng(response) ? clientCacheControl : "no-store",
+  );
   return out;
 }

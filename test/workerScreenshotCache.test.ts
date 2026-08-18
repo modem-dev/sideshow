@@ -199,6 +199,63 @@ test("malformed hits and unsafe capture responses never escape into shared cache
   }
 });
 
+test("Browser Rendering errors stay errors and never enter the edge cache", async () => {
+  const request = new Request(cardUrl());
+  const { url, plan: screenshot } = plan(cardUrl());
+  const { cache, entries } = memoryCache();
+  const deferred: Promise<unknown>[] = [];
+
+  const response = await servePostScreenshot({
+    request,
+    requestUrl: url,
+    postId: "post_1",
+    plan: screenshot,
+    rendererGeneration: GENERATION,
+    clientCacheControl: "private, max-age=300",
+    defer: (promise) => deferred.push(promise),
+    authorize: async () => new Response("renderable"),
+    capture: async () =>
+      new Response('{"error":"rate limited"}', {
+        status: 429,
+        headers: { "content-type": "application/json" },
+      }),
+    cache,
+  });
+  await Promise.all(deferred);
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("content-type"), "application/json");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(await response.text(), '{"error":"rate limited"}');
+  assert.equal(entries.size, 0);
+});
+
+test("a non-PNG capture never gains a client cache policy", async () => {
+  const request = new Request(cardUrl());
+  const { url, plan: screenshot } = plan(cardUrl());
+  const { cache, entries } = memoryCache();
+
+  const response = await servePostScreenshot({
+    request,
+    requestUrl: url,
+    postId: "post_1",
+    plan: screenshot,
+    rendererGeneration: GENERATION,
+    clientCacheControl: "public, max-age=300",
+    defer: () => {},
+    authorize: async () => new Response("renderable"),
+    capture: async () =>
+      new Response("not an image", { headers: { "content-type": "text/plain" } }),
+    cache,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "text/plain");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(await response.text(), "not an image");
+  assert.equal(entries.size, 0);
+});
+
 test("orchestration revalidates before hits and applies the current access policy", async () => {
   const request = () => new Request(cardUrl());
   const { url, plan: screenshot } = plan(cardUrl());
