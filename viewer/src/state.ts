@@ -215,7 +215,9 @@ function syntheticSession(id: string): SessionRow {
 // user lands somewhere usable rather than a blank page.
 export async function bootstrap() {
   const route = host().router.get();
-  if (route.surfaceId && !route.sessionId) {
+  // Keep archive precedence consistent with applyRoute() and the default
+  // router: an embedding host may leave a stale surfaceId on its archive route.
+  if (!route.archives && route.surfaceId && !route.sessionId) {
     await enterStandalone(route.surfaceId);
     if (standalonePost()) return;
   }

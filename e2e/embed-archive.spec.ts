@@ -17,7 +17,7 @@ const embedHtml = `<!doctype html>
 <body><div id="m"></div>
 <script type="module">
   import { mountViewer } from "/__embed/engine.js";
-  let route = { archives: true };
+  let route = { archives: true, surfaceId: "stale-post-id" };
   const subscribers = new Set();
   window.__archiveRoute = (next) => {
     route = next;
