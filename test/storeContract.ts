@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HISTORY_LIMIT, htmlSurface, type Store, type Surface } from "../server/types.ts";
+import {
+  HISTORY_LIMIT,
+  htmlSurface,
+  type Post,
+  type Store,
+  type Surface,
+} from "../server/types.ts";
 
 const bytes = (...values: number[]) => new Uint8Array(values);
 const NUL = String.fromCharCode(0);
@@ -372,6 +378,49 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
       assert.deepEqual(
         (await store.listRecentPosts(10)).map((s) => s.id),
         [s1?.id, s3?.id, s2?.id],
+      );
+    },
+  );
+
+  contract(
+    "listRecentPosts deterministically limits posts with tied millisecond timestamps",
+    async (store) => {
+      const session = await store.createSession({ agent: "pi" });
+      const OriginalDate = globalThis.Date;
+      const fixedMillis = OriginalDate.parse("2026-01-01T00:00:00.000Z");
+      const FixedDate = class extends OriginalDate {
+        constructor() {
+          super(fixedMillis);
+        }
+
+        static override now() {
+          return fixedMillis;
+        }
+      };
+      const posts: Post[] = [];
+
+      try {
+        globalThis.Date = FixedDate as DateConstructor;
+        for (let i = 0; i < 25; i++) {
+          const post = await store.createPost({
+            sessionId: session.id,
+            title: `tied ${i}`,
+            surfaces: [htmlSurface(`<p>${"x".repeat(i)}</p>`)],
+          });
+          assert.ok(post);
+          posts.push(post);
+        }
+      } finally {
+        globalThis.Date = OriginalDate;
+      }
+
+      assert.equal(new Set(posts.map((post) => post.updatedAt)).size, 1);
+      assert.deepEqual(
+        (await store.listRecentPosts(20)).map((post) => post.id),
+        posts
+          .slice(-20)
+          .reverse()
+          .map((post) => post.id),
       );
     },
   );

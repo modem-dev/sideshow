@@ -377,7 +377,10 @@ export interface Store {
    * omit it; the app falls back to listPosts() for source compatibility.
    */
   countPostsBySession?(): Promise<Map<string, number>>;
-  /** The N most-recently-updated posts across all sessions (newest first). */
+  /**
+   * The N most-recently-updated posts across all sessions (newest first).
+   * Equal millisecond timestamps are ordered by newest insertion first.
+   */
   listRecentPosts(limit: number): Promise<Post[]>;
   getPost(id: string): Promise<Post | null>;
   createPost(input: CreatePostInput): Promise<Post | null>;

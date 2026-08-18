@@ -363,10 +363,13 @@ export class JsonFileStore implements Store {
 
   async listRecentPosts(limit: number) {
     await this.load();
+    // Decorate with Map insertion order so millisecond timestamp ties have the
+    // same explicit newest-insertion-first order as SqlStore's rowid fallback.
     return [...this.surfaces.values()]
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map((post, insertion) => ({ post, insertion }))
+      .sort((a, b) => b.post.updatedAt.localeCompare(a.post.updatedAt) || b.insertion - a.insertion)
       .slice(0, limit)
-      .map(clone);
+      .map(({ post }) => clone(post));
   }
 
   async getPost(id: string) {

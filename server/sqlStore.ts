@@ -411,8 +411,11 @@ export class SqlStore implements Store {
   }
 
   async listRecentPosts(limit: number) {
+    // ISO timestamps only have millisecond precision, so bulk writes frequently
+    // tie. Make LIMIT membership deterministic across SQLite versions and match
+    // JsonFileStore: among equal timestamps, the later insertion wins.
     const rows = this.sql
-      .exec("SELECT * FROM posts ORDER BY updatedAt DESC LIMIT ?", limit)
+      .exec("SELECT * FROM posts ORDER BY updatedAt DESC, rowid DESC LIMIT ?", limit)
       .toArray();
     return rows.map((r) => this.rowToPost(r));
   }

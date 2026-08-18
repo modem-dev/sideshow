@@ -70,7 +70,7 @@ test("SqlStore hot queries use their covering or ordering indexes", () => {
     "sideshow_posts_session_created_at_idx",
   );
   assertUsesIndex(
-    "SELECT * FROM posts ORDER BY updatedAt DESC LIMIT ?",
+    "SELECT * FROM posts ORDER BY updatedAt DESC, rowid DESC LIMIT ?",
     "sideshow_posts_updated_at_idx",
     20,
   );
