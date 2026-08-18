@@ -368,6 +368,85 @@ test("a surface kind this viewer doesn't know shows a refresh hint, not a broken
   await expect(card.locator(".diff-error")).toHaveCount(0);
 });
 
+test("the workspace root shows a live recent posts home", async ({ page, server }) => {
+  const first = await publish(server.url, {
+    html: "<h2>first preview</h2>",
+    title: "First recent",
+    agent: "alpha",
+    sessionTitle: "Alpha work",
+  });
+  const second = await publish(server.url, {
+    html: "<h2>second preview</h2>",
+    title: "Second recent",
+    agent: "beta",
+    sessionTitle: "Beta work",
+  });
+
+  await page.goto(server.url);
+
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  await expect(page.locator(".home-card")).toHaveCount(2);
+  await expect(page.locator(".home-card-title")).toContainText(["Second recent", "First recent"]);
+  await expect(page.locator(".home-card", { hasText: "Alpha work" })).toContainText("First recent");
+  await expect(page.locator("#sessionView")).toHaveCount(0);
+  const preview = page.locator(".home-preview-frame").first();
+  await expect(preview).toHaveAttribute("sandbox", "allow-scripts");
+  await expect(preview).toHaveAttribute("src", /\/s\/.+\?part=0&ver=1&theme=.+&mode=(light|dark)$/);
+
+  // First-time Home is stable even when an event leaves only one session.
+  const removeSecond = await fetch(`${server.url}/api/sessions/${second.sessionId}`, {
+    method: "DELETE",
+  });
+  expect(removeSecond.ok).toBe(true);
+  await expect(page.locator(".home-card")).toHaveCount(1);
+  await expect(page.locator(".sess.sel")).toHaveCount(0);
+
+  const live = await publish(server.url, {
+    html: "<h2>live preview</h2>",
+    title: "Live recent",
+    agent: "gamma",
+    sessionTitle: "Gamma work",
+  });
+  await expect(page.locator(".home-card")).toHaveCount(2);
+  await expect(page.locator(".home-card-title").first()).toHaveText("Live recent");
+
+  await page.locator(".home-card", { hasText: "First recent" }).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${first.sessionId}/p/${first.id}$`));
+  await expect(page.locator(`.card[data-id="${first.id}"] .card-title`)).toHaveText("First recent");
+
+  // Returning Home is intentional: later session events must not re-open the
+  // saved stream, and Home's session metadata must remain live.
+  await page.locator(".brand:visible").first().click();
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  const rename = await fetch(`${server.url}/api/sessions/${first.sessionId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Renamed Alpha" }),
+  });
+  expect(rename.ok).toBe(true);
+  await expect(page.locator(".home-card", { hasText: "First recent" })).toContainText(
+    "Renamed Alpha",
+  );
+  await expect(page.locator(".sess.sel")).toHaveCount(0);
+
+  const remove = await fetch(`${server.url}/api/sessions/${first.sessionId}`, { method: "DELETE" });
+  expect(remove.ok).toBe(true);
+  await expect(page.locator(".home-card")).toHaveCount(1);
+  await expect(page.locator(".home-card", { hasText: "First recent" })).toHaveCount(0);
+
+  // The explicit Home choice also remains stable once one session is left.
+  const renameOnly = await fetch(`${server.url}/api/sessions/${live.sessionId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Only remaining session" }),
+  });
+  expect(renameOnly.ok).toBe(true);
+  await expect(page.locator(".home-card", { hasText: "Live recent" })).toContainText(
+    "Only remaining session",
+  );
+  await expect(page.locator(".sess.sel")).toHaveCount(0);
+});
+
 test("opening a session shows a skeleton while posts load", async ({ page, server }) => {
   const first = await publish(server.url, {
     html: "<p>slow</p>",
@@ -684,10 +763,13 @@ test("Cmd+Option+Up/Down switches between sessions, wrapping at the ends", async
   await publish(server.url, { html: "<p>b</p>", title: "Second", agent: "two" });
 
   await page.goto(server.url);
-  // the newest session sits at the top of the list and is selected on load
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+
+  // With no selected session on Home, Down opens the newest session.
+  await page.keyboard.press("Meta+Alt+ArrowDown");
   await expect(page.locator(".sess.sel .sess-title")).toContainText("two session");
 
-  // Down moves to the next (older) session down the list
+  // Down then moves to the next (older) session down the list.
   await page.keyboard.press("Meta+Alt+ArrowDown");
   await expect(page.locator(".sess.sel .sess-title")).toContainText("one session");
 

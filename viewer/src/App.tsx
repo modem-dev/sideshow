@@ -15,6 +15,7 @@ import {
 import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
 import { applyFrameHeight, Card, cardForPost, frameForSource } from "./Card.tsx";
 import { ConnectInstructions } from "./Connect.tsx";
+import { HomeView, isHomePreviewFrame, resizeHomeFrame } from "./Home.tsx";
 import { renderNotes } from "./notes.ts";
 import { SessionTimeline } from "./SessionTimeline.tsx";
 import { StreamSkeleton } from "./Skeleton.tsx";
@@ -82,6 +83,8 @@ const [connectPath, setConnectPath] = createSignal(isConnectPath());
 // current session's stream. Driven by the host's `layout` (cloud embed) or the
 // self-hosted public-read "session" link (see api.ts `layoutMode`).
 const streamMode = () => layoutMode() === "stream";
+const homePath = () =>
+  !streamMode() && !connectPath() && initialLoaded() && sessions.length > 0 && !selected();
 
 // The wordmark, doubling as a home link: clicking it clears the current session
 // and returns to the empty workspace (goHome). A real <button> so it's keyboard- and
@@ -345,12 +348,19 @@ export default function App() {
                 <Show
                   when={connectPath()}
                   fallback={
-                    <>
-                      <Show when={!streamMode()}>
-                        <Onboard />
-                      </Show>
-                      <SessionView />
-                    </>
+                    <Show
+                      when={homePath()}
+                      fallback={
+                        <>
+                          <Show when={!streamMode()}>
+                            <Onboard />
+                          </Show>
+                          <SessionView />
+                        </>
+                      }
+                    >
+                      <HomeView />
+                    </Show>
                   }
                 >
                   <ConnectPage />
@@ -492,6 +502,7 @@ async function onBridgeMessage(ev: MessageEvent) {
     key?: string;
   } | null;
   if (!d || !d.__sideshow) return;
+  const fromHomePreview = isHomePreviewFrame(ev.source);
   // Every host-affecting message must come from a frame the viewer actually
   // embedded — never an unexpected/nested frame. send-prompt and resize prove
   // this implicitly (frameForSource resolves the exact html frame); the
@@ -500,7 +511,7 @@ async function onBridgeMessage(ev: MessageEvent) {
   // by those, but open-link is sent by rich-surface frames too, so use the
   // broader check that recognizes any embedded iframe.)
   if (d.type === "switch-session") {
-    if (!isOwnFrame(ev.source)) return;
+    if (fromHomePreview || !isOwnFrame(ev.source)) return;
     if (streamMode()) return;
     // A post iframe forwarded the session-switch shortcut because focus was
     // inside it (see server/surfacePage.ts). Mirror the parent keydown handler.
@@ -510,8 +521,9 @@ async function onBridgeMessage(ev: MessageEvent) {
   // Resolve the source post + iframe by contentWindow — a post may own
   // several html-surface iframes, so resize must target the exact one.
   const src = frameForSource(ev.source);
-  if (d.type === "resize" && src) {
-    applyFrameHeight(src.iframe, d.height);
+  if (d.type === "resize") {
+    if (src) applyFrameHeight(src.iframe, d.height);
+    else resizeHomeFrame(ev.source, d.height);
   } else if (d.type === "send-prompt" && src) {
     if (isReadonly()) return;
     // sendPrompt is post-originated: a script inside the sandbox can fire it
@@ -528,7 +540,7 @@ async function onBridgeMessage(ev: MessageEvent) {
       body: JSON.stringify({ surface: src.id, text: String(d.text), author: "surface" }),
     });
     toast("Added to this post’s thread");
-  } else if (d.type === "open-link" && isOwnFrame(ev.source)) {
+  } else if (d.type === "open-link" && !fromHomePreview && isOwnFrame(ev.source)) {
     // Only ever open real external links. The in-frame click handler forwards
     // just http(s) hrefs, but a post can call openLink() directly (or post
     // this message raw) with any scheme — javascript:, data:, file: — so
@@ -545,7 +557,7 @@ async function onBridgeMessage(ev: MessageEvent) {
     if (link.protocol !== "http:" && link.protocol !== "https:") return;
     if (confirm(`Open external link?\n\n${link.href}`))
       window.open(link.href, "_blank", "noopener,noreferrer");
-  } else if (d.type === "copy" && isOwnFrame(ev.source)) {
+  } else if (d.type === "copy" && !fromHomePreview && isOwnFrame(ev.source)) {
     void navigator.clipboard?.writeText(String(d.text)).catch(() => {});
   }
 }
