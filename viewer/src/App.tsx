@@ -84,7 +84,12 @@ const [connectPath, setConnectPath] = createSignal(isConnectPath());
 // self-hosted public-read "session" link (see api.ts `layoutMode`).
 const streamMode = () => layoutMode() === "stream";
 const homePath = () =>
-  !streamMode() && !connectPath() && initialLoaded() && sessions.length > 0 && !selected();
+  !host().homeView &&
+  !streamMode() &&
+  !connectPath() &&
+  initialLoaded() &&
+  sessions.length > 0 &&
+  !selected();
 
 // The wordmark, doubling as a home link: clicking it clears the current session
 // and returns to the empty workspace (goHome). A real <button> so it's keyboard- and

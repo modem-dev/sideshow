@@ -56,9 +56,18 @@ export interface VersionInfo {
   notes?: string | null;
 }
 
-// A bounded, cross-session row returned by GET /api/posts/recent. Sandboxed
-// surface bodies are never rendered from this data; Home uses their /s document.
-export type RecentSurface = Surface & { index: number; truncated?: boolean };
+// A compact, cross-session row returned by GET /api/posts/recent?preview=home.
+// Sandboxed surface bodies are never rendered from this data; Home uses their
+// /s document. Image and JSON retain the small native payload Home needs.
+type RecentSurfaceRef = {
+  id: string;
+  index: number;
+  truncated?: boolean;
+  kind: Exclude<Surface["kind"], "image" | "json">;
+};
+type RecentImageSurface = ImageSurface & { index: number; truncated?: boolean };
+type RecentJsonSurface = JsonSurface & { index: number; truncated?: boolean };
+export type RecentSurface = RecentSurfaceRef | RecentImageSurface | RecentJsonSurface;
 
 export interface RecentPostRow {
   id: string;
@@ -160,7 +169,7 @@ export async function apiText(path: string): Promise<string> {
 }
 
 export function getRecentPosts(limit = 30): Promise<RecentPostRow[]> {
-  return api<RecentPostRow[]>(`/api/posts/recent?limit=${limit}`);
+  return api<RecentPostRow[]>(`/api/posts/recent?limit=${limit}&preview=home`);
 }
 
 export const sessionLabel = (s: Session) => s.title || s.agent + " session";

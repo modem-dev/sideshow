@@ -246,8 +246,23 @@ export const recentSurfacePreviewView = (surface: Surface, index: number) => ({
   index,
 });
 
-export const recentPostRowView = (post: Post, session: Session | null | undefined) => {
-  const surfaces = post.surfaces.map(recentSurfacePreviewView);
+// The self-hosted Home uses one preview per post. Rich surfaces render from their
+// immutable /s document and trace only needs a kind label, so only image/json
+// retain inline data. This bounds Home's 30-row response without weakening the
+// full recent-feed contract used by embedders.
+export const recentHomeSurfaceView = (surface: Surface, index: number) =>
+  surface.kind === "image" || surface.kind === "json"
+    ? recentSurfacePreviewView(surface, index)
+    : surfaceRef(surface, index);
+
+export const recentPostRowView = (
+  post: Post,
+  session: Session | null | undefined,
+  opts?: { homePreview?: boolean },
+) => {
+  const surfaces = opts?.homePreview
+    ? post.surfaces.slice(0, 1).map(recentHomeSurfaceView)
+    : post.surfaces.map(recentSurfacePreviewView);
   return {
     id: post.id,
     sessionId: post.sessionId,
