@@ -14,12 +14,12 @@ export interface SurfaceParseResult {
 export type SurfaceValidationIssue =
   | {
       code: "invalid_surface";
-      path: string;
+      requestPath: string;
       message: string;
     }
   | {
       code: "invalid_mermaid_syntax";
-      path: string;
+      requestPath: string;
       message: string;
       diagramType: string | null;
       parserMessage: string;
@@ -300,7 +300,7 @@ async function parseSurfaceList(
   if (!Array.isArray(raw)) {
     return surfaceResult(
       [],
-      [{ code: "invalid_surface", path: "surfaces", message: "must be an array" }],
+      [{ code: "invalid_surface", requestPath: "surfaces", message: "must be an array" }],
     );
   }
 
@@ -335,7 +335,7 @@ export async function validateSurfaces(raw: unknown): Promise<SurfaceValidationR
   return result.errors.length > 0
     ? {
         ok: false,
-        error: result.errors.map((issue) => `${issue.path}: ${issue.message}`).join("; "),
+        error: result.errors.map((issue) => `${issue.requestPath}: ${issue.message}`).join("; "),
         code: "surface_validation_failed",
         issues: result.errors,
       }
@@ -392,7 +392,7 @@ function mermaidDiagramType(src: string): string | null {
 // static keeps the whole dependency graph resident and neither one saves anything.
 async function validateSemantics(
   surface: Surface,
-  path: string,
+  surfaceRequestPath: string,
 ): Promise<SurfaceValidationIssue[]> {
   if (surface.kind === "diff" && surface.patch) {
     const diffParsers = await import("@pierre/diffs");
@@ -401,7 +401,7 @@ async function validateSemantics(
         return [
           {
             code: "invalid_surface",
-            path: `${path}.patch`,
+            requestPath: `${surfaceRequestPath}.patch`,
             message:
               "did not parse to any file — expected a unified/git patch with --- /+++ headers and @@ hunks",
           },
@@ -410,7 +410,7 @@ async function validateSemantics(
       return [
         {
           code: "invalid_surface",
-          path: `${path}.patch`,
+          requestPath: `${surfaceRequestPath}.patch`,
           message: "failed to parse: " + (e instanceof Error ? e.message : "error"),
         },
       ];
@@ -422,7 +422,7 @@ async function validateSemantics(
       return [
         {
           code: "invalid_mermaid_syntax",
-          path: `${path}.mermaid`,
+          requestPath: `${surfaceRequestPath}.mermaid`,
           message: 'has no diagram type (first line should be e.g. "flowchart TD")',
           diagramType: null,
           parserMessage: "No Mermaid diagram type was found.",
@@ -445,7 +445,7 @@ async function validateSemantics(
       return [
         {
           code: "invalid_mermaid_syntax",
-          path: `${path}.mermaid`,
+          requestPath: `${surfaceRequestPath}.mermaid`,
           message: `failed to parse: ${summary}`,
           diagramType,
           parserMessage,
@@ -461,11 +461,13 @@ async function parseStrictSurface(
   raw: unknown,
   index: number,
 ): Promise<{ surface: Surface | null; errors: SurfaceValidationIssue[] }> {
-  const path = `surfaces[${index}]`;
+  const surfaceRequestPath = `surfaces[${index}]`;
   if (!raw || typeof raw !== "object")
     return {
       surface: null,
-      errors: [{ code: "invalid_surface", path, message: "must be an object" }],
+      errors: [
+        { code: "invalid_surface", requestPath: surfaceRequestPath, message: "must be an object" },
+      ],
     };
 
   const kind = (raw as { kind?: unknown }).kind;
@@ -473,13 +475,21 @@ async function parseStrictSurface(
   if (!schema) {
     return {
       surface: null,
-      errors: [{ code: "invalid_surface", path, message: "unknown surface kind" }],
+      errors: [
+        {
+          code: "invalid_surface",
+          requestPath: surfaceRequestPath,
+          message: "unknown surface kind",
+        },
+      ],
     };
   }
 
   const parsed = schema.safeParse(raw);
-  if (!parsed.success) return { surface: null, errors: formatZodErrors(parsed.error, path) };
-  const semantic = await validateSemantics(parsed.data, path);
+  if (!parsed.success) {
+    return { surface: null, errors: formatZodErrors(parsed.error, surfaceRequestPath) };
+  }
+  const semantic = await validateSemantics(parsed.data, surfaceRequestPath);
   return semantic.length > 0
     ? { surface: null, errors: semantic }
     : { surface: parsed.data, errors: [] };
@@ -489,12 +499,15 @@ function schemaForKind(kind: unknown): z.ZodType<Surface, z.ZodTypeDef, any> | n
   return isSurfaceKind(kind) ? strictSurfaceSchemas[kind] : null;
 }
 
-function formatZodErrors(error: z.ZodError, prefix = "surfaces"): SurfaceValidationIssue[] {
+function formatZodErrors(
+  error: z.ZodError,
+  requestPathPrefix = "surfaces",
+): SurfaceValidationIssue[] {
   return error.issues.map((issue) => {
     const suffix = issue.path.length > 0 ? `.${issue.path.join(".")}` : "";
     return {
       code: "invalid_surface",
-      path: `${prefix}${suffix}`,
+      requestPath: `${requestPathPrefix}${suffix}`,
       message: issue.message,
     };
   });

@@ -212,7 +212,7 @@ test("validateSurfaces rejects invalid mermaid with a parse error (supported typ
       assert.ok(issue);
       assert.equal(issue.code, "invalid_mermaid_syntax");
       if (issue.code !== "invalid_mermaid_syntax") continue;
-      assert.equal(issue.path, "surfaces[0].mermaid");
+      assert.equal(issue.requestPath, "surfaces[0].mermaid");
       assert.equal(issue.diagramType, mermaid.split(/\s+/)[0]);
       assert.match(issue.parserMessage, /Parsing failed/);
       assert.deepEqual(issue.nextSteps, [

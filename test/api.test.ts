@@ -606,7 +606,7 @@ test("POST /api/posts returns a typed actionable error for invalid mermaid", asy
   assert.match(body.error, /surfaces\[0\]\.mermaid: failed to parse/);
   assert.equal(body.issues.length, 1);
   assert.equal(body.issues[0].code, "invalid_mermaid_syntax");
-  assert.equal(body.issues[0].path, "surfaces[0].mermaid");
+  assert.equal(body.issues[0].requestPath, "surfaces[0].mermaid");
   assert.equal(body.issues[0].diagramType, "pie");
   assert.match(body.issues[0].parserMessage, /Parsing failed/);
   assert.match(body.issues[0].nextSteps[0], /retry the request/);

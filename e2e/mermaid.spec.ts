@@ -69,7 +69,7 @@ test("the native posts endpoint rejects invalid mermaid with actionable details"
     issues: [
       {
         code: "invalid_mermaid_syntax",
-        path: "surfaces[0].mermaid",
+        requestPath: "surfaces[0].mermaid",
         diagramType: "pie",
       },
     ],
