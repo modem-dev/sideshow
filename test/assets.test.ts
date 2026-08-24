@@ -205,7 +205,22 @@ test("validateSurfaces rejects invalid mermaid with a parse error (supported typ
       false,
       `mermaid ${JSON.stringify(mermaid).slice(0, 40)} should be rejected`,
     );
-    if (!result.ok) assert.match(result.error, /mermaid surface failed to parse/);
+    if (!result.ok) {
+      assert.match(result.error, /failed to parse/);
+      assert.equal(result.code, "surface_validation_failed");
+      const issue = result.issues[0];
+      assert.ok(issue);
+      assert.equal(issue.code, "invalid_mermaid_syntax");
+      if (issue.code !== "invalid_mermaid_syntax") continue;
+      assert.equal(issue.path, "surfaces[0].mermaid");
+      assert.equal(issue.diagramType, mermaid.split(/\s+/)[0]);
+      assert.match(issue.parserMessage, /Parsing failed/);
+      assert.deepEqual(issue.nextSteps, [
+        "Correct the Mermaid syntax described by parserMessage, then retry the request.",
+        'Keep the diagram declaration on the first non-comment line (for example, "flowchart TD").',
+        "Reduce the diagram to a minimal valid form, then add statements back until the failing line is isolated.",
+      ]);
+    }
   }
 });
 

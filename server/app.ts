@@ -46,7 +46,7 @@ import {
   type TerminalSurface,
   type TraceStep,
 } from "./types.ts";
-import { validateSurfaces } from "./postSurfaces.ts";
+import { type SurfaceValidationFailure, validateSurfaces } from "./postSurfaces.ts";
 import {
   findWelcomePost,
   WELCOME_POST_TITLE,
@@ -77,6 +77,12 @@ const MAX_STEP_LABEL = 500;
 // edge to keep one oversize value from bloating the agent's context forever.
 const MAX_COMMENT_TEXT = 8000;
 const MAX_TITLE = 500;
+
+const surfaceValidationErrorBody = (failure: SurfaceValidationFailure) => ({
+  error: failure.error,
+  code: failure.code,
+  issues: failure.issues,
+});
 // Ceiling on concurrently-held SSE + long-poll connections. Both are GETs that
 // pin a connection open (the event stream indefinitely, /api/comments?wait up
 // to MAX_WAIT_SECONDS); on a publicRead workspace they're reachable unauthenticated,
@@ -1198,7 +1204,7 @@ export function createApp({
       return c.json({ error: 'body must include a "surfaces" (or legacy "parts") array' }, 400);
     }
     const parsed = await validateSurfaces(blocks);
-    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    if (!parsed.ok) return c.json(surfaceValidationErrorBody(parsed), 400);
     return publish(c, body, parsed.surfaces);
   };
   app.post("/api/posts", publishPost); // canonical
@@ -1213,7 +1219,7 @@ export function createApp({
       return c.json({ error: 'body must include non-empty "html" string' }, 400);
     }
     const parsed = await validateSurfaces([htmlSurface(body.html, body.kits)]);
-    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    if (!parsed.ok) return c.json(surfaceValidationErrorBody(parsed), 400);
     return publish(c, body, parsed.surfaces);
   });
 
@@ -1278,11 +1284,11 @@ export function createApp({
         return c.json({ error: '"surfaces" (or legacy "parts") must be an array' }, 400);
       }
       const parsed = await validateSurfaces(blocks);
-      if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+      if (!parsed.ok) return c.json(surfaceValidationErrorBody(parsed), 400);
       surfaces = parsed.surfaces;
     } else if (typeof body.html === "string") {
       const parsed = await validateSurfaces([htmlSurface(body.html, body.kits)]);
-      if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+      if (!parsed.ok) return c.json(surfaceValidationErrorBody(parsed), 400);
       surfaces = parsed.surfaces;
     }
     const result = await revisePost(c.req.param("id"), {
@@ -1346,7 +1352,7 @@ export function createApp({
         );
       }
       const parsed = await validateSurfaces([updated]);
-      if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+      if (!parsed.ok) return c.json(surfaceValidationErrorBody(parsed), 400);
       surfaces = [...existing.surfaces];
       surfaces[targetIdx] = { ...parsed.surfaces[0], id: existing.surfaces[targetIdx].id };
     }
@@ -1371,7 +1377,7 @@ export function createApp({
       return c.json({ error: 'body must include a "surface" object' }, 400);
     }
     const parsed = await validateSurfaces([body.surface]);
-    if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+    if (!parsed.ok) return c.json(surfaceValidationErrorBody(parsed), 400);
     const result = await appendPostSurface(c.req.param("id"), parsed.surfaces[0], {
       before: body.before,
       after: body.after,
@@ -1394,7 +1400,7 @@ export function createApp({
     let surface: Surface | undefined;
     if (body.surface !== undefined) {
       const parsed = await validateSurfaces([body.surface]);
-      if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+      if (!parsed.ok) return c.json(surfaceValidationErrorBody(parsed), 400);
       surface = parsed.surfaces[0];
     }
     const result = await replacePostSurface(c.req.param("id"), c.req.param("target"), {
