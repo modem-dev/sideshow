@@ -590,6 +590,29 @@ test("REST surface routes reject malformed surfaces before storage", async () =>
   assert.equal(unchanged.surfaces[0].html, "<p>x</p>");
 });
 
+test("POST /api/posts returns a typed actionable error for invalid mermaid", async () => {
+  const app = makeApp();
+  const response = await app.request(
+    "/api/posts",
+    json({
+      title: "Broken diagram",
+      surfaces: [{ kind: "mermaid", mermaid: 'pie title Pets\n  "Dogs" : broken !!@@' }],
+    }),
+  );
+
+  assert.equal(response.status, 400);
+  const body = (await response.json()) as any;
+  assert.equal(body.code, "surface_validation_failed");
+  assert.match(body.error, /surfaces\[0\]\.mermaid: failed to parse/);
+  assert.equal(body.issues.length, 1);
+  assert.equal(body.issues[0].code, "invalid_mermaid_syntax");
+  assert.equal(body.issues[0].requestPath, "surfaces[0].mermaid");
+  assert.equal(body.issues[0].diagramType, "pie");
+  assert.match(body.issues[0].parserMessage, /Parsing failed/);
+  assert.match(body.issues[0].nextSteps[0], /retry the request/);
+  assert.deepEqual(await (await app.request("/api/sessions")).json(), []);
+});
+
 test("publish_surface MCP tool round-trips a diff surface", async () => {
   const app = makeApp();
   const list = (await (await app.request("/mcp", mcpCall(1, "tools/list"))).json()) as any;

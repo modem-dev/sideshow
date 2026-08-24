@@ -50,6 +50,39 @@ test("a mermaid part renders inside an opaque-origin frame served from /s", asyn
   await expect(frame.locator("body")).toContainText("Choice");
 });
 
+test("the native posts endpoint rejects invalid mermaid with actionable details", async ({
+  page,
+  request,
+  server,
+}) => {
+  const response = await request.post(`${server.url}/api/posts`, {
+    data: {
+      title: "Broken diagram",
+      surfaces: [{ kind: "mermaid", mermaid: 'pie title Pets\n  "Dogs" : broken !!@@' }],
+    },
+  });
+
+  expect(response.status()).toBe(400);
+  const body = await response.json();
+  expect(body).toMatchObject({
+    code: "surface_validation_failed",
+    issues: [
+      {
+        code: "invalid_mermaid_syntax",
+        requestPath: "surfaces[0].mermaid",
+        diagramType: "pie",
+      },
+    ],
+  });
+  expect(body.issues[0].parserMessage).toContain("Parsing failed");
+  expect(body.issues[0].nextSteps).toContain(
+    "Correct the Mermaid syntax described by parserMessage, then retry the request.",
+  );
+
+  await page.goto(server.url);
+  await expect(page.locator(".card:not(#whatsNew)")).toHaveCount(0);
+});
+
 test("an invalid mermaid part shows the source in an error fallback, not a crash", async ({
   page,
   server,

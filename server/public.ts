@@ -5,4 +5,9 @@ export { createApp, type AppOptions, type AuthenticateHook, type FeedEvent } fro
 export { SqlStore } from "./sqlStore.js";
 export { createSqliteStorage, migrateJsonToSqlite } from "./sqliteStorage.js";
 export { JsonFileStore } from "./storage.js";
+export type {
+  SurfaceValidationFailure,
+  SurfaceValidationIssue,
+  SurfaceValidationResult,
+} from "./postSurfaces.js";
 export type * from "./types.js";
