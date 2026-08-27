@@ -67,6 +67,11 @@ export function groupSessions(list: readonly SessionRow[], now: Date): SessionGr
 }
 const [selectedState, setSelectedInternal] = createSignal<string | null>(null);
 export const selected = selectedState;
+// True after the user (or browser history) explicitly returns to the sessionless
+// Home route. It prevents later lifecycle events from treating Home as merely a
+// missing selection and reopening a stream.
+const [explicitHomeState, setExplicitHome] = createSignal(false);
+const explicitHome = explicitHomeState;
 
 // Standalone (direct-link) mode: a bare /s/:id route with no session shows that
 // one post full-page — no sidebar, no session feed, no comments — instead of
@@ -109,6 +114,11 @@ export const [scrollTarget, setScrollTarget] = createSignal<string | null>(null)
 // Post id the "new post ↓" pill jumps to — set instead of scrolling
 // when the user is reading further up.
 export const [pillTarget, setPillTarget] = createSignal<string | null>(null);
+// Increments after a coalesced post mutation so a mounted Home resource can
+// refresh without polling. No Home is mounted in stream-only/embedded host-home
+// views, so the signal is inert there.
+const [homeRefreshVersionState, setHomeRefreshVersion] = createSignal(0);
+export const homeRefreshVersion = homeRefreshVersionState;
 
 const [toastTextState, setToastTextInternal] = createSignal("");
 export const toastText = toastTextState;
@@ -221,6 +231,10 @@ function isConnectRoute(): boolean {
   return location.pathname === appPath("/connect");
 }
 
+function isSessionlessHomeRoute(route = host().router.get()): boolean {
+  return !route.sessionId && !route.surfaceId && !isConnectRoute();
+}
+
 export async function refreshSessions(targetPostId?: string | null) {
   if (isReadonly() && publicReadMode() === "session") {
     const route = host().router.get();
@@ -265,10 +279,16 @@ export async function refreshSessions(targetPostId?: string | null) {
     // host's home shows with nothing selected (no auto-open, no highlight).
     const route = host().router.get();
     const lastId = localStorage.getItem(LAST_SESSION_KEY);
+    const validLastId = lastId && sessions.some((s) => s.id === lastId) ? lastId : null;
+    // Preserve the familiar return-to-last-session and single-session boot paths.
+    // A first-time visitor to a multi-session workspace instead lands on Home;
+    // remember that choice so a later deletion down to one session stays there.
+    const initialHome = isSessionlessHomeRoute(route) && !validLastId && sessions.length > 1;
+    if (initialHome) setExplicitHome(true);
     const fallback =
-      host().homeView || isConnectRoute()
+      host().homeView || explicitHome() || isConnectRoute() || initialHome
         ? null
-        : (lastId && sessions.some((s) => s.id === lastId) && lastId) || sessions[0].id;
+        : validLastId || sessions[0].id;
     const target =
       (route.sessionId && sessions.some((s) => s.id === route.sessionId) && route.sessionId) ||
       fallback;
@@ -314,6 +334,7 @@ export async function select(
   id: string,
   opts?: { fromPopState?: boolean; replace?: boolean; initialPostId?: string },
 ) {
+  setExplicitHome(false);
   setSelectedInternal(id);
   if (opts?.fromPopState) {
     // The host already moved the route (back/forward); don't touch it.
@@ -366,6 +387,11 @@ export function focusPost(postId: string) {
 // clears it. The host itself dedupes a no-op move. applyRoute ignores a null
 // sessionId (back/forward to home shouldn't thrash a load), so we deselect here.
 export function goHome() {
+  // Home is an explicit navigation choice, not a temporary deselection. Forget
+  // the auto-open hint so subsequent session events cannot pull the user back
+  // into the last stream.
+  localStorage.removeItem(LAST_SESSION_KEY);
+  setExplicitHome(true);
   setSelectedInternal(null);
   setNavOpen(false);
   host().router.navigate({ sessionId: null, surfaceId: null });
@@ -385,11 +411,12 @@ export function applyRoute(route: Route) {
       fromPopState: true,
       initialPostId: route.surfaceId ?? undefined,
     });
-  } else if (!route.sessionId && host().homeView && selected()) {
-    // A host that owns a session-less landing: a route with no session IS that
-    // home view, so clear the selection — otherwise the previously-open session
-    // stays highlighted behind the host's home. (Self-hosted leaves homeView off
-    // and keeps ignoring a null route here; it deselects explicitly via goHome.)
+  } else if (!route.sessionId && (host().homeView || isSessionlessHomeRoute(route)) && selected()) {
+    // A session-less route is a Home view, so clear the prior selection rather
+    // than leaving a session highlighted behind it. Browser Back to Home is as
+    // intentional as the wordmark click, so don't later auto-open the old stream.
+    localStorage.removeItem(LAST_SESSION_KEY);
+    setExplicitHome(true);
     setSelectedInternal(null);
   }
 }
@@ -513,6 +540,16 @@ const WS_HEARTBEAT_MS = 30_000;
 const WS_RECONNECT_MS = 1000;
 const FEED_SESSION_REFRESH_DELAY_MS = 50;
 const FEED_SESSION_REFRESH_MAX_WAIT_MS = 250;
+const HOME_REFRESH_DELAY_MS = 100;
+
+let homeRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleHomeRefresh() {
+  if (homeRefreshTimer !== undefined) return;
+  homeRefreshTimer = setTimeout(() => {
+    homeRefreshTimer = undefined;
+    setHomeRefreshVersion((version) => version + 1);
+  }, HOME_REFRESH_DELAY_MS);
+}
 
 let feedSessionRefreshVersion = 0;
 let pendingFeedSessionRefresh: Promise<void> | undefined;
@@ -572,13 +609,16 @@ async function handleFeedData(data: string) {
   if (e.type === "theme-changed") {
     applyTheme(e.id);
   } else if (e.type.startsWith("session-")) {
+    scheduleHomeRefresh();
     await refreshSessions();
   } else if (e.type === "post-created" || e.type === "post-updated") {
     if (away && e.sessionId) markUnread(e.sessionId);
+    scheduleHomeRefresh();
     const sessionRefresh = refreshSessionsAfterFeedEvent();
     if (e.sessionId === selected()) await upsertPost(e.id);
     await sessionRefresh;
   } else if (e.type === "post-deleted") {
+    scheduleHomeRefresh();
     const idx = posts.findIndex((s) => s.id === e.id);
     if (idx >= 0) setPostsInternal(produce((arr) => arr.splice(idx, 1)));
     await refreshSessionsAfterFeedEvent();
@@ -674,6 +714,9 @@ function connectWebSocket(): () => void {
 async function resyncSelected() {
   const before = selected();
   await refreshSessions();
+  // A reconnect may have missed post or session changes while Home was open.
+  // Bump after the session refresh so a Home card can't retain a deleted session.
+  scheduleHomeRefresh();
   if (!before || selected() !== before) return; // select() rebuilt the stream
   void fetchTrace(before);
   const details = await fetchSessionPostDetails(before);
