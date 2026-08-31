@@ -2,7 +2,13 @@
 // is the Vite-built viewer/dist-embed/engine.js; these declarations describe its
 // surface so hosts get types without depending on the viewer source.
 
-export type Route = { sessionId?: string | null; surfaceId?: string | null };
+/** A session/post route, or the full workspace archive when `archives` is true. */
+export type Route = {
+  sessionId?: string | null;
+  surfaceId?: string | null;
+  /** Show every workspace session in the engine's searchable archive view. */
+  archives?: boolean;
+};
 export type LiveTransport = "sse" | "ws";
 
 export interface HostRouter {

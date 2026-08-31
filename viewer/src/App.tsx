@@ -37,6 +37,7 @@ import {
 } from "./theme.ts";
 import {
   applyRoute,
+  archiveView,
   bootstrap,
   checkVersion,
   connect,
@@ -45,9 +46,11 @@ import {
   groupSessions,
   initialLoaded,
   live,
+  openArchives,
   navOpen,
   nearBottom,
   pillTarget,
+  recentSessions,
   refreshSessionsQuiet,
   select,
   selectAdjacent,
@@ -58,6 +61,7 @@ import {
   setPillTarget,
   setUnread,
   setViewMode,
+  SIDEBAR_SESSION_LIMIT,
   standalonePost,
   streamLoading,
   posts,
@@ -211,21 +215,25 @@ export default function App() {
   // post instead (set below), so don't fight it here.
   createEffect(() => {
     if (isShadow()) return;
-    document.title = pageTitle(
-      standalonePost(),
-      sessions.find((s) => s.id === selected()),
-      unread().size,
-      initialPageTitle(),
-    );
+    document.title = archiveView()
+      ? "Archives · sideshow"
+      : pageTitle(
+          standalonePost(),
+          sessions.find((s) => s.id === selected()),
+          unread().size,
+          initialPageTitle(),
+        );
   });
   // the mobile drawer slides in via a class on the host element (see styles.css
   // `body.nav-open`; self-hosted that element is <body>)
   createEffect(() => navHostEl().classList.toggle("nav-open", navOpen()));
 
-  // sessions bucketed by recency for the sidebar; recomputes whenever the
-  // session list changes (incl. the 45s quiet refresh, which keeps the
-  // Today/Yesterday split fresh as the day rolls over)
-  const sessionGroups = createMemo(() => groupSessions(sessions, new Date()));
+  // The sidebar stays a quick jump list rather than an endless scroll. The
+  // archive view below uses every session from this same in-memory list.
+  const sidebarSessions = createMemo(() =>
+    recentSessions(sessions, new Date()).slice(0, SIDEBAR_SESSION_LIMIT),
+  );
+  const sessionGroups = createMemo(() => groupSessions(sidebarSessions(), new Date()));
 
   return (
     <Show
@@ -286,6 +294,11 @@ export default function App() {
                       </>
                     )}
                   </For>
+                  <Show when={sessions.length > SIDEBAR_SESSION_LIMIT}>
+                    <button class="archive-link" type="button" onClick={openArchives}>
+                      Go to archives <span>{sessions.length}</span>
+                    </button>
+                  </Show>
                   {/* Host-overridable region (SLOTS.asideEmpty): the session
                   list's empty state. The fallback below is a native "Connect an
                   agent" row — the first item of an otherwise-empty list — that
@@ -343,17 +356,24 @@ export default function App() {
               pane (e.g. a cloud Settings page) while the sidebar stays. */}
               <slot name={SLOTS.main}>
                 <Show
-                  when={connectPath()}
+                  when={archiveView()}
                   fallback={
-                    <>
-                      <Show when={!streamMode()}>
-                        <Onboard />
-                      </Show>
-                      <SessionView />
-                    </>
+                    <Show
+                      when={connectPath()}
+                      fallback={
+                        <>
+                          <Show when={!streamMode()}>
+                            <Onboard />
+                          </Show>
+                          <SessionView />
+                        </>
+                      }
+                    >
+                      <ConnectPage />
+                    </Show>
                   }
                 >
-                  <ConnectPage />
+                  <ArchiveView />
                 </Show>
               </slot>
             </main>
@@ -560,6 +580,53 @@ function isOwnFrame(source: unknown): boolean {
     if (f.contentWindow === source) return true;
   }
   return false;
+}
+
+function ArchiveView() {
+  const [query, setQuery] = createSignal("");
+  const matchingSessions = createMemo(() => {
+    const needle = query().trim().toLocaleLowerCase();
+    if (!needle) return sessions;
+    return sessions.filter((session) =>
+      [sessionLabel(session), session.agent, session.cwd ?? ""]
+        .join(" ")
+        .toLocaleLowerCase()
+        .includes(needle),
+    );
+  });
+  const groups = createMemo(() => groupSessions(matchingSessions(), new Date()));
+
+  return (
+    <section id="archiveView" aria-labelledby="archiveTitle">
+      <div class="archive-head">
+        <div>
+          <h1 id="archiveTitle">Archives</h1>
+          <p>Every session in this workspace, past and present.</p>
+        </div>
+        <label class="archive-search">
+          <span>Search archives</span>
+          <input
+            type="search"
+            placeholder="Title, agent, or folder"
+            value={query()}
+            onInput={(e) => setQuery(e.currentTarget.value)}
+          />
+        </label>
+      </div>
+      <div class="archive-list">
+        <Show when={groups().length > 0} fallback={<p class="archive-empty">No sessions found.</p>}>
+          <For each={groups()}>
+            {(group) => (
+              <section class="archive-group" aria-label={group.label}>
+                <h2>{group.label}</h2>
+                <For each={group.sessions}>{(session) => <SessionItem session={session} />}</For>
+              </section>
+            )}
+          </For>
+        </Show>
+      </div>
+    </section>
+  );
 }
 
 function SessionItem(props: { session: SessionRow }) {
