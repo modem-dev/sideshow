@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.14.0
+
+### Minor Changes
+
+- 604ca24: serve: add `--host` / `SIDESHOW_HOST` to bind one address
+
+  `serve` listened on every interface with no way to restrict it, and printed
+  `listening on http://localhost:PORT` regardless — so a server sharing a host or
+  a network with anything else was reachable from it, and the startup line said
+  otherwise. The default is unchanged (every interface, which is what containers
+  and LAN-shared instances need); `--host 127.0.0.1` now keeps it off the network
+  entirely, and the startup line reports the address actually bound.
+
+- 14a8ea3: viewer: fold the card's export actions into one share menu, with copy-as-markdown
+
+  A card's footer carried three separate icons that all meant "take this
+  elsewhere" — copy link, open in a new tab, open as a PNG — and no room for a
+  fourth. They are now rows in a single **Share** menu, joined by **Copy as
+  markdown**: the whole post as portable markdown, with prose kept as prose,
+  code/diffs/terminal output/JSON/mermaid as fenced blocks, images as image links,
+  and an html surface degraded to a link back to it rather than a dump of its
+  markup.
+
+  The flattening is served, not derived in the browser, so every tier can have it:
+  `GET /api/posts/:id/markdown` returns the same text for `curl` and the CLI.
+
+### Patch Changes
+
+- 68531b2: Show a recent-posts Home view for first-time visitors to multi-session workspaces, with live updates and safe themed previews.
+- 11c4434: Cache fully pinned social-preview screenshots at the Cloudflare edge so repeated link unfurls avoid redundant Browser Rendering calls. Access, post existence, and revision are revalidated on every edge request, and token-protected boards keep private client cache headers.
+- feac177: Make recent-post ordering deterministic when multiple writes share the same millisecond timestamp, preventing different SQLite versions from selecting different posts at the result limit.
+- 102990f: Load the rich-surface renderers and publish-time parsers on first use instead of
+  at boot. shiki, `@pierre/diffs`, markdown-it and `@mermaid-js/parser` are now
+  imported when a markdown/code/diff/terminal surface is rendered or a diff/mermaid
+  surface is published, rather than by every server at startup. Idle memory drops
+  from ~132 MB to ~102 MB and boot time from ~486 ms to ~275 ms; a workspace that
+  only ever uses html surfaces never loads them at all. No behavior change.
+- ea2fb02: Highlight code against one theme instead of two when the color scheme is already
+  known. shiki tokenizes once per theme, so asking for a light/dark pair costs
+  exactly twice as much — and the viewer always tells the server which scheme it
+  resolved, so half that work was being discarded with CSS. Rendering a
+  1400-line code surface drops from 1.14s to 543ms and its document from 751KB to
+  529KB; markdown with fenced code improves by roughly the same proportion. An
+  unpinned direct load of `/s/:id` still gets both themes and follows the OS.
+- b0f6a94: Comment authors are now derived from the session agent for CLI, MCP, and other programmatic writes. The reserved `user` label is limited to same-origin viewer comments, preventing agent integrations from forging user feedback.
+- 6c1073a: Invalid Mermaid submitted through the posts API now returns a typed validation
+  error with the failing request field, diagram type, complete parser diagnostic,
+  and concrete retry steps. The existing human-readable `error` string remains
+  for compatibility, and rejected diagrams are not persisted.
+
 ## 0.13.0
 
 ### Minor Changes
