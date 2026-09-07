@@ -369,6 +369,13 @@ test("a surface kind this viewer doesn't know shows a refresh hint, not a broken
 });
 
 test("the workspace root shows a live recent posts home", async ({ page, server }) => {
+  const recentLimits: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/posts/recent")
+      recentLimits.push(url.searchParams.get("limit") ?? "");
+  });
+
   const first = await publish(server.url, {
     html: "<h2>first preview</h2>",
     title: "First recent",
@@ -385,6 +392,7 @@ test("the workspace root shows a live recent posts home", async ({ page, server 
   await page.goto(server.url);
 
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  expect(recentLimits).toContain("20");
   await expect(page.locator(".home-card")).toHaveCount(2);
   await expect(page.locator(".home-card-title")).toContainText(["Second recent", "First recent"]);
   await expect(page.locator(".home-card", { hasText: "Alpha work" })).toContainText("First recent");

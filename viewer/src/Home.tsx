@@ -144,7 +144,7 @@ function HomeCard(props: { post: RecentPostRow }) {
 }
 
 export function HomeView() {
-  const [recent] = createResource(homeRefreshVersion, () => getRecentPosts(30).catch(() => []));
+  const [recent] = createResource(homeRefreshVersion, () => getRecentPosts().catch(() => []));
   const posts = () => recent() ?? [];
   return (
     <section class="home-page" aria-label="Home">

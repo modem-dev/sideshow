@@ -168,7 +168,7 @@ export async function apiText(path: string): Promise<string> {
   return res.text();
 }
 
-export function getRecentPosts(limit = 30): Promise<RecentPostRow[]> {
+export function getRecentPosts(limit = 20): Promise<RecentPostRow[]> {
   return api<RecentPostRow[]>(`/api/posts/recent?limit=${limit}&preview=home`);
 }
 
