@@ -391,12 +391,51 @@ export const THEMES: Theme[] = [
       danger: { bg: "rgba(230, 126, 128, 0.16)", text: "#e67e80", border: "#e67e80" },
     },
   },
+  {
+    // The original sideshow palette (warm paper / ink), restored from the
+    // pre-theme-picker styles.css + surfacePage tokens (commit 746b7e0^).
+    id: "classic",
+    label: "Classic",
+    shiki: { light: "github-light", dark: "github-dark" },
+    light: {
+      bg: "#faf9f5",
+      panel: "#f3f2ec",
+      surface: "#ffffff",
+      text: "#1a1915",
+      muted: "#5f5e56",
+      faint: "#8e8d83",
+      border: "rgba(20, 20, 10, 0.12)",
+      border2: "rgba(20, 20, 10, 0.25)",
+      hover: "rgba(20, 20, 10, 0.05)",
+      info: { bg: "#e6f1fb", text: "#185fa5", border: "#378add" },
+      success: { bg: "#eaf3de", text: "#3b6d11", border: "#97c459" },
+      warning: { bg: "#faeeda", text: "#854f0b", border: "#ef9f27" },
+      danger: { bg: "#fcebeb", text: "#a32d2d", border: "#e24b4a" },
+    },
+    dark: {
+      bg: "#1f1e1b",
+      panel: "#1a1917",
+      surface: "#2a2925",
+      text: "#eceadf",
+      muted: "#b3b1a4",
+      faint: "#8a887c",
+      border: "rgba(255, 255, 250, 0.12)",
+      border2: "rgba(255, 255, 250, 0.25)",
+      hover: "rgba(255, 255, 250, 0.06)",
+      info: { bg: "rgba(55, 138, 221, 0.18)", text: "#85b7eb", border: "#378add" },
+      success: { bg: "rgba(151, 196, 89, 0.18)", text: "#c0dd97", border: "#97c459" },
+      warning: { bg: "rgba(239, 159, 39, 0.18)", text: "#fac775", border: "#ef9f27" },
+      danger: { bg: "rgba(226, 75, 74, 0.18)", text: "#f09595", border: "#e24b4a" },
+    },
+  },
 ];
 
-export const DEFAULT_THEME_ID = "github";
+export const DEFAULT_THEME_ID = "classic";
 
 export function themeById(id: string | null | undefined): Theme {
-  return THEMES.find((t) => t.id === id) ?? THEMES[0];
+  return (
+    THEMES.find((t) => t.id === id) ?? THEMES.find((t) => t.id === DEFAULT_THEME_ID) ?? THEMES[0]
+  );
 }
 
 // Compact descriptor for the picker (avoids shipping full palettes to list).
