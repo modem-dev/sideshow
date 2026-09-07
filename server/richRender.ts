@@ -47,8 +47,9 @@ const SHIKI_DARK_RULE =
 // given (no media query), else follows the OS — identical to shikiSchemeCss in
 // the viewer's highlight.ts (kept in lockstep so a refactor can delete that).
 function shikiSchemeCss(mode?: Mode): string {
-  if (mode === "dark") return SHIKI_DARK_RULE;
-  if (mode === "light") return "";
+  // A resolved mode highlights against ONE theme (see shikiThemeOptions), so the
+  // colors are already the right ones inline and there is nothing to flip.
+  if (mode) return "";
   return `@media (prefers-color-scheme: dark){${SHIKI_DARK_RULE}}`;
 }
 
@@ -83,11 +84,11 @@ function highlight(
   hl: Highlighter,
   code: string,
   lang: string,
-  pair: { light: string; dark: string },
+  themeOpts: ShikiThemeOptions,
 ): string | null {
   if (!lang) return null;
   try {
-    return hl.codeToHtml(code, { lang, themes: pair });
+    return hl.codeToHtml(code, { lang, ...themeOpts });
   } catch {
     return null;
   }
@@ -97,9 +98,19 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function shikiPair(theme?: string): { light: string; dark: string } {
+type ShikiThemeOptions = { theme: string } | { themes: { light: string; dark: string } };
+
+// shiki tokenizes once PER THEME, so asking for a light/dark pair costs exactly
+// twice as much as asking for one. When the caller already resolved the scheme —
+// which the viewer always does, it appends &mode= to every surface iframe src —
+// the second tokenization is pure waste: shikiSchemeCss then discards one half
+// with CSS. Only an unpinned load (a bare /s/:id opened outside the viewer) needs
+// both, and that one follows the OS through a media query.
+function shikiThemeOptions(theme: string | undefined, mode: Mode | undefined): ShikiThemeOptions {
   const t = themeById(theme);
-  return { light: t.shiki.light, dark: t.shiki.dark };
+  if (mode === "dark") return { theme: t.shiki.dark };
+  if (mode === "light") return { theme: t.shiki.light };
+  return { themes: { light: t.shiki.light, dark: t.shiki.dark } };
 }
 
 // ---------------------------------------------------------------------------
@@ -167,14 +178,14 @@ export async function renderMarkdown(
   opts: RenderOpts = {},
 ): Promise<RenderedSurface> {
   const src = part.markdown ?? "";
-  const pair = shikiPair(opts.theme);
+  const themeOpts = shikiThemeOptions(opts.theme, opts.mode);
   const hl = await getHighlighter();
   await loadLangs(hl, fenceLangs(src));
 
   const md = new MarkdownIt({
     html: false,
     linkify: true,
-    highlight: (code, lang) => highlight(hl, code, lang, pair) ?? "",
+    highlight: (code, lang) => highlight(hl, code, lang, themeOpts) ?? "",
   });
   const renderLinkOpen =
     md.renderer.rules.link_open ??
@@ -303,11 +314,11 @@ export async function renderCode(
   const code = part.code ?? "";
   const lang = part.language ?? "text";
   const lineStart = part.lineStart ?? 1;
-  const pair = shikiPair(opts.theme);
+  const themeOpts = shikiThemeOptions(opts.theme, opts.mode);
   const hl = await getHighlighter();
   if (lang && lang !== "text") await loadLangs(hl, [lang]);
 
-  const highlighted = highlight(hl, code, lang, pair);
+  const highlighted = highlight(hl, code, lang, themeOpts);
   const pre = highlighted
     ? highlighted.replace(/\n*(<\/span>)\n*(<span class="line")/g, "$1$2")
     : plainHtml(code);
