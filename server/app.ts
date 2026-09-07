@@ -1063,13 +1063,14 @@ export function createApp({
   // agent for the feed card, canonical surfaces, legacy partKinds, and capped
   // previews.
   //
-  // Previews are bounded by recentPostRowView (large inline text clipped with
-  // truncated:true); images travel as plain assetId refs (served at /a/:id),
-  // so the response stays cheap. Same auth as /api/sessions — see
+  // Full previews are bounded by recentPostRowView (large inline text clipped
+  // with truncated:true); `?preview=home` returns only one compact preview per
+  // post for the self-hosted Home. Same auth as /api/sessions — see
   // isPublicReadAllowed, which intentionally does NOT expose this path on a
   // session-scoped publicRead workspace.
   const listRecentPosts = async (c: any) => {
     const limit = parseRecentLimit(c.req.query("limit"));
+    const homePreview = c.req.query("preview") === "home";
     const posts = await store.listRecentPosts(limit);
     // Resolve each post's session once (agent + session title for the feed card).
     const sessions = new Map<string, Session | null>();
@@ -1077,7 +1078,9 @@ export function createApp({
       if (!sessions.has(p.sessionId))
         sessions.set(p.sessionId, await store.getSession(p.sessionId));
     }
-    return c.json(posts.map((p) => recentPostRowView(p, sessions.get(p.sessionId))));
+    return c.json(
+      posts.map((p) => recentPostRowView(p, sessions.get(p.sessionId), { homePreview })),
+    );
   };
   app.get("/api/surfaces/recent", listRecentPosts);
   app.get("/api/posts/recent", listRecentPosts);

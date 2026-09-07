@@ -563,6 +563,134 @@ main {
   color: var(--muted);
 }
 
+.home-page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 34px 22px 70px;
+}
+.home-head {
+  margin-bottom: 20px;
+}
+.home-head h1 {
+  margin: 0 0 6px;
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+.home-head p {
+  margin: 0;
+  color: var(--muted);
+}
+.home-feed {
+  display: grid;
+  gap: 16px;
+}
+.home-card {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.home-card:hover,
+.home-card:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.12);
+  transform: translateY(-1px);
+  outline: none;
+}
+.home-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px 2px;
+}
+.home-card-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.home-card-meta,
+.home-card-sub,
+.home-card-foot {
+  color: var(--faint);
+  font-size: 12px;
+}
+.home-card-sub {
+  padding: 0 16px 12px;
+}
+.home-previews {
+  display: grid;
+  gap: 10px;
+  padding: 0 16px 14px;
+  max-height: 270px;
+  overflow: hidden;
+  position: relative;
+}
+.home-previews::after {
+  content: "";
+  position: absolute;
+  inset: auto 16px 14px;
+  height: 52px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--surface));
+}
+.home-preview-frame,
+.home-image-preview,
+.home-json-preview,
+.home-data-preview {
+  width: 100%;
+  min-height: 120px;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.home-preview-frame {
+  height: 210px;
+  pointer-events: none;
+}
+.home-image-preview {
+  display: block;
+  max-height: 240px;
+  object-fit: contain;
+}
+.home-json-preview,
+.home-data-preview {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 12px;
+  color: var(--muted);
+  font: 12px/1.5 var(--mono);
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+.home-card-foot {
+  padding: 11px 16px 13px;
+  border-top: 0.5px solid var(--border);
+}
+.home-empty {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  padding: 26px;
+  text-align: center;
+}
+.home-empty h2 {
+  margin: 0 0 6px;
+}
+.home-empty p {
+  margin: 0;
+  color: var(--muted);
+}
+
 .card {
   background: var(--surface);
   border: 0.5px solid var(--border);

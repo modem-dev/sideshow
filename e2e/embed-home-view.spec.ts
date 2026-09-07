@@ -64,6 +64,7 @@ test("homeView: a session-less route lands with NO session selected", async ({ p
   await expect(page.locator(".sess.sel")).toHaveCount(0);
   await expect(page.locator(".sess[aria-current='true']")).toHaveCount(0);
   await expect(page.locator(".card:not(#whatsNew)")).toHaveCount(0);
+  await expect(page.locator(".home-page")).toHaveCount(0);
 });
 
 test("homeView OFF (self-hosted default): a session-less route auto-selects the latest", async ({

@@ -188,6 +188,29 @@ test("GET /api/surfaces/recent caps oversized text parts and flags truncation", 
   assert.equal(code.truncated, undefined);
 });
 
+test("GET /api/posts/recent?preview=home returns one compact surface per post", async () => {
+  const app = makeApp();
+  const s = await createSession(app, "amp");
+  await publish(app, {
+    session: s.id,
+    parts: [
+      { kind: "html", html: "x".repeat(20_000) },
+      { kind: "markdown", markdown: "# hidden from Home" },
+      { kind: "json", data: { also: "hidden from Home" } },
+    ],
+  });
+
+  const feed = (await (await app.request("/api/posts/recent?preview=home")).json()) as any[];
+  assert.deepEqual(feed[0].partKinds, ["html", "markdown", "json"]);
+  assert.equal(feed[0].surfaces.length, 1);
+  assert.deepEqual(feed[0].surfaces[0], {
+    id: feed[0].surfaces[0].id,
+    kind: "html",
+    index: 0,
+  });
+  assert.deepEqual(feed[0].parts, feed[0].surfaces);
+});
+
 test("GET /api/surfaces/recent leaves image parts as plain assetId refs", async () => {
   const app = makeApp();
   const s = await createSession(app, "amp");
