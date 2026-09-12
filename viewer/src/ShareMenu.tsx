@@ -1,16 +1,18 @@
 import { createEffect, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { surfaceDownloadName } from "../../server/surfaceDownload.ts";
 import {
   apiText,
   canScreenshot,
   postImageLink,
   postLink,
   postMarkdownPath,
+  surfaceDownloadLink,
   type Post,
   type ViewerPost,
 } from "./api.ts";
 import { writeClipboard } from "./clipboard.ts";
 import { root } from "./host.ts";
-import { ImageIcon, LinkIcon, MarkdownIcon, OpenIcon, ShareIcon } from "./icons.tsx";
+import { DownloadIcon, ImageIcon, LinkIcon, MarkdownIcon, OpenIcon, ShareIcon } from "./icons.tsx";
 import { toast } from "./state.ts";
 
 // The card's single "take this elsewhere" control: one labelled button opening a
@@ -28,9 +30,9 @@ const MENU_WIDTH = 216;
 const MENU_GAP = 6;
 const VIEWPORT_PAD = 8;
 // Menu height, derived from the row metrics in styles.css (32px rows, a 9px
-// separator block, 4px of panel padding either side) — the menu is measured
+// separator block each, 4px of panel padding either side) — the menu is placed
 // before it can be measured, so the flip decision uses this estimate.
-const MENU_HEIGHT = (rows: number) => rows * 32 + 9 + 8;
+const MENU_HEIGHT = (rows: number, separators: number) => rows * 32 + separators * 9 + 8;
 
 type MenuAction = {
   key: string;
@@ -41,6 +43,10 @@ type MenuAction = {
   run?: () => void | Promise<void>;
   disabledReason?: string;
   separatorBefore?: boolean;
+  // A save-this-file link. Rendered in place rather than in a new tab, and with
+  // the filename the response will use anyway — so the row's label and the file
+  // on disk can't disagree.
+  download?: string;
 };
 
 export function ShareMenu(props: { post: Post | ViewerPost }) {
@@ -85,6 +91,7 @@ export function ShareMenu(props: { post: Post | ViewerPost }) {
           "Couldn't copy this post as markdown",
         ),
     },
+    ...downloadActions(),
     {
       key: "open",
       label: "Open in new tab",
@@ -105,6 +112,23 @@ export function ShareMenu(props: { post: Post | ViewerPost }) {
     },
   ];
 
+  // One row per surface: the raw source behind it, as the file it came from —
+  // `.mmd` for a diagram, `.patch` for a diff, `.md` for prose. The filename
+  // comes from the same server module that serves the bytes, so the label is
+  // the truth and not a second guess at it.
+  const downloadActions = (): MenuAction[] =>
+    props.post.surfaces.map((surface, index) => {
+      const filename = surfaceDownloadName(surface, index, props.post.title);
+      return {
+        key: `download-${surface.id ?? index}`,
+        label: `Download ${filename}`,
+        icon: DownloadIcon,
+        href: surfaceDownloadLink(props.post.id, index),
+        download: filename,
+        separatorBefore: index === 0,
+      };
+    });
+
   const fetchMarkdown = () => (markdown ??= apiText(postMarkdownPath(props.post.id)));
 
   const items = () =>
@@ -117,7 +141,8 @@ export function ShareMenu(props: { post: Post | ViewerPost }) {
 
   const openMenu = (focusFirst: boolean) => {
     const rect = button.getBoundingClientRect();
-    const height = MENU_HEIGHT(actions().length);
+    const rows = actions();
+    const height = MENU_HEIGHT(rows.length, rows.filter((a) => a.separatorBefore).length);
     const below = rect.bottom + MENU_GAP;
     setAt({
       left: Math.max(
@@ -251,7 +276,7 @@ export function ShareMenu(props: { post: Post | ViewerPost }) {
                       onClick={() => action.run?.()}
                     >
                       {action.icon()}
-                      {action.label}
+                      <span>{action.label}</span>
                     </button>
                   }
                 >
@@ -260,12 +285,16 @@ export function ShareMenu(props: { post: Post | ViewerPost }) {
                       class="share-item"
                       role="menuitem"
                       href={href}
-                      target="_blank"
-                      rel="noopener"
+                      // A download saves in place; anything else opens away from
+                      // the feed, which must not be replaced by it.
+                      {...(action.download
+                        ? { download: action.download }
+                        : { target: "_blank", rel: "noopener" })}
+                      title={action.label}
                       onClick={() => close(false)}
                     >
                       {action.icon()}
-                      {action.label}
+                      <span>{action.label}</span>
                     </a>
                   )}
                 </Show>

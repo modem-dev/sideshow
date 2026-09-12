@@ -18,6 +18,7 @@ import { EventBus, type FeedEvent } from "./events.ts";
 import { kitSummaries } from "./kits.ts";
 import { registerMcp } from "./mcpHttp.ts";
 import { postToMarkdown } from "./postMarkdown.ts";
+import { surfaceDownload } from "./surfaceDownload.ts";
 import {
   escapeHtml,
   renderHtmlPage,
@@ -125,8 +126,15 @@ function assetServeHeaders(asset: Asset): { contentType: string; disposition: st
   const contentType = ATTACH_SAFE_TYPES.has(asset.contentType)
     ? asset.contentType
     : "application/octet-stream";
-  const name = (asset.filename || asset.id).replace(/[^\w.-]/g, "_");
-  return { contentType, disposition: `attachment; filename="${name}"` };
+  return { contentType, disposition: contentDisposition(asset.filename || asset.id) };
+}
+
+// A download header for a filename we may not control. Anything outside
+// `[\w.-]` becomes an underscore, which keeps quotes and newlines (and so header
+// injection) out of the value as much as it keeps the name portable.
+function contentDisposition(filename: string): string {
+  const name = filename.replace(/[^\w.-]/g, "_") || "download";
+  return `attachment; filename="${name}"`;
 }
 
 // Pick an AssetKind when the caller didn't specify one.
@@ -1192,6 +1200,34 @@ export function createApp({
     const base = `${origin}${requestBasePath(c.req.raw)}`;
     const markdown = postToMarkdown(post, { postUrl: `${base}/p/${post.id}`, assetBase: base });
     return c.text(markdown, 200, { "content-type": "text/markdown; charset=utf-8" });
+  });
+  // One surface as its own file — the `.mmd` behind a diagram, the `.patch`
+  // behind a diff, the `.md` behind prose. `:target` is a surface id or 0-based
+  // index, the same addressing the PATCH/DELETE surface routes take. What the
+  // viewer's share menu offers as a download row, and the same bytes on the
+  // CLI/HTTP tiers.
+  //
+  // Always an attachment, never a rendered document: agent-authored content must
+  // not become a live same-origin page (see the isolation rule in AGENTS.md), so
+  // the content types are inert, html degrades to octet-stream, and nosniff
+  // stops the browser second-guessing either. Asset-backed surfaces (image, and
+  // trace with an uploaded file) redirect to /a/:id, which already serves blobs
+  // under that same policy and keeps the LRU touch-on-serve honest.
+  app.get("/api/posts/:id/surfaces/:target/raw", async (c) => {
+    const post = await store.getPost(c.req.param("id"));
+    if (!post) return c.json({ error: "post not found" }, 404);
+    const index = findSurfaceIndex(post.surfaces, c.req.param("target"));
+    if (index < 0) return c.json({ error: "surface not found" }, 404);
+    const download = surfaceDownload(post.surfaces[index], index, post.title);
+    if (!download) return c.json({ error: "surface has nothing to download" }, 404);
+    if (download.via === "asset") {
+      const base = `${new URL(c.req.url).origin}${requestBasePath(c.req.raw)}`;
+      return c.redirect(`${base}/a/${download.assetId}`, 302);
+    }
+    c.header("Content-Type", download.contentType);
+    c.header("Content-Disposition", contentDisposition(download.filename));
+    c.header("X-Content-Type-Options", "nosniff");
+    return c.body(download.body);
   });
   app.get("/api/surfaces/:id", getPost); // legacy alias
   app.get("/api/posts/:id", getPost);

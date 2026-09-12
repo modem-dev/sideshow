@@ -615,6 +615,10 @@ test("the share menu copies a link and a markdown flattening of the post", async
   await expect(menu.getByRole("menuitem")).toHaveText([
     "Copy link",
     "Copy as markdown",
+    // One download row per surface, between the copy actions and the open
+    // actions. See download.spec.ts for what they actually save.
+    "Download retry-backoff.md",
+    "Download retry-backoff-2.html",
     "Open in new tab",
     "Open as image",
   ]);
