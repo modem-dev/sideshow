@@ -157,8 +157,10 @@ blockquote {
   border-left: 2px solid var(--border-2);
   color: var(--muted);
 }
-table { border-collapse: collapse; font-size: 13px; }
-th, td { border: 0.5px solid var(--border); padding: 4px 8px; text-align: left; }
+/* A table scrolls sideways instead of shrinking: the body's overflow-wrap: anywhere
+   would otherwise split "Rank" into "Ra / nk" in a narrow column. */
+table { border-collapse: collapse; font-size: 13px; display: block; max-width: 100%; overflow-x: auto; }
+th, td { border: 0.5px solid var(--border); padding: 4px 8px; text-align: left; overflow-wrap: normal; }
 th { background: var(--hover); }
 img { max-width: 100%; height: auto; border-radius: 6px; }
 hr { border: none; border-top: 0.5px solid var(--border); margin: 1em 0; }
