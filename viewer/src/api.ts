@@ -142,6 +142,14 @@ export function postMarkdownPath(id: string): string {
   return `/api/posts/${encodeURIComponent(id)}/markdown`;
 }
 
+// One surface as its own file (GET /api/posts/:id/surfaces/:n/raw) — the `.mmd`
+// behind a diagram, the `.patch` behind a diff. A real link, not a fetch: the
+// response is an attachment, so the browser saves it, and cmd/middle-click still
+// opens it the way a link should.
+export function surfaceDownloadLink(id: string, index: number): string {
+  return `${location.origin}${appPath(`/api/posts/${encodeURIComponent(id)}/surfaces/${index}/raw`)}`;
+}
+
 // Whether the deployment can render post screenshots (the /p/:id.png route).
 // Host-first (cloud embed), falling back to the self-hosted global, mirroring
 // isReadonly(). False on a plain Node server, which has no Browser Rendering.

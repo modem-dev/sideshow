@@ -1645,6 +1645,14 @@ iframe {
   cursor: pointer;
   text-decoration: none;
 }
+/* A filename can be longer than the menu is wide; truncate the label rather
+   than letting it push the row past the panel. The full text stays reachable as
+   the row's tooltip. */
+.share-menu .share-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .share-menu .share-item svg {
   width: 14px;
   height: 14px;

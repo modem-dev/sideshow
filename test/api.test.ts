@@ -335,6 +335,84 @@ test("GET /api/posts/:id/markdown flattens the post for the share menu", async (
   assert.equal((await app.request("/api/posts/nope/markdown")).status, 404);
 });
 
+test("GET /api/posts/:id/surfaces/:target/raw serves one surface as its own file", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Retry backoff",
+        surfaces: [
+          { kind: "mermaid", mermaid: "graph TD;\n  a-->b;" },
+          { kind: "markdown", markdown: "the plan" },
+        ],
+      }),
+    )
+  ).json()) as any;
+
+  const res = await app.request(`/api/posts/${created.id}/surfaces/0/raw`);
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), "graph TD;\n  a-->b;");
+  // Always a download, never a document the browser might render on our origin.
+  assert.equal(res.headers.get("content-disposition"), 'attachment; filename="retry-backoff.mmd"');
+  assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+
+  // A surface id addresses the same surface as its index — the addressing the
+  // PATCH/DELETE surface routes already take.
+  const full = (await (await app.request(`/api/posts/${created.id}`)).json()) as any;
+  const byId = await app.request(`/api/posts/${created.id}/surfaces/${full.surfaces[1].id}/raw`);
+  assert.equal(await byId.text(), "the plan");
+  assert.equal(
+    byId.headers.get("content-disposition"),
+    'attachment; filename="retry-backoff-2.md"',
+  );
+
+  assert.equal((await app.request(`/api/posts/nope/surfaces/0/raw`)).status, 404);
+  assert.equal((await app.request(`/api/posts/${created.id}/surfaces/9/raw`)).status, 404);
+});
+
+test("an html surface downloads as an inert type, and an image redirects to its asset", async () => {
+  const app = makeApp();
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      json({
+        title: "Drawn",
+        surfaces: [
+          { kind: "html", html: "<b>drawn</b>" },
+          { kind: "image", assetId: "sha" },
+        ],
+      }),
+    )
+  ).json()) as any;
+
+  // Agent markup must never come back as text/html from the workspace origin.
+  const html = await app.request(`/api/posts/${created.id}/surfaces/0/raw`);
+  assert.equal(html.headers.get("content-type"), "application/octet-stream");
+  assert.equal(await html.text(), "<b>drawn</b>");
+
+  // By-reference bytes stay by reference: /a/:id already serves blobs under the
+  // same attachment policy and keeps the asset LRU honest.
+  const image = await app.request(`https://board.test/api/posts/${created.id}/surfaces/1/raw`);
+  assert.equal(image.status, 302);
+  assert.equal(image.headers.get("location"), "https://board.test/a/sha");
+});
+
+test("surface downloads follow the base path and reach public readers", async () => {
+  const app = makeApp("secret", { publicRead: "session", basePath: "/alice" });
+  const created = (await (
+    await app.request(
+      "/api/posts",
+      authedJson({ title: "T", surfaces: [{ kind: "image", assetId: "sha" }] }),
+    )
+  ).json()) as any;
+
+  // Downloading a shared post is a read — same gate as copying it as markdown.
+  const res = await app.request(`https://board.test/api/posts/${created.id}/surfaces/0/raw`);
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get("location"), "https://board.test/alice/a/sha");
+});
+
 test("post markdown resolves links against a base path and reaches public readers", async () => {
   const app = makeApp("secret", { publicRead: "session", basePath: "/alice" });
   const created = (await (
