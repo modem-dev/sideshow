@@ -7,7 +7,7 @@
     {
       "name": "sideshow",
       "source": "./plugin",
-      "description": "Stream sideshow browser comments to Claude Code as notifications; publish snippets over MCP.",
+      "description": "Stream sideshow browser comments to Claude Code as notifications; publish posts over MCP.",
       "category": "Integrations",
       "keywords": ["sideshow", "visualization", "feedback", "mcp"]
     }
