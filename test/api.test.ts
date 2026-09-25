@@ -498,6 +498,22 @@ test("post preview image URL changes with the workspace theme", async () => {
   assert.doesNotMatch(after, /theme=github/);
 });
 
+test("workspace width defaults to normal, persists, and broadcasts", async () => {
+  const events: unknown[] = [];
+  const app = makeApp(undefined, { onEvent: (e) => events.push(e) });
+
+  assert.deepEqual(await (await app.request("/api/width")).json(), { id: "normal" });
+  const put = await app.request("/api/width", { ...json({ id: "wide" }), method: "PUT" });
+  assert.equal(put.status, 200);
+  assert.deepEqual(await put.json(), { id: "wide" });
+  assert.deepEqual(await (await app.request("/api/width")).json(), { id: "wide" });
+  assert.deepEqual(events, [{ type: "width-changed", id: "wide" }]);
+
+  const bad = await app.request("/api/width", { ...json({ id: "huge" }), method: "PUT" });
+  assert.equal(bad.status, 400);
+  assert.deepEqual(await (await app.request("/api/width")).json(), { id: "wide" });
+});
+
 test("/s served versioned + themed is cacheable; an unpinned load is not", async () => {
   const app = makeApp();
   const res = await app.request(
@@ -1335,6 +1351,7 @@ test("public read full mode allows unauthenticated GETs but not writes", async (
   assert.equal((await app.request("/session/anything")).status, 200);
   assert.equal((await app.request("/api/sessions")).status, 200);
   assert.equal((await app.request("/api/theme")).status, 200);
+  assert.equal((await app.request("/api/width")).status, 200);
   assert.equal((await app.request("/api/version")).status, 200);
 
   const created = (await (
@@ -1345,6 +1362,10 @@ test("public read full mode allows unauthenticated GETs but not writes", async (
 
   assert.equal((await app.request("/api/snippets", json({ html: "<p>x</p>" }))).status, 401);
   assert.equal((await app.request("/api/comments", json({ text: "hi" }))).status, 401);
+  assert.equal(
+    (await app.request("/api/width", { ...json({ id: "wide" }), method: "PUT" })).status,
+    401,
+  );
 });
 
 test("public read session mode allows scoped reads and denies root/session list", async () => {
@@ -1353,6 +1374,7 @@ test("public read session mode allows scoped reads and denies root/session list"
   assert.equal((await app.request("/")).status, 401);
   assert.equal((await app.request("/api/sessions")).status, 401);
   assert.equal((await app.request("/api/theme")).status, 200);
+  assert.equal((await app.request("/api/width")).status, 200);
   assert.equal((await app.request("/api/version")).status, 200);
 
   const created = (await (

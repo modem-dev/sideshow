@@ -26,6 +26,7 @@ import {
   PlugIcon,
   SunIcon,
   SystemIcon,
+  WidthIcon,
 } from "./icons.tsx";
 import {
   activeTheme,
@@ -36,6 +37,7 @@ import {
   setTheme,
   themeOptions,
 } from "./theme.ts";
+import { initWidth, isWide, setWidth } from "./width.ts";
 import {
   applyRoute,
   bootstrap,
@@ -167,6 +169,7 @@ export default function App() {
     });
     checkVersion();
     void initTheme();
+    void initWidth();
     const timer = setInterval(() => {
       if (sessions.length > 0) refreshSessionsQuiet();
     }, 45_000);
@@ -241,7 +244,7 @@ export default function App() {
       keyed
       fallback={
         <>
-          <div id="app">
+          <div id="app" classList={{ wide: isWide() }}>
             <header class="topbar">
               <Show when={!streamMode()}>
                 <button
@@ -406,7 +409,7 @@ export default function App() {
 // any registered card, so a standalone card sizes identically).
 function StandaloneView(props: { post: Post }) {
   return (
-    <div id="standalone">
+    <div id="standalone" classList={{ wide: isWide() }}>
       <main class="standalone-main">
         <Card post={props.post} standalone />
         <footer class="standalone-foot">
@@ -684,6 +687,9 @@ function SessionView() {
         </span>
         <span class="head-sp"></span>
         <ViewToggle />
+        <Show when={!isReadonly()}>
+          <WidthToggle />
+        </Show>
         {/* Host-overridable region (SLOTS.sessionActions): session-scoped controls
             an embedder projects beside the toggle (e.g. cloud "Share"). Empty
             fallback — self-hosted renders nothing here. */}
@@ -732,6 +738,25 @@ function ViewToggle() {
         onClick={() => setViewMode("timeline")}
       >
         Timeline
+      </button>
+    </div>
+  );
+}
+
+// Workspace column width (normal 860px / wide); persisted like the theme (width.ts).
+function WidthToggle() {
+  return (
+    <div class="width-toggle">
+      <button
+        type="button"
+        id="widthToggle"
+        classList={{ on: isWide() }}
+        aria-label="Wide layout"
+        aria-pressed={isWide()}
+        title="Wide layout"
+        onClick={() => void setWidth(isWide() ? "normal" : "wide")}
+      >
+        <WidthIcon />
       </button>
     </div>
   );

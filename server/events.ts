@@ -1,3 +1,5 @@
+import type { LayoutWidth } from "./types.ts";
+
 export type FeedEvent =
   | { type: "session-created" | "session-updated" | "session-deleted"; id: string }
   | { type: "post-created" | "post-updated"; id: string; sessionId: string; version: number }
@@ -12,6 +14,8 @@ export type FeedEvent =
   | { type: "comment-deleted"; id: string; sessionId: string }
   // Workspace theme changed; `id` is the new theme id. Other open tabs re-theme.
   | { type: "theme-changed"; id: string }
+  // Workspace column width changed; `id` is the new width. Other tabs re-layout.
+  | { type: "width-changed"; id: LayoutWidth }
   // Session-scoped agent trace gained steps (synced in a batch). Carries only
   // the new total so the viewer refetches once per batch, not once per step.
   | { type: "trace-updated"; sessionId: string; count: number };

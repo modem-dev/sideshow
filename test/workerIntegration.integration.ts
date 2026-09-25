@@ -260,6 +260,7 @@ test(
     assert.deepEqual(new Uint8Array(await servedAsset.arrayBuffer()), bytes);
 
     await expectJson(await worker.fetch("/api/theme", json({ id: "gruvbox" }, "PUT")), 200);
+    await expectJson(await worker.fetch("/api/width", json({ id: "wide" }, "PUT")), 200);
 
     const pendingFeedback = worker.fetch(
       `/api/comments?session=${post.sessionId}&author=user&wait=2`,
@@ -362,6 +363,11 @@ test(
       200,
     );
     assert.equal(persistedTheme.id, "gruvbox");
+    const persistedWidth = await expectJson<{ id: string }>(
+      await worker.fetch("/api/width", { headers: AUTH }),
+      200,
+    );
+    assert.equal(persistedWidth.id, "wide");
 
     const persistedAsset = await worker.fetch(`/a/${asset.id}`, { headers: AUTH });
     assert.equal(persistedAsset.status, 200);

@@ -544,6 +544,13 @@ main {
 .standalone-main .card {
   margin-bottom: 0;
 }
+/* Wide mode (width.ts): the column grows with the window so diffs and wide html
+   stop scrolling sideways. Only max-width changes, so phone rules still apply.
+   Markdown prose keeps a readable measure inside its own frame (richRender.ts). */
+.wide #stream,
+.wide .standalone-main {
+  max-width: 1600px;
+}
 .standalone-foot {
   margin-top: 18px;
   text-align: center;
@@ -2520,14 +2527,16 @@ iframe {
 .session-head .head-sp {
   flex: 1;
 }
-.view-toggle {
+.view-toggle,
+.width-toggle {
   display: inline-flex;
   align-self: center;
   border: 0.5px solid var(--border);
   border-radius: 999px;
   overflow: hidden;
 }
-.view-toggle button {
+.view-toggle button,
+.width-toggle button {
   font-family: inherit;
   font-size: 12px;
   color: var(--muted);
@@ -2536,9 +2545,25 @@ iframe {
   padding: 4px 13px;
   cursor: pointer;
 }
-.view-toggle button.on {
+.view-toggle button.on,
+.width-toggle button.on {
   background: var(--accent-bg);
   color: var(--accent);
+}
+.width-toggle button {
+  display: block;
+  padding: 4px 10px;
+}
+.width-toggle svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+/* phone: the column is already narrower than normal, so wide can't apply */
+@media (max-width: 700px) {
+  .width-toggle {
+    display: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .card-head .update-dot {

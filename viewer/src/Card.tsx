@@ -22,13 +22,18 @@ import {
   type TraceSurface as TraceSurfaceData,
   type ViewerPost,
 } from "./api.ts";
-import { isSandboxedSurfaceKind, SURFACE_FRAME_CLASSES } from "../../server/types.ts";
+import {
+  isSandboxedSurfaceKind,
+  isSoftWrapSurfaceKind,
+  SURFACE_FRAME_CLASSES,
+} from "../../server/types.ts";
 import { CommentIcon, MaximizeIcon, PinIcon, TrashIcon } from "./icons.tsx";
 import { ShareMenu } from "./ShareMenu.tsx";
 import { root } from "./host.ts";
 import { ImageSurface } from "./ImageSurface.tsx";
 import { JsonSurface } from "./JsonSurface.tsx";
 import { activeTheme, resolvedMode } from "./theme.ts";
+import { isWide } from "./width.ts";
 import { TraceSurface } from "./TraceSurface.tsx";
 import {
   comments,
@@ -209,10 +214,19 @@ export function Card(props: { post: Post | ViewerPost; standalone?: boolean }) {
       ? `${props.post.title} (surface ${surfaceIndex + 1})`
       : props.post.title;
 
-  const surfaceSrc = (surfaceIndex: number) =>
-    appPath(
-      `/s/${props.post.id}?part=${surfaceIndex}&ver=${props.post.version}&cb=${props.post.version}&theme=${activeTheme()}&mode=${resolvedMode()}`,
+  // `?part=` is the legacy wire query key for a surface index. Wide mode asks
+  // the server-rendered text kinds to soft-wrap long lines.
+  const surfaceSrc = (
+    surfaceIndex: number,
+    ver: number | string = props.post.version,
+    cb: number | string = ver,
+  ) => {
+    const wrap =
+      isWide() && isSoftWrapSurfaceKind(props.post.surfaces[surfaceIndex]?.kind) ? "&wrap=1" : "";
+    return appPath(
+      `/s/${props.post.id}?part=${surfaceIndex}&ver=${ver}&cb=${cb}&theme=${activeTheme()}&mode=${resolvedMode()}${wrap}`,
     );
+  };
 
   const anchoredComments = (surfaceIndex: number) =>
     comments().filter((c) => c.postId === props.post.id && c.anchor?.surfaceIndex === surfaceIndex);
@@ -383,10 +397,7 @@ export function Card(props: { post: Post | ViewerPost; standalone?: boolean }) {
                     const ver = e.currentTarget.value;
                     const cb = Date.now();
                     for (const [surface, frame] of surfaceFrames) {
-                      // `?part=` is the legacy wire query key for a surface index.
-                      frame.src = appPath(
-                        `/s/${props.post.id}?part=${surface}&ver=${ver}&cb=${cb}&theme=${activeTheme()}&mode=${resolvedMode()}`,
-                      );
+                      frame.src = surfaceSrc(surface, ver, cb);
                     }
                   }}
                 >

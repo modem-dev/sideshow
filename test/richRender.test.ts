@@ -157,3 +157,23 @@ test("renderTerminal: a title-less terminal defaults the bar title to 'terminal'
   assert.match(body, /<span class="term-title">terminal<\/span>/);
   assert.match(body, /<pre class="term-body">plain output<\/pre>/);
 });
+
+test("wrap: off leaves every renderer's output unchanged; on adds soft-wrap rules", async () => {
+  const md: MarkdownSurface = { kind: "markdown", markdown: "```text\nlong line\n```" };
+  const code: CodeSurface = { kind: "code", code: "const x = 1;", language: "ts" };
+  const term: TerminalSurface = { kind: "terminal", text: "output" };
+  const diff: DiffSurface = {
+    kind: "diff",
+    files: [{ filename: "f.ts", before: "const x = 1", after: "const x = 2" }],
+  };
+  assert.deepEqual(await renderMarkdown(md, { wrap: false }), await renderMarkdown(md));
+  assert.deepEqual(await renderCode(code, { wrap: false }), await renderCode(code));
+  assert.deepEqual(renderTerminal(term, { wrap: false }), renderTerminal(term));
+  assert.deepEqual(await renderDiff(diff, { wrap: false }), await renderDiff(diff));
+
+  assert.match((await renderMarkdown(md, { wrap: true })).css, /pre \{ white-space: pre-wrap;/);
+  assert.match((await renderCode(code, { wrap: true })).css, /\.line \{\s*white-space: pre-wrap;/);
+  assert.match(renderTerminal(term, { wrap: true }).css, /\.term-body \{ white-space: pre-wrap;/);
+  assert.match((await renderDiff(diff, { wrap: true })).body, /data-overflow="wrap"/);
+  assert.doesNotMatch((await renderDiff(diff)).body, /data-overflow="wrap"/);
+});

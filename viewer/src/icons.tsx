@@ -105,6 +105,17 @@ export function MaximizeIcon() {
   );
 }
 
+// lucide: move-horizontal — wide column layout.
+export function WidthIcon() {
+  return (
+    <Icon>
+      <path d="m18 8 4 4-4 4" />
+      <path d="M2 12h20" />
+      <path d="m6 8-4 4 4 4" />
+    </Icon>
+  );
+}
+
 // lucide: panel-left-close — collapse the desktop session sidebar.
 export function PanelLeftCloseIcon() {
   return (

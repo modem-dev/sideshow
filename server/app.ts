@@ -31,10 +31,13 @@ import {
   type CodeSurface,
   type Comment,
   type CommentAnchor,
+  DEFAULT_WIDTH,
   type DiffSurface,
   htmlSurface,
   isSandboxedSurfaceKind,
+  isSoftWrapSurfaceKind,
   reservedAgent,
+  LAYOUT_WIDTHS,
   type MarkdownSurface,
   MAX_ASSET_BYTES,
   surfacesByteLength,
@@ -264,6 +267,7 @@ function isPublicReadAllowed(path: string, mode: PublicReadMode): boolean {
   if (path === "/api/comments") return true;
   if (path === "/api/events") return true;
   if (path === "/api/theme") return true;
+  if (path === "/api/width") return true;
   if (path === "/api/version") return true;
   if (path === "/api/kits") return true;
   return false;
@@ -1038,6 +1042,22 @@ export function createApp({
     return c.json({ id });
   });
 
+  // --- column width (one workspace-level setting, same shape as theme) ---
+
+  app.get("/api/width", async (c) => {
+    const id = (await store.getSetting("width")) ?? DEFAULT_WIDTH;
+    return c.json({ id });
+  });
+
+  app.put("/api/width", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const id = body?.id;
+    if (!LAYOUT_WIDTHS.includes(id)) return c.json({ error: "unknown width id" }, 400);
+    await store.setSetting("width", id);
+    bus.broadcast({ type: "width-changed", id });
+    return c.json({ id });
+  });
+
   // --- sessions ---
 
   app.get("/api/sessions", async (c) => {
@@ -1612,12 +1632,15 @@ export function createApp({
     const modeParam = c.req.query("mode");
     const mode = modeParam === "light" || modeParam === "dark" ? modeParam : undefined;
     const origin = new URL(c.req.url).origin;
+    // Wrap: the viewer's wide mode asks text surfaces to soft-wrap long lines.
+    // Ignored for other kinds so a stray ?wrap=1 can't duplicate a cache entry.
+    const wrap = c.req.query("wrap") === "1" && isSoftWrapSurfaceKind(surface.kind);
 
     // Cache the finished document. The key pins everything the output depends
     // on; the resolved `version` makes it immutable, so a hit is always correct.
     // Versioned + themed requests (what the viewer always sends) are immutable,
     // so allow long-lived shared caching; an unpinned direct load is not.
-    const cacheKey = `${post.id}:${idx}:${version}:${themeId}:${mode ?? "os"}`;
+    const cacheKey = `${post.id}:${idx}:${version}:${themeId}:${mode ?? "os"}${wrap ? ":wrap" : ""}`;
     const immutable = c.req.query("ver") != null && c.req.query("theme") != null;
     if (immutable) c.header("Cache-Control", "public, max-age=31536000, immutable");
     else c.header("Cache-Control", "private, no-cache");
@@ -1651,14 +1674,15 @@ export function createApp({
       // way this optimization could break in production and nowhere else.
       const { renderCode, renderDiff, renderMarkdown, renderTerminal } =
         await import("./richRender.ts");
+      const opts = { theme: themeId, mode, wrap };
       const rendered =
         surface.kind === "markdown"
-          ? await renderMarkdown(surface as MarkdownSurface, { theme: themeId, mode })
+          ? await renderMarkdown(surface as MarkdownSurface, opts)
           : surface.kind === "code"
-            ? await renderCode(surface as CodeSurface, { theme: themeId, mode })
+            ? await renderCode(surface as CodeSurface, opts)
             : surface.kind === "terminal"
-              ? renderTerminal(surface as TerminalSurface)
-              : await renderDiff(surface as DiffSurface, { theme: themeId, mode }).catch((e) => ({
+              ? renderTerminal(surface as TerminalSurface, opts)
+              : await renderDiff(surface as DiffSurface, opts).catch((e) => ({
                   body: `<div class="rich-error">Couldn’t render diff — ${escapeHtml(
                     e instanceof Error ? e.message : "render error",
                   )}</div>`,

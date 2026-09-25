@@ -56,18 +56,21 @@ export interface SurfaceKindMetadata {
   sandboxed: boolean;
   // Stable iframe selector hook for sandboxed kinds that need kind-specific CSS.
   frameClass?: string;
+  // Server-rendered text kinds that soft-wrap long lines on request (?wrap=1,
+  // the viewer's wide mode) instead of scrolling sideways.
+  softWrap?: boolean;
 }
 
 export const SURFACE_KIND_METADATA = {
   html: { contentField: "html", sandboxed: true },
-  diff: { contentField: "patch", sandboxed: true, frameClass: "diffframe" },
+  diff: { contentField: "patch", sandboxed: true, frameClass: "diffframe", softWrap: true },
   image: { sandboxed: false },
   trace: { sandboxed: false },
-  markdown: { contentField: "markdown", sandboxed: true, frameClass: "mdframe" },
-  terminal: { contentField: "text", sandboxed: true, frameClass: "termframe" },
+  markdown: { contentField: "markdown", sandboxed: true, frameClass: "mdframe", softWrap: true },
+  terminal: { contentField: "text", sandboxed: true, frameClass: "termframe", softWrap: true },
   mermaid: { contentField: "mermaid", sandboxed: true, frameClass: "mermaidframe" },
   json: { contentField: "data", sandboxed: false },
-  code: { contentField: "code", sandboxed: true, frameClass: "codeframe" },
+  code: { contentField: "code", sandboxed: true, frameClass: "codeframe", softWrap: true },
 } as const satisfies Record<SurfaceKind, SurfaceKindMetadata>;
 
 export const SURFACE_KIND_LIST = SURFACE_KINDS.join(", ");
@@ -96,9 +99,19 @@ export function isSurfaceKind(kind: unknown): kind is SurfaceKind {
   return typeof kind === "string" && Object.hasOwn(SURFACE_KIND_METADATA, kind);
 }
 
+export function isSoftWrapSurfaceKind(kind: unknown): kind is SurfaceKind {
+  return isSurfaceKind(kind) && "softWrap" in SURFACE_KIND_METADATA[kind];
+}
+
 export function isSandboxedSurfaceKind(kind: unknown): kind is SurfaceKind {
   return isSurfaceKind(kind) && SURFACE_KIND_METADATA[kind].sandboxed;
 }
+
+// Workspace column width (Store setting "width"): "normal" is the classic 860px
+// feed column, "wide" lets it grow with the window (viewer styles.css).
+export const LAYOUT_WIDTHS = ["normal", "wide"] as const;
+export type LayoutWidth = (typeof LAYOUT_WIDTHS)[number];
+export const DEFAULT_WIDTH: LayoutWidth = "normal";
 
 export interface HtmlSurface {
   kind: "html";

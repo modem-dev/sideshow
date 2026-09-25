@@ -16,6 +16,7 @@ import {
 } from "./api.ts";
 import { host, root, type Route } from "./host.ts";
 import { applyTheme } from "./theme.ts";
+import { applyWidth } from "./width.ts";
 import { compactViewerPost, viewerPostFromDetail } from "./viewerPost.ts";
 
 // --- URL routing ---
@@ -608,6 +609,8 @@ async function handleFeedData(data: string) {
   const away = e.sessionId != null && (e.sessionId !== selected() || document.hidden);
   if (e.type === "theme-changed") {
     applyTheme(e.id);
+  } else if (e.type === "width-changed") {
+    applyWidth(e.id);
   } else if (e.type.startsWith("session-")) {
     scheduleHomeRefresh();
     await refreshSessions();
