@@ -105,7 +105,7 @@
     "@pierre/diffs": "^1.2.11",
     "ansi_up": "^6.0.6",
     "hono": "^4.13.1",
-    "markdown-it": "^14.2.0",
+    "markdown-it": "^14.3.3",
     "shiki": "^4.2.0",
     "zod": "^3.24.0"
   },
