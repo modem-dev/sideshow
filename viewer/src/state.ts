@@ -107,6 +107,20 @@ export const [navOpen, setNavOpen] = createSignal(false);
 // spine with the trace steps between them). Per-workspace view preference.
 export type ViewMode = "stream" | "timeline";
 export const [viewMode, setViewMode] = createSignal<ViewMode>("stream");
+// Stream post order by createdAt. Posts stay stored oldest-first (the server's
+// order, new arrivals appended); "newest" only reverses the stream rendering.
+// The timeline is chronological by design and ignores this.
+export type PostOrder = "oldest" | "newest";
+const POST_ORDER_KEY = "sideshow-post-order";
+const [postOrderState, setPostOrderInternal] = createSignal<PostOrder>(
+  localStorage.getItem(POST_ORDER_KEY) === "newest" ? "newest" : "oldest",
+);
+export const postOrder = postOrderState;
+export function setPostOrder(order: PostOrder) {
+  localStorage.setItem(POST_ORDER_KEY, order);
+  setPostOrderInternal(order);
+}
+export const newestOnTop = () => viewMode() === "stream" && postOrder() === "newest";
 // Post id the next mounted card should scroll to (set for SSE arrivals
 // landing while the user is near the bottom, not the initial batch of a
 // session switch).
@@ -444,10 +458,10 @@ async function upsertPost(id: string, { scroll = true } = {}) {
   if (idx >= 0) {
     setPostsInternal(idx, reconcile(s, { key: "id" }));
   } else {
-    // Follow new posts only when the user is already at the bottom;
+    // Follow new posts only when the user is already at the newest edge;
     // never yank them away from whatever they're reading mid-scroll.
     if (scroll) {
-      if (nearBottom()) setScrollTarget(s.id);
+      if (nearNewest()) setScrollTarget(s.id);
       else setPillTarget(s.id);
     }
     setPostsInternal(posts.length, s);
@@ -463,9 +477,12 @@ export async function fetchTrace(sessionId: string) {
   if (res && selected() === sessionId) setTraceStepsInternal(res.steps);
 }
 
-export function nearBottom() {
+// Is the reader at the edge where new posts land — the top when the stream
+// shows newest first, the bottom otherwise.
+export function nearNewest() {
   const m = root().querySelector("main");
-  return !!m && m.scrollHeight - m.scrollTop - m.clientHeight < 200;
+  if (!m) return false;
+  return newestOnTop() ? m.scrollTop < 200 : m.scrollHeight - m.scrollTop - m.clientHeight < 200;
 }
 
 function mergeComments(list: Comment[]) {

@@ -61,7 +61,7 @@ test("embedded engine: ss:session-actions slot projects host content into the se
   // The session header (with the stream/timeline toggle) renders in "full" layout.
   const head = page.locator(".session-head");
   await expect(head).toBeVisible();
-  await expect(head.locator(".view-toggle")).toBeVisible();
+  await expect(head.getByRole("group", { name: "View mode" })).toBeVisible();
 
   // The host's light-DOM button projects into the session-actions slot, landing
   // inside the engine's header next to the toggle — and is the embedder's element,

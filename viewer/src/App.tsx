@@ -47,8 +47,10 @@ import {
   initialLoaded,
   live,
   navOpen,
-  nearBottom,
+  nearNewest,
+  newestOnTop,
   pillTarget,
+  postOrder,
   refreshSessionsQuiet,
   select,
   selectAdjacent,
@@ -58,6 +60,7 @@ import {
   setNavOpen,
   setPillTarget,
   setUnread,
+  setPostOrder,
   setViewMode,
   standalonePost,
   streamLoading,
@@ -343,7 +346,7 @@ export default function App() {
             </Show>
             <main
               onScroll={() => {
-                if (nearBottom()) setPillTarget(null);
+                if (nearNewest()) setPillTarget(null);
               }}
             >
               {/* Host-overridable main pane (SLOTS.main). Fallback is the normal
@@ -389,7 +392,7 @@ export default function App() {
               setPillTarget(null);
             }}
           >
-            new post ↓
+            {newestOnTop() ? "new post ↑" : "new post ↓"}
           </button>
         </>
       }
@@ -683,6 +686,9 @@ function SessionView() {
           {current() ? `${current()!.agent} · started ${relTime(current()!.createdAt)}` : ""}
         </span>
         <span class="head-sp"></span>
+        <Show when={viewMode() === "stream"}>
+          <OrderToggle />
+        </Show>
         <ViewToggle />
         {/* Host-overridable region (SLOTS.sessionActions): session-scoped controls
             an embedder projects beside the toggle (e.g. cloud "Share"). Empty
@@ -703,7 +709,9 @@ function SessionView() {
                   No posts in this session yet.
                 </div>
               </Show>
-              <For each={posts}>{(s) => <Card post={s} />}</For>
+              <For each={newestOnTop() ? [...posts].reverse() : posts}>
+                {(s) => <Card post={s} />}
+              </For>
             </>
           }
         >
@@ -732,6 +740,28 @@ function ViewToggle() {
         onClick={() => setViewMode("timeline")}
       >
         Timeline
+      </button>
+    </div>
+  );
+}
+
+// Stream order by post createdAt: oldest first (default) or newest first.
+function OrderToggle() {
+  return (
+    <div class="view-toggle" role="group" aria-label="Post order">
+      <button
+        classList={{ on: postOrder() === "oldest" }}
+        aria-pressed={postOrder() === "oldest"}
+        onClick={() => setPostOrder("oldest")}
+      >
+        Oldest
+      </button>
+      <button
+        classList={{ on: postOrder() === "newest" }}
+        aria-pressed={postOrder() === "newest"}
+        onClick={() => setPostOrder("newest")}
+      >
+        Newest
       </button>
     </div>
   );
