@@ -934,6 +934,29 @@ test("timeline traces wrap cleanly at iPhone 14 Pro width", async ({ page, serve
   await expectNoHorizontalOverflow(page, ".timeline");
 });
 
+test("the stream can order posts newest first, and remembers it", async ({ page, server }) => {
+  const first = await publish(server.url, { html: "<p>one</p>", title: "First post" });
+  await publish(server.url, { html: "<p>two</p>", title: "Second post", session: first.sessionId });
+
+  await page.goto(`${server.url}/session/${first.sessionId}`);
+  const titles = page.locator("#stream .card:not(#whatsNew) .card-title");
+  await expect(titles).toHaveText(["First post", "Second post"]);
+
+  await page.getByRole("button", { name: "Newest" }).click();
+  await expect(titles).toHaveText(["Second post", "First post"]);
+
+  // a post arriving live lands on top
+  await publish(server.url, {
+    html: "<p>three</p>",
+    title: "Third post",
+    session: first.sessionId,
+  });
+  await expect(titles).toHaveText(["Third post", "Second post", "First post"]);
+
+  await page.reload();
+  await expect(titles).toHaveText(["Third post", "Second post", "First post"]);
+});
+
 test("the Connect an agent page shows the add-mcp logo picker", async ({ page, server }) => {
   await page.goto(server.url);
 
