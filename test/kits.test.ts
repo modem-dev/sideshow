@@ -33,6 +33,9 @@ test("kitAssets returns nothing for empty / unknown-only / missing lists", () =>
 
 test("only behavior kits ship js", () => {
   assert.match(kitAssets(["slides"]).js, /deck-ctl/);
+  // the deck's own fullscreen button uses the standard API (the bridge routes it)
+  assert.match(kitAssets(["slides"]).js, /deck\.requestFullscreen\(\)/);
+  assert.match(kitAssets(["slides"]).css, /\.deck:is\(:fullscreen,\[data-sideshow-fullscreen\]\)/);
   assert.equal(kitAssets(["issues"]).js, "");
 });
 

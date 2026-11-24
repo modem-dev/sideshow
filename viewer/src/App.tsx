@@ -13,7 +13,13 @@ import {
   type SessionRow,
 } from "./api.ts";
 import { host, isShadow, navHostEl, root, SLOTS } from "./host.ts";
-import { applyFrameHeight, Card, cardForPost, frameForSource } from "./Card.tsx";
+import {
+  applyFrameHeight,
+  Card,
+  cardForPost,
+  frameForSource,
+  requestFrameFullscreen,
+} from "./Card.tsx";
 import { ConnectInstructions } from "./Connect.tsx";
 import { HomeView, isHomePreviewFrame, resizeHomeFrame } from "./Home.tsx";
 import { renderNotes } from "./notes.ts";
@@ -505,6 +511,7 @@ async function onBridgeMessage(ev: MessageEvent) {
     text?: unknown;
     url?: string;
     key?: string;
+    on?: unknown;
   } | null;
   if (!d || !d.__sideshow) return;
   const fromHomePreview = isHomePreviewFrame(ev.source);
@@ -521,6 +528,13 @@ async function onBridgeMessage(ev: MessageEvent) {
     // A post iframe forwarded the session-switch shortcut because focus was
     // inside it (see server/surfacePage.ts). Mirror the parent keydown handler.
     void selectAdjacent(d.key === "ArrowUp" ? -1 : 1);
+    return;
+  }
+  if (d.type === "fullscreen") {
+    // A surface's content called requestFullscreen()/exitFullscreen(); the
+    // owning Card resolves the frame (registered card frames only) and gates
+    // entry on a user gesture.
+    requestFrameFullscreen(ev.source, d.on === true);
     return;
   }
   // Resolve the source post + iframe by contentWindow — a post may own

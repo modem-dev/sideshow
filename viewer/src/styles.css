@@ -922,6 +922,10 @@ select.vbadge {
     background-color 0.15s,
     color 0.15s;
 }
+/* Revealed from the card as well as the shell: with the pointer over a
+   sandboxed (out-of-process) frame the shell's own :hover isn't guaranteed to
+   update, while the card's is already set from the pointer's way in. */
+.card:hover .surface-fullscreen,
 .surface-shell:hover .surface-fullscreen,
 .surface-shell:focus-within .surface-fullscreen {
   opacity: 1;
@@ -1185,18 +1189,20 @@ iframe {
   border-top: 0.5px solid var(--border);
   background: transparent;
 }
-.surface-fullscreen-backdrop {
+/* An expanded surface: the shell itself leaves the feed and fills the viewer
+   window (a dialog over a dimming backdrop), or — `.native` — is the browser's
+   fullscreen element. It expands IN PLACE, so the iframe is never reloaded and
+   the content keeps its state. */
+.surface-backdrop {
   position: fixed;
   inset: 0;
   z-index: 70;
-  display: flex;
-  flex-direction: column;
-  padding: 18px;
   background: rgba(0, 0, 0, 0.72);
 }
-.surface-fullscreen-dialog {
-  flex: 1;
-  min-height: 0;
+.surface-shell.expanded {
+  position: fixed;
+  inset: 18px;
+  z-index: 71;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1205,20 +1211,42 @@ iframe {
   border-radius: 16px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
 }
-.surface-fullscreen-head {
+.surface-shell.expanded.native {
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* The frame fills the shell; `!important` outranks the inline height the resize
+   bridge set, which is kept for when the surface collapses back into the card. */
+.surface-shell.expanded > iframe {
+  flex: 1;
+  min-height: 0;
+  height: auto !important;
+  border-top: 0;
+}
+/* Pins are positioned against the card-sized layout, so they sit out the
+   expanded one; the expand button stays mounted (it gets focus back on close)
+   but hidden. */
+.surface-shell.expanded > .surface-fullscreen,
+.surface-shell.expanded > .surface-pins,
+.surface-shell.expanded > .surface-capture {
+  display: none;
+}
+.surface-expanded-head {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
   min-height: 44px;
   padding: 9px 12px 9px 16px;
   border-bottom: 0.5px solid var(--border);
   background: var(--panel);
 }
-.surface-fullscreen-head h2 {
+.surface-expanded-head h2 {
   flex: 1;
   min-width: 0;
-  margin: 0;
+  margin: 0 8px 0 0;
   overflow: hidden;
   color: var(--text);
   font-size: 13px;
@@ -1226,7 +1254,7 @@ iframe {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.surface-fullscreen-head .x {
+.surface-expanded-head .x {
   display: inline-grid;
   place-items: center;
   width: 30px;
@@ -1237,15 +1265,13 @@ iframe {
   border-radius: 8px;
   cursor: pointer;
 }
-.surface-fullscreen-head .x:hover {
+.surface-expanded-head .x:hover {
   color: var(--text);
   background: var(--hover);
 }
-.surface-fullscreen-frame {
-  flex: 1;
-  min-height: 0;
-  height: auto;
-  border-top: 0;
+.surface-expanded-head .x svg {
+  width: 15px;
+  height: 15px;
 }
 /* Shown when a surface's kind isn't recognized by this (possibly stale) viewer. */
 .surface-unsupported {
@@ -2508,10 +2534,8 @@ iframe {
     width: calc(100vw - 24px);
     max-width: none;
   }
-  .surface-fullscreen-backdrop {
-    padding: 8px;
-  }
-  .surface-fullscreen-dialog {
+  .surface-shell.expanded:not(.native) {
+    inset: 8px;
     border-radius: 12px;
   }
 }

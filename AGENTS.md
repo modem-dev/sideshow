@@ -65,7 +65,10 @@ consciously, not as a side effect):
   `/s/:id` calls these and wraps the result in `renderSandboxedPart`.
 - `server/surfacePage.ts` — sandboxed documents for surface markup. `renderHtmlPage`
   wraps an html surface (CDN-allowlist CSP + the postMessage bridge: resize,
-  sendPrompt, openLink) and injects any opted-in kits (`kits.ts`).
+  sendPrompt, openLink, fullscreen) and injects any opted-in kits (`kits.ts`).
+  The frames have no fullscreen permission; the bridge routes the standard
+  Fullscreen API to the viewer, which expands the surface's shell in place
+  (`Card.tsx`) and only on a user gesture.
   `renderSandboxedPart` wraps a server-rendered rich body (markdown/code/diff/
   terminal — see `richRender.ts`) under a tighter CSP (no `connect-src`, no CDN).
   `renderMermaidPage` is the one exception: mermaid needs a DOM, so it can't be

@@ -104,6 +104,22 @@ test("the host bridge globals and resize reporter are present in every page", ()
   assert.ok(page.includes("type: 'resize'"), "resize reporter missing");
 });
 
+test("every sandboxed page routes the Fullscreen API through the host bridge", () => {
+  // The frames have no fullscreen permission, so without this shim a surface's
+  // own "Fullscreen" button silently does nothing. Every kind that renders in a
+  // sandboxed frame carries it.
+  const pages = [
+    renderHtmlPage({ title: "t", html: "<p>x</p>", origin: ORIGIN }),
+    renderSandboxedPart({ body: "<p>x</p>", css: "", origin: ORIGIN }),
+    renderMermaidPage({ mermaid: "graph TD; A-->B", origin: ORIGIN }),
+  ];
+  for (const page of pages) {
+    assert.ok(page.includes("Element.prototype.requestFullscreen"), "requestFullscreen shim");
+    assert.ok(page.includes("type: 'fullscreen'"), "fullscreen request message");
+    assert.ok(page.includes("data-sideshow-fullscreen"), "fullscreen marker attribute");
+  }
+});
+
 test("theme tokens are injected and resolve unknown/absent themes to the default", () => {
   // an explicit known theme injects its tokens
   const gruvbox = renderHtmlPage({

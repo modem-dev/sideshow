@@ -109,9 +109,9 @@ card first:
   the diagram. Use `<br/>` in labels when a name needs wrapping.
 - Use `subgraph` blocks to group layers vertically rather than stretching one
   row across the screen.
-- If a diagram still needs to be wide, it is okay: the viewer offers a fullscreen
-  control on Mermaid surfaces, but the inline card should remain legible enough
-  to preview.
+- If a diagram still needs to be wide, it is okay: the viewer offers an expand
+  control on every sandboxed surface (Mermaid included), but the inline card
+  should remain legible enough to preview.
 
 Prefer this shape:
 
@@ -320,8 +320,8 @@ theme tokens, so kit output re-themes with the workspace.
   generic primitives.
 - **`slides`** — author a `.deck` with `.slide` children; the kit cross-fades one
   at a time (grid-stacked in normal flow, so the frame always sizes to the tallest
-  slide) and injects prev/dots/counter/next controls. Arrow keys and PageUp/Down
-  navigate.
+  slide) and injects prev/dots/counter/next controls plus a fullscreen button.
+  Arrow keys and PageUp/Down navigate.
 
 ```sh
 sideshow publish board.html --kit issues       # CLI (repeatable: --kit a --kit b)
@@ -371,6 +371,29 @@ Two globals are injected into every html surface:
   Use it for "explore X" affordances the user can then relay to you deliberately.
 - `openLink(url)` — asks the user to confirm opening an external link.
   Plain `<a href>` clicks are routed through this automatically.
+
+### Fullscreen
+
+Every sandboxed surface gets an expand button in the viewer, so you never need
+to build one just to make something bigger. For content that wants its own
+control — a presentation, a canvas, a dense chart — use the **standard
+Fullscreen API**, from a click or key handler:
+
+```html
+<button onclick="document.getElementById('stage').requestFullscreen()">Fullscreen</button>
+```
+
+- `el.requestFullscreen()`, `document.exitFullscreen()`, `document.fullscreenElement`,
+  and the `fullscreenchange` event all work. The viewer expands your surface in
+  place (real fullscreen where the browser allows it), so state — the current
+  slide, form input, a running animation — is kept.
+- It must be triggered by a user gesture; an unprompted request is rejected.
+- `:fullscreen` does **not** match inside the viewer. The fullscreen element
+  carries `[data-sideshow-fullscreen]` and is stretched over the whole frame for
+  you; style the fullscreen look with that attribute (add `:fullscreen` too if
+  the post may be opened by direct link).
+- Size the fullscreen layout from the viewport (`vw`/`vh`, `clamp()`), not the
+  720px card column.
 
 ## Style
 

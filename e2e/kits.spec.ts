@@ -32,7 +32,7 @@ test("the slides kit renders a stepped deck with injected controls", async ({ pa
 
   // advancing with the injected next button moves to slide 2 (interactive js,
   // not just css — proves a behavior kit, not only styling)
-  await frame.locator(".deck-ctl button").last().click();
+  await frame.locator('.deck-ctl button[aria-label="Next slide"]').click();
   await expect(frame.locator(".deck-num")).toHaveText("2 / 2");
   await expect(frame.locator(".slide.on")).toContainText("Second");
 });

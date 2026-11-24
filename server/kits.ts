@@ -71,6 +71,12 @@ const ISSUES_CSS = `
 // and clip the deck; grid-stacking avoids that trap. Inactive slides stay laid
 // out (so they keep sizing the track) but are visibility:hidden — out of the tab
 // order and the a11y tree — until they become `.on`.
+//
+// The injected fullscreen button calls the standard deck.requestFullscreen():
+// inside the viewer the bridge routes that to the host, which expands the frame
+// and marks the deck [data-sideshow-fullscreen] (see BRIDGE_JS in
+// surfacePage.ts); on a top-level /s/:id load it is the native API and
+// :fullscreen. The rules cover both, centering the slide and scaling it up.
 const SLIDES_CSS = `
 .deck{display:grid;min-height:140px}
 .deck>.slide{grid-area:1/1;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .3s ease,visibility 0s linear .3s}
@@ -82,6 +88,10 @@ const SLIDES_CSS = `
 .deck-dots i{width:7px;height:7px;border-radius:999px;background:var(--color-border-primary);cursor:pointer}
 .deck-dots i.on{background:var(--color-text-info)}
 .deck-num{font:400 13px/1 var(--font-mono);color:var(--color-text-tertiary);min-width:46px;text-align:center}
+.deck:is(:fullscreen,[data-sideshow-fullscreen]){grid-template-rows:1fr auto;padding:4vh 6vw;background:var(--color-background-primary);overflow:auto}
+.deck:is(:fullscreen,[data-sideshow-fullscreen])>.slide{align-self:center}
+@media (min-width:1100px){.deck:is(:fullscreen,[data-sideshow-fullscreen])>.slide{zoom:1.5}}
+@media (min-width:1700px){.deck:is(:fullscreen,[data-sideshow-fullscreen])>.slide{zoom:2}}
 `;
 
 const SLIDES_JS = `
@@ -96,6 +106,15 @@ const SLIDES_JS = `
   var num=document.createElement('span');num.className='deck-num';
   slides.forEach(function(_,k){var d=document.createElement('i');d.setAttribute('role','button');d.addEventListener('click',function(){go(k);});dots.appendChild(d);});
   ctl.appendChild(prev);ctl.appendChild(dots);ctl.appendChild(num);ctl.appendChild(next);
+  if(document.fullscreenEnabled&&deck.requestFullscreen){
+    var fs=document.createElement('button');fs.type='button';fs.className='deck-fs';fs.textContent='⛶';
+    var sync=function(){fs.setAttribute('aria-label',document.fullscreenElement?'Exit fullscreen':'Fullscreen');};
+    fs.addEventListener('click',function(){
+      var p=document.fullscreenElement?document.exitFullscreen():deck.requestFullscreen();
+      if(p&&p.catch)p.catch(function(){});});
+    document.addEventListener('fullscreenchange',sync);sync();
+    ctl.appendChild(fs);
+  }
   deck.appendChild(ctl);
   function go(n){i=(n+slides.length)%slides.length;
     slides.forEach(function(s,k){s.classList.toggle('on',k===i);});
@@ -123,7 +142,7 @@ export const KITS: Kit[] = [
     id: "slides",
     label: "Slides",
     summary: "a stepped, cross-fading deck with prev/next controls and a counter",
-    classes: "deck · slide (+ injected controls)",
+    classes: "deck · slide (+ injected controls, fullscreen)",
     css: SLIDES_CSS,
     js: SLIDES_JS,
   },
