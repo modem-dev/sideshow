@@ -60,7 +60,13 @@ import {
 // agnostic) and cardForPost scans by id, so neither instance can evict the other.
 export const cardEls = new Map<
   object,
-  { id: string; card: HTMLDivElement; iframes: Set<HTMLIFrameElement> }
+  {
+    id: string;
+    card: HTMLDivElement;
+    iframes: Set<HTMLIFrameElement>;
+    // The in-frame bridge asked to enter/leave fullscreen (see requestFrameFullscreen).
+    fullscreen: (iframe: HTMLIFrameElement, on: boolean) => void;
+  }
 >();
 
 // Resolve which post + iframe a postMessage came from, by contentWindow.
@@ -71,6 +77,19 @@ export function frameForSource(source: unknown): { id: string; iframe: HTMLIFram
     }
   }
   return null;
+}
+
+// A surface's own content asked for fullscreen through the bridge — its
+// requestFullscreen()/exitFullscreen() are routed here because the sandboxed
+// frame has no fullscreen permission of its own (see BRIDGE_JS). Only frames a
+// Card registered can ask, so Home previews and stray frames are ignored; the
+// owning Card decides whether to honor it (it requires a user gesture).
+export function requestFrameFullscreen(source: unknown, on: boolean): void {
+  for (const { iframes, fullscreen } of cardEls.values()) {
+    for (const iframe of iframes) {
+      if (iframe.contentWindow === source) return fullscreen(iframe, on);
+    }
+  }
 }
 
 // The card element for a post, for scroll-into-view. Scans by id because the
@@ -88,14 +107,19 @@ const MIN_FRAME_H = 24;
 const MAX_FRAME_H = 4000;
 const RECENT_UPDATE_MS = 2 * 60 * 1000;
 export function applyFrameHeight(iframe: HTMLIFrameElement, reportedHeight: unknown): void {
+  // An expanded surface fills its shell, so what it reports there is the height
+  // of the expanded layout — keep the card-sized height for when it collapses
+  // (the bridge re-reports once it does).
+  if (iframe.closest(".surface-shell.expanded")) return;
   iframe.style.height = Math.min(Math.max(Number(reportedHeight), MIN_FRAME_H), MAX_FRAME_H) + "px";
 }
 
-type FullscreenSurface = {
-  src: string;
-  title: string;
-  frameClass?: string;
-};
+// The one surface of a card that is expanded out of the feed, in place — the
+// SAME iframe, so a deck keeps its slide and a widget keeps its state. `native`
+// is real browser fullscreen (the shell is the fullscreen element, no viewer
+// chrome); otherwise it is a dialog filling the viewer window. `fromWindow`
+// remembers that native was entered from the dialog, so leaving it returns there.
+type ExpandedSurface = { index: number; native: boolean; fromWindow?: boolean };
 
 // While a deep-link scroll poll is active, IntersectionObserver callbacks on
 // other cards must not call focusPost — they would overwrite the URL with
@@ -191,16 +215,17 @@ function pollScrollIntoView(el: HTMLElement, postId: string): () => void {
 
 export function Card(props: { post: Post | ViewerPost; standalone?: boolean }) {
   let card!: HTMLDivElement;
-  let fullscreenDialog: HTMLDivElement | undefined;
-  let fullscreenCloseButton: HTMLButtonElement | undefined;
-  let fullscreenOpener: HTMLButtonElement | undefined;
+  let expandedCloseButton: HTMLButtonElement | undefined;
+  let expandedOpener: HTMLButtonElement | undefined;
+  // Absolute surface index -> its shell (the element that expands).
+  const surfaceShells = new Map<number, HTMLDivElement>();
   const iframes = new Set<HTMLIFrameElement>();
   // Absolute surface index -> its sandboxed-surface iframe. Lets the version
   // dropdown rebuild each `/s/:id?part=N` src across every surface with a frame.
   const surfaceFrames = new Map<number, HTMLIFrameElement>();
   const [annotating, setAnnotating] = createSignal(false);
   const [anchorDraft, setAnchorDraft] = createSignal<CommentAnchor | null>(null);
-  const [fullscreenSurface, setFullscreenSurface] = createSignal<FullscreenSurface | null>(null);
+  const [expanded, setExpanded] = createSignal<ExpandedSurface | null>(null);
   const [recentUpdateNow, setRecentUpdateNow] = createSignal(Date.now());
   let stopPoll: (() => void) | undefined;
 
@@ -226,21 +251,116 @@ export function Card(props: { post: Post | ViewerPost; standalone?: boolean }) {
     );
   };
 
-  const closeFullscreen = () => {
-    const opener = fullscreenOpener;
-    fullscreenOpener = undefined;
-    setFullscreenSurface(null);
+  // Tell a surface's document whether it is expanded, so its Fullscreen API shim
+  // (BRIDGE_JS) resolves requestFullscreen(), fires fullscreenchange, and
+  // re-measures on the way out. The frame is opaque-origin, so the target origin
+  // can't be named; the payload is a bare boolean.
+  const notifyFrame = (index: number, on: boolean) =>
+    surfaceFrames
+      .get(index)
+      ?.contentWindow?.postMessage({ __sideshow: true, type: "fullscreen", on }, "*");
+
+  const isNativeFullscreen = (shell: HTMLElement | undefined) =>
+    !!shell && root().fullscreenElement === shell;
+
+  // Expand a surface to fill the viewer window (the expand button).
+  const openExpanded = (index: number, opener?: HTMLButtonElement) => {
+    expandedOpener = opener;
+    setExpanded({ index, native: false });
+    notifyFrame(index, true);
+    queueMicrotask(() => expandedCloseButton?.focus());
+  };
+
+  // Real browser fullscreen for a surface: the shell (not the frame's content)
+  // is the fullscreen element, so the sandbox needs no fullscreen permission.
+  // Resolves false when the browser refuses (no user gesture, API unavailable,
+  // or this viewer is itself framed without the permission).
+  const enterNative = async (index: number): Promise<boolean> => {
+    const shell = surfaceShells.get(index);
+    if (!shell?.requestFullscreen) return false;
+    const before = expanded();
+    try {
+      await shell.requestFullscreen();
+    } catch {
+      return false;
+    }
+    setExpanded({
+      index,
+      native: true,
+      fromWindow: before?.index === index && !before.native,
+    });
+    notifyFrame(index, true);
+    // The dialog's head (and whatever button was focused in it) is gone in
+    // native mode; hand the keyboard to the content so a deck's arrows work.
+    surfaceFrames.get(index)?.focus();
+    return true;
+  };
+
+  const collapse = () => {
+    const current = expanded();
+    if (!current) return;
+    const opener = expandedOpener;
+    expandedOpener = undefined;
+    const shell = surfaceShells.get(current.index);
+    setExpanded(null);
+    notifyFrame(current.index, false);
+    if (isNativeFullscreen(shell)) void shell!.ownerDocument.exitFullscreen().catch(() => {});
     queueMicrotask(() => {
       if (opener?.isConnected) opener.focus();
     });
   };
 
-  const focusableFullscreenEls = () =>
-    Array.from(
-      fullscreenDialog?.querySelectorAll<HTMLElement>(
+  // The browser left native fullscreen on its own (Esc, or the content/host
+  // called exitFullscreen): back to the dialog it was entered from, else the card.
+  const onShellFullscreenChange = (index: number) => {
+    const current = expanded();
+    if (!current?.native || current.index !== index) return;
+    if (isNativeFullscreen(surfaceShells.get(index))) return;
+    if (current.fromWindow) setExpanded({ index, native: false });
+    else collapse();
+  };
+
+  // A surface's content called requestFullscreen()/exitFullscreen() (routed
+  // through the bridge). Untrusted content must not be able to take over the
+  // viewer unprompted, so entering needs a live user gesture: the browser
+  // enforces that for native fullscreen, and the window-filling fallback (for
+  // when native is unavailable) is only used when the browser reports one.
+  const onFrameFullscreen = (iframe: HTMLIFrameElement, on: boolean) => {
+    let index = -1;
+    for (const [i, frame] of surfaceFrames) if (frame === iframe) index = i;
+    if (index < 0) return;
+    if (!on) {
+      if (expanded()?.index === index) collapse();
+      else notifyFrame(index, false);
+      return;
+    }
+    const current = expanded();
+    if (current && current.index !== index) return notifyFrame(index, false);
+    if (current?.native) return notifyFrame(index, true);
+    const gesture = navigator.userActivation?.isActive;
+    if (gesture === false) return notifyFrame(index, false);
+    void enterNative(index).then((entered) => {
+      if (entered) return;
+      // Already expanded in the window: stay there, and confirm.
+      if (expanded()?.index === index) return notifyFrame(index, true);
+      if (gesture && !expanded()) {
+        setExpanded({ index, native: false });
+        notifyFrame(index, true);
+      } else notifyFrame(index, false);
+    });
+  };
+
+  const focusableExpandedEls = () => {
+    const current = expanded();
+    const shell = current ? surfaceShells.get(current.index) : undefined;
+    return Array.from(
+      shell?.querySelectorAll<HTMLElement>(
         'button, iframe, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
       ) ?? [],
-    ).filter((el) => !el.hasAttribute("disabled") && el.tabIndex >= 0);
+    ).filter(
+      (el) => !el.hasAttribute("disabled") && el.tabIndex >= 0 && el.getClientRects().length > 0,
+    );
+  };
 
   const sendPinnedComment = async (text: string) => {
     const anchor = anchorDraft();
@@ -281,18 +401,22 @@ export function Card(props: { post: Post | ViewerPost; standalone?: boolean }) {
     onCleanup(() => clearTimeout(timer));
   });
 
+  // Dialog keyboard handling while a surface fills the viewer window: Esc closes
+  // and Tab stays inside. Native fullscreen needs neither — the browser owns Esc
+  // and the shell is the only thing on screen.
   createEffect(() => {
-    if (!fullscreenSurface()) return;
-    queueMicrotask(() => fullscreenCloseButton?.focus());
+    const current = expanded();
+    if (!current || current.native) return;
+    const shell = surfaceShells.get(current.index);
     const onKey = (event: Event) => {
       const e = event as KeyboardEvent;
       if (e.key === "Escape") {
         e.preventDefault();
-        closeFullscreen();
+        collapse();
         return;
       }
       if (e.key !== "Tab") return;
-      const focusable = focusableFullscreenEls();
+      const focusable = focusableExpandedEls();
       if (focusable.length === 0) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -303,7 +427,7 @@ export function Card(props: { post: Post | ViewerPost; standalone?: boolean }) {
       } else if (!e.shiftKey && active === last) {
         e.preventDefault();
         first.focus();
-      } else if (!active || !fullscreenDialog?.contains(active)) {
+      } else if (!active || !shell?.contains(active)) {
         e.preventDefault();
         first.focus();
       }
@@ -315,7 +439,7 @@ export function Card(props: { post: Post | ViewerPost; standalone?: boolean }) {
   onMount(() => {
     // Key by a token UNIQUE to this Card instance, never by post.id — see cardEls.
     const token = {};
-    cardEls.set(token, { id: props.post.id, card, iframes });
+    cardEls.set(token, { id: props.post.id, card, iframes, fullscreen: onFrameFullscreen });
     onCleanup(() => cardEls.delete(token));
     // Standalone is a single, full-page post — there is no feed to scroll
     // through and no session route to track, so skip the deep-link scroll and
@@ -425,119 +549,134 @@ export function Card(props: { post: Post | ViewerPost; standalone?: boolean }) {
             });
             setAnnotating(false);
           };
+          const isExpanded = () => expanded()?.index === i();
+          const isNative = () => isExpanded() && !!expanded()?.native;
           return (
-            <div class="surface-shell" classList={{ annotating: annotating() }}>
-              <Switch
-                fallback={
-                  <div class="surface-unsupported">
-                    Can&rsquo;t show this surface — refresh sideshow to update the viewer.
-                  </div>
-                }
-              >
-                <Match when={isSandboxedSurfaceKind(surface.kind)}>
-                  <iframe
-                    ref={(el) => {
-                      surfaceFrames.set(i(), el);
-                      iframes.add(el);
-                      onCleanup(() => {
-                        surfaceFrames.delete(i());
-                        iframes.delete(el);
-                      });
-                    }}
-                    sandbox="allow-scripts"
-                    loading="lazy"
-                    class={SURFACE_FRAME_CLASSES[surface.kind]}
-                    title={surfaceTitle(i())}
-                    src={surfaceSrc(i())}
-                  ></iframe>
-                </Match>
-                <Match when={surface.kind === "image"}>
-                  <ImageSurface surface={surface as ImageSurfaceData} />
-                </Match>
-                <Match when={surface.kind === "trace"}>
-                  <TraceSurface surface={surface as TraceSurfaceData} />
-                </Match>
-                <Match when={surface.kind === "json"}>
-                  <JsonSurface surface={surface as JsonSurfaceData} />
-                </Match>
-              </Switch>
-              <Show when={surface.kind === "mermaid"}>
-                <button
-                  class="surface-fullscreen"
-                  type="button"
-                  title="Open diagram fullscreen"
-                  aria-label="Open diagram fullscreen"
-                  onClick={(e) => {
-                    fullscreenOpener = e.currentTarget;
-                    setFullscreenSurface({
-                      src: surfaceFrames.get(i())?.src ?? surfaceSrc(i()),
-                      title: surfaceTitle(i()),
-                      frameClass: SURFACE_FRAME_CLASSES[surface.kind],
-                    });
-                  }}
-                >
-                  <MaximizeIcon />
-                </button>
+            <>
+              {/* Dims the viewer behind a window-filling surface; click to close.
+                  A sibling (not a child) so the shell's own background still
+                  sits under its transparent rich-surface frames. */}
+              <Show when={isExpanded() && !isNative()}>
+                <div class="surface-backdrop" onClick={collapse}></div>
               </Show>
-              <div class="surface-pins">
-                <For each={anchoredComments(i())}>{(c) => <AnchoredComment comment={c} />}</For>
-                <Show when={anchorDraft()?.surfaceIndex === i() ? anchorDraft() : null} keyed>
-                  {(anchor) => (
-                    <AnchoredComposer
-                      anchor={anchor}
-                      send={sendPinnedComment}
-                      onCancel={() => setAnchorDraft(null)}
-                    />
-                  )}
+              <div
+                ref={(el) => {
+                  const index = i();
+                  surfaceShells.set(index, el);
+                  const onChange = () => onShellFullscreenChange(index);
+                  el.addEventListener("fullscreenchange", onChange);
+                  onCleanup(() => {
+                    el.removeEventListener("fullscreenchange", onChange);
+                    surfaceShells.delete(index);
+                    if (expanded()?.index === index) setExpanded(null);
+                  });
+                }}
+                class="surface-shell"
+                classList={{ annotating: annotating(), expanded: isExpanded(), native: isNative() }}
+                role={isExpanded() ? "dialog" : undefined}
+                aria-modal={isExpanded() ? "true" : undefined}
+                aria-label={isExpanded() ? `Expanded view of ${surfaceTitle(i())}` : undefined}
+              >
+                <Show when={isExpanded() && !isNative()}>
+                  <div class="surface-expanded-head">
+                    <h2>{surfaceTitle(i())}</h2>
+                    <Show when={card.ownerDocument.fullscreenEnabled}>
+                      <button
+                        class="x"
+                        type="button"
+                        title="Fullscreen"
+                        aria-label="Enter fullscreen"
+                        onClick={() => void enterNative(i())}
+                      >
+                        <MaximizeIcon />
+                      </button>
+                    </Show>
+                    <button
+                      ref={(el) => (expandedCloseButton = el)}
+                      class="x"
+                      type="button"
+                      title="Close"
+                      aria-label="Close expanded view"
+                      onClick={collapse}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </Show>
+                <Switch
+                  fallback={
+                    <div class="surface-unsupported">
+                      Can&rsquo;t show this surface — refresh sideshow to update the viewer.
+                    </div>
+                  }
+                >
+                  <Match when={isSandboxedSurfaceKind(surface.kind)}>
+                    <iframe
+                      ref={(el) => {
+                        surfaceFrames.set(i(), el);
+                        iframes.add(el);
+                        onCleanup(() => {
+                          surfaceFrames.delete(i());
+                          iframes.delete(el);
+                        });
+                      }}
+                      sandbox="allow-scripts"
+                      loading="lazy"
+                      class={SURFACE_FRAME_CLASSES[surface.kind]}
+                      title={surfaceTitle(i())}
+                      src={surfaceSrc(i())}
+                      // A reload while expanded (new version, theme switch) starts a
+                      // fresh document that doesn't know it is expanded — tell it.
+                      onLoad={() => isExpanded() && notifyFrame(i(), true)}
+                    ></iframe>
+                  </Match>
+                  <Match when={surface.kind === "image"}>
+                    <ImageSurface surface={surface as ImageSurfaceData} />
+                  </Match>
+                  <Match when={surface.kind === "trace"}>
+                    <TraceSurface surface={surface as TraceSurfaceData} />
+                  </Match>
+                  <Match when={surface.kind === "json"}>
+                    <JsonSurface surface={surface as JsonSurfaceData} />
+                  </Match>
+                </Switch>
+                <Show when={isSandboxedSurfaceKind(surface.kind)}>
+                  <button
+                    class="surface-fullscreen"
+                    type="button"
+                    title="Expand"
+                    aria-label="Expand this surface"
+                    onClick={(e) => openExpanded(i(), e.currentTarget)}
+                  >
+                    <MaximizeIcon />
+                  </button>
+                </Show>
+                <div class="surface-pins">
+                  <For each={anchoredComments(i())}>{(c) => <AnchoredComment comment={c} />}</For>
+                  <Show when={anchorDraft()?.surfaceIndex === i() ? anchorDraft() : null} keyed>
+                    {(anchor) => (
+                      <AnchoredComposer
+                        anchor={anchor}
+                        send={sendPinnedComment}
+                        onCancel={() => setAnchorDraft(null)}
+                      />
+                    )}
+                  </Show>
+                </div>
+                <Show when={annotating() && !props.standalone && !isReadonly()}>
+                  <button
+                    class="surface-capture"
+                    type="button"
+                    aria-label="Place a comment on this surface"
+                    data-tip="Click to place a comment"
+                    onClick={captureAnchor}
+                  ></button>
                 </Show>
               </div>
-              <Show when={annotating() && !props.standalone && !isReadonly()}>
-                <button
-                  class="surface-capture"
-                  type="button"
-                  aria-label="Place a comment on this surface"
-                  data-tip="Click to place a comment"
-                  onClick={captureAnchor}
-                ></button>
-              </Show>
-            </div>
+            </>
           );
         }}
       </For>
-      <Show when={fullscreenSurface()} keyed>
-        {(surface) => (
-          <div class="surface-fullscreen-backdrop" onClick={closeFullscreen}>
-            <div
-              ref={(el) => (fullscreenDialog = el)}
-              class="surface-fullscreen-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-label={`Fullscreen view of ${surface.title}`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div class="surface-fullscreen-head">
-                <h2>{surface.title}</h2>
-                <button
-                  ref={(el) => (fullscreenCloseButton = el)}
-                  class="x"
-                  type="button"
-                  aria-label="Close fullscreen diagram"
-                  onClick={closeFullscreen}
-                >
-                  ✕
-                </button>
-              </div>
-              <iframe
-                sandbox="allow-scripts"
-                loading="eager"
-                class={`surface-fullscreen-frame ${surface.frameClass ?? ""}`}
-                title={`${surface.title} fullscreen`}
-                src={surface.src}
-              ></iframe>
-            </div>
-          </div>
-        )}
-      </Show>
       <Show when={!props.standalone}>
         <Thread
           postId={props.post.id}

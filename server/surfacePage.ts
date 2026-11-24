@@ -156,12 +156,40 @@ svg { font-family: var(--font-sans); fill: var(--color-text-primary); }
 const SVG_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs></svg>`;
 
 // Bridge to the host viewer: sendPrompt/openLink/copyToClipboard mirror
-// Claude's widget globals, and a ResizeObserver reports content height so the
-// parent can size the sandboxed (opaque-origin) iframe. copyToClipboard posts
+// Claude's widget globals, a ResizeObserver reports content height so the
+// parent can size the sandboxed (opaque-origin) iframe, and the Fullscreen API
+// is routed through the host (see the end of the script). copyToClipboard posts
 // to the parent (trusted origin) which has clipboard API access; the sandbox
 // itself is opaque-origin so navigator.clipboard is unavailable there.
 // Exported so the resize-guard regression test can run the exact shipped script
 // in a vm, instead of scraping it back out of rendered HTML.
+//
+// Fullscreen (the trailing IIFE; documented here because comments inside the
+// string ship in every surface document). The frame is sandboxed at an opaque
+// origin with no fullscreen permission, so the native Fullscreen API always
+// rejects in it — a deck's "Fullscreen" button could never take over the
+// screen. Rather than grant that permission to untrusted content, the STANDARD
+// API is routed through the bridge:
+// - `el.requestFullscreen()` posts `{type:'fullscreen', on:true}` and resolves
+//   when the host confirms (rejects on a denial or after 3s). The host expands
+//   THIS iframe in place — real browser fullscreen when it can, else filling the
+//   viewer window — and gates the request on a user gesture, so content can't
+//   take over unprompted (see Card.tsx `onFrameFullscreen`).
+// - The host answers (and reports its own expand button / Esc) with a message
+//   `{__sideshow:true, type:'fullscreen', on}`, accepted only from `parent`. It
+//   drives `document.fullscreenElement` and `fullscreenchange`; a host-initiated
+//   expand reports the root element.
+// - `:fullscreen` can't be polyfilled, so the active element carries
+//   `[data-sideshow-fullscreen]`, with a rule mirroring the UA's `:fullscreen`
+//   sheet so a non-root element fills the frame (which now fills the screen).
+//   The zero-specificity `:where()` background stands in for `::backdrop`.
+// - On the way out the host sizes the frame from height reports again, and it
+//   ignored them while expanded — so the reporter forgets what it last sent and
+//   re-measures once the frame has shrunk (ResizeObserver, plus timers for a
+//   frame whose size didn't change).
+// - Esc can't reach the host while focus is inside the frame, so it is
+//   forwarded as an exit request. (In real fullscreen the browser handles Esc.)
+// - Top-level /s/:id loads (no parent) keep the native API.
 export const BRIDGE_JS = `
 window.sendPrompt = function (text) {
   parent.postMessage({ __sideshow: true, type: 'send-prompt', text: String(text) }, '*');
@@ -277,6 +305,64 @@ if (window.ResizeObserver) {
   window.__ssRO.observe(document.documentElement);
   if (document.body) window.__ssRO.observe(document.body);
 }
+(function () {
+  if (parent === window || typeof Element === 'undefined') return;
+  var root = document.documentElement;
+  var A = 'data-sideshow-fullscreen';
+  var active = null, pending = null, exits = [];
+  function ask(on) {
+    parent.postMessage({ __sideshow: true, type: 'fullscreen', on: on }, '*');
+  }
+  function settle(ok) {
+    var p = pending;
+    pending = null;
+    if (!p) return null;
+    clearTimeout(p.t);
+    if (ok) p.ok();
+    else p.no(new TypeError('Fullscreen request denied'));
+    return p.el;
+  }
+  function mark(el) {
+    var prev = active;
+    if (prev === el) return;
+    if (prev) prev.removeAttribute(A);
+    active = el;
+    if (el) el.setAttribute(A, '');
+    (el || prev).dispatchEvent(new Event('fullscreenchange', { bubbles: true }));
+  }
+  var css = document.createElement('style');
+  css.textContent = '[' + A + ']:not(:root){position:fixed!important;inset:0!important;margin:0!important;box-sizing:border-box!important;min-width:0!important;max-width:none!important;min-height:0!important;max-height:none!important;width:100%!important;height:100%!important;transform:none!important;z-index:2147483647}:where([' + A + ']:not(:root)){background:var(--color-background-primary,Canvas);overflow:auto}';
+  (document.head || root).appendChild(css);
+  Element.prototype.requestFullscreen = function () {
+    var el = this;
+    return new Promise(function (ok, no) {
+      settle(false);
+      pending = { el: el, ok: ok, no: no, t: setTimeout(settle, 3000) };
+      ask(true);
+    });
+  };
+  document.exitFullscreen = function () {
+    if (!active) return Promise.reject(new TypeError('Not in fullscreen'));
+    return new Promise(function (ok) { exits.push(ok); ask(false); });
+  };
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: function () { return active; } });
+  Object.defineProperty(document, 'fullscreenEnabled', { configurable: true, value: true });
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (e.source !== parent || !d || d.__sideshow !== true || d.type !== 'fullscreen') return;
+    if (d.on) return mark(settle(true) || active || root);
+    settle(false);
+    mark(null);
+    exits.splice(0).forEach(function (ok) { ok(); });
+    __clearTrailing();
+    __lastH = __prevH = 0;
+    setTimeout(__report, 60);
+    setTimeout(__report, 350);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && active && !e.defaultPrevented) ask(false);
+  });
+})();
 `;
 
 export const escapeHtml = (s: string) =>
